@@ -1,0 +1,78 @@
+name: ROS 2 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ros2-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-smoke:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:noble
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.0
+
+      - name: Set up ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@0.7.19
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ripgrep
+          mkdir -p /tmp/embodied_ws/src
+          ln -s "${GITHUB_WORKSPACE}" /tmp/embodied_ws/src/embodied-agent-runtime
+          source /opt/ros/jazzy/setup.bash
+          rosdep install \
+            --from-paths /tmp/embodied_ws/src \
+            --ignore-src \
+            --rosdistro jazzy \
+            -r -y
+
+      - name: Build packages
+        shell: bash
+        working-directory: /tmp/embodied_ws
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install \
+            --packages-up-to task_executor agent_gateway
+
+      - name: Run tests
+        shell: bash
+        working-directory: /tmp/embodied_ws
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test --packages-select \
+            task_contract task_guard task_executor agent_gateway
+          colcon test-result --verbose
+
+      - name: Run offline intent evaluation
+        shell: bash
+        working-directory: /tmp/embodied_ws
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          ros2 run agent_gateway evaluate_intents --provider fake
+
+      - name: Run process smoke tests
+        shell: bash
+        env:
+          EMBODIED_WS: /tmp/embodied_ws
+        run: |
+          bash scripts/smoke_phase_2.sh
+          bash scripts/smoke_ai_gateway.sh

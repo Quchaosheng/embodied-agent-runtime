@@ -1,0 +1,16 @@
+targets:
+  dock:
+    frame_id: map
+    x: .nan
+    y: 0.0
+    yaw: 0.0
+  workbench:
+    frame_id: map
+    x: 1.0
+    y: 0.0
+    yaw: 0.0
+  home:
+    frame_id: map
+    x: 0.0
+    y: 1.0
+    yaw: 1.57

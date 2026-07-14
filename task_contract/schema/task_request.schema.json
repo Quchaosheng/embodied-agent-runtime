@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Embodied Agent Runtime Task Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "action", "target", "deadline_s"],
+  "properties": {
+    "contract_version": {
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "action": {
+      "type": "string",
+      "enum": ["navigate"]
+    },
+    "target": {
+      "type": "string",
+      "enum": ["dock", "workbench", "home"]
+    },
+    "deadline_s": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 90
+    }
+  }
+}
