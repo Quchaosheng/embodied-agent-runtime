@@ -5,6 +5,7 @@
 - [ ] 4 个 `package.xml` 的 maintainer、公开邮箱和 license 已替换。
 - [ ] `agent_gateway/setup.py` 的相同元数据已同步。
 - [ ] 仓库根目录存在 LICENSE 文件，并与 package metadata 一致。
+- [ ] `THIRD_PARTY_NOTICES.md` 区分当前依赖与规划/参考项目。
 - [ ] `bash scripts/verify_release.sh` 完整通过。
 - [ ] `git status` 不包含 `build/`、`install/`、`log/`、缓存或密钥。
 - [ ] README 中没有把真实 Nav2、真实模型或硬件集成写成已完成。

@@ -1,30 +1,36 @@
 # Upstream Dependencies
 
-This project composes upstream projects through their public APIs. It does not
-copy their source into this repository.
+This project composes upstream projects through installed packages and public
+APIs. It does not copy their source into this repository. Direct dependency
+and license acknowledgements are recorded in `THIRD_PARTY_NOTICES.md`.
 
-| Upstream project | Role in this project | Integration boundary |
+## Implemented dependencies
+
+| Upstream project | Current role | Integration boundary |
 | --- | --- | --- |
 | Navigation2 | Navigation executor | `nav2_msgs/action/NavigateToPose` Action Client |
-| BehaviorTree.CPP | Static task-level recovery | Predefined, reviewed recovery tree only |
-| ROS 2 examples | Learning reference | No runtime dependency |
-| Qwen-Agent | Tool-calling protocol reference | No runtime dependency and no framework import |
-| TurtleBot3 | Reproducible robot model | Simulation dependency |
-| TurtleBot3 Simulations | Nav2 simulation environment | Launch and map dependency |
+| ROS 2 Jazzy | Nodes, Actions, interfaces, package discovery | `rclcpp`, `rclpy`, ament, rosidl |
+| yaml-cpp | Reviewed policy and target configuration | Linked C++ library |
+| python-jsonschema | Model-output Schema validation | Installed Python package |
+| GoogleTest, pytest, launch_testing | Unit and process verification | Test-only dependencies |
 
-## Planned runtime dependencies
+All current direct dependencies are declared in the package manifests and are
+installed by `rosdep`; their source repositories are not Git submodules.
 
-- ROS 2: `rclcpp`, `rclcpp_action`, `rclcpp_lifecycle`, `nav2_msgs`,
-  `geometry_msgs`, `tf2_geometry_msgs`, and `diagnostic_updater`.
-- C++: `nlohmann_json`, `yaml-cpp`, and BehaviorTree.CPP.
-- Verification and presentation: `ament_cmake_gtest`, `launch_testing`,
-  `rviz2`, `visualization_msgs`, `foxglove_bridge`, and `rosbag2`.
+## Planned or reference-only projects
+
+- BehaviorTree.CPP: optional reviewed recovery workflow; not currently linked.
+- TurtleBot3 and TurtleBot3 Simulations: planned system demonstration; not
+  currently installed as a package dependency.
+- Foxglove bridge, RViz markers, and rosbag2: planned observability evidence.
+- Qwen-Agent and ROS 2 examples: learning references only; no framework import.
 - Optional device-readiness extension: Linux SocketCAN and `can-utils` for a
   `vcan0` test bus. This is introduced only after the core Runtime is stable.
 
 ## Version policy
 
-The first supported environment will be Ubuntu 24.04 with ROS 2 Jazzy. Before
-the first Nav2 build, a `deps.repos` file will pin the matching upstream
-branches or commits. Reference repositories currently downloaded in the parent
-directory must not be treated as a compatible build set until then.
+The supported environment is Ubuntu 24.04 with ROS 2 Jazzy. Prefer ROS binary
+packages resolved by `rosdep`. Add a pinned `deps.repos` file only when a
+required dependency cannot be supplied by the supported ROS distribution.
+Reference repositories outside this project must not be treated as part of the
+build or uploaded with this repository.
