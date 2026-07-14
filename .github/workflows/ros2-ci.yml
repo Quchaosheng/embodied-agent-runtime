@@ -37,6 +37,18 @@ jobs:
           mkdir -p /tmp/embodied_ws/src
           ln -s "${GITHUB_WORKSPACE}" /tmp/embodied_ws/src/embodied-agent-runtime
           source /opt/ros/jazzy/setup.bash
+          if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
+            rosdep init
+          fi
+          for attempt in 1 2 3; do
+            if rosdep update --rosdistro jazzy; then
+              break
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              exit 1
+            fi
+            sleep 5
+          done
           rosdep install \
             --from-paths /tmp/embodied_ws/src \
             --ignore-src \

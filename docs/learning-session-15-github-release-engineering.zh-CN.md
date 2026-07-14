@@ -23,6 +23,8 @@
 5. 运行 Runtime 与 AI Gateway 两个进程 smoke。
 
 CI 不配置模型 Key，只使用 Fake Provider，因此不会产生模型费用，也不会连接真实硬件。
+容器还会在缺少 rosdep sources 时执行 `rosdep init`，然后最多重试三次
+`rosdep update --rosdistro jazzy`，避免全新 runner 尚未初始化或短暂网络波动。
 
 ### 2. 本地发布门禁
 
