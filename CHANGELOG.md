@@ -17,6 +17,7 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
 - Twenty-case Chinese intent evaluation and no-ROS provider probe.
 - ROS 2 Jazzy GitHub Actions workflow and release verification gate.
 - Third-party dependency and license inventory without vendored source trees.
+- CI rosdep initialization and bounded update retry for clean GitHub runners.
 
 ### Not Yet Released
 
