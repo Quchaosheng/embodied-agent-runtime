@@ -1,0 +1,26 @@
+# Placeholder map-frame poses. These values are replaced by the first
+# TurtleBot3/Nav2 map and remain version-controlled runtime configuration.
+targets:
+  dock:
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  workbench:
+    frame_id: map
+    x: 1.0
+    y: 0.0
+    yaw: 0.0
+  home:
+    frame_id: map
+    x: 0.0
+    y: 1.0
+    yaw: 1.57
+
+keepout_zones:
+  - name: restricted_area
+    polygon:
+      - [2.0, 2.0]
+      - [3.0, 2.0]
+      - [3.0, 3.0]
+      - [2.0, 3.0]
