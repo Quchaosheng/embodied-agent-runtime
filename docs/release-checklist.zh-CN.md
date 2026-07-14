@@ -2,13 +2,13 @@
 
 ## 上传前必须完成
 
-- [ ] 4 个 `package.xml` 的 maintainer、公开邮箱和 license 已替换。
+- [ ] 5 个 `package.xml` 的 maintainer、公开邮箱和 license 已替换。
 - [ ] `agent_gateway/setup.py` 的相同元数据已同步。
 - [ ] 仓库根目录存在 LICENSE 文件，并与 package metadata 一致。
 - [ ] `THIRD_PARTY_NOTICES.md` 区分当前依赖与规划/参考项目。
 - [ ] `bash scripts/verify_release.sh` 完整通过。
 - [ ] `git status` 不包含 `build/`、`install/`、`log/`、缓存或密钥。
-- [ ] README 中没有把真实 Nav2、真实模型或硬件集成写成已完成。
+- [ ] README 没有把未运行的 Nav2 smoke、真实模型或硬件集成写成已完成。
 - [ ] 中转站、OpenAI 和 GitHub 凭据都没有进入文件或命令历史。
 
 ## GitHub 身份信息
@@ -71,7 +71,7 @@ ssh-keygen -t ed25519 -C "你的公开 GitHub 邮箱"
 ## 上传后检查
 
 - [ ] GitHub Actions 的 ROS 2 CI 为绿色。
-- [ ] README 首页能直接看到中文速览和 64 tests 证据。
+- [ ] README 首页能直接看到中文速览和 74 tests 证据。
 - [ ] 仓库 About 填写 ROS 2、embodied AI、Nav2、safety runtime。
 - [ ] Topics 建议：`ros2`、`robotics`、`embodied-ai`、`nav2`、`cpp`、`python`。
 - [ ] 默认分支为 `main`。

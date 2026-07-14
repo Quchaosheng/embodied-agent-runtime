@@ -45,10 +45,12 @@ Run it with:
     colcon test --packages-select task_executor
     colcon test-result --verbose
 
-Not complete yet:
+System integration status:
 
-- bounded retry and recovery state transitions.
-- connection to a running Nav2 stack.
-- reviewed recovery actions beyond the minimal fixed retry loop.
+- `runtime_simulation` now launches this server against a real Nav2 stack and
+  provides a headless two-Goal smoke; local execution still needs the full
+  TurtleBot3/Nav2 packages installed.
+- ROS diagnostics, persistent rosbag evidence, and reviewed recovery actions
+  beyond the minimal fixed retry loop remain future work.
 
 No model-facing code belongs in this package.
