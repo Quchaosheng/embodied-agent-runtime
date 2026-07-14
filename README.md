@@ -5,7 +5,7 @@ tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
 > Current status: ROS 2 Jazzy workspace verified. Four packages build
-> successfully. Latest local evidence: 64 tests, 0 errors, 0 failures, plus
+> successfully. Latest local evidence: 70 tests, 0 errors, 0 failures, plus
 > repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
 > Action bridge and offline Fake AI now turn Chinese user intent into a guarded
 > task and return feedback/result. A version-controlled set of 20 Chinese intent
@@ -16,6 +16,10 @@ trajectories, recovery logic, or Nav2.
 > Runtime launch tests cover outer Action success, feedback,
 > Guard rejection, confirmed cancellation, global deadline expiry, and process
 > cleanup. Bounded retry, recovery exhaustion, and SAFE_STOP are also verified.
+> Runtime readiness now comes from the live `map -> base_link` TF and Nav2
+> Action discovery instead of hard-coded booleans. Concurrent Goals are
+> serialized by an atomic task reservation and readiness is published on the
+> standard `/diagnostics` topic.
 > Version-controlled target pose loading is complete; real Nav2 and TurtleBot3
 > simulation remain next.
 
@@ -31,13 +35,13 @@ trajectories, recovery logic, or Nav2.
 | --- | --- |
 | ROS 2 包 | 4 个：契约、Guard、执行器、AI Gateway |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
-| 安全机制 | 严格 Schema、重复键拒绝、全局 deadline、确认取消、有限恢复、失败关闭 YAML |
-| 自动化测试 | 64 tests，覆盖 C++ 单测、Python 单测和 9 个进程级 launch 用例 |
+| 安全机制 | 严格 Schema、TF/Nav2 readiness、原子 BUSY、全局 deadline、确认取消、有限恢复 |
+| 自动化测试 | 70 tests，覆盖 C++ 单测、Python 单测和 14 个进程级 launch 用例 |
 | AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
 | 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
-| 学习沉淀 | 15 课中文实现笔记与 24 个技术复习问答 |
+| 学习沉淀 | 16 课中文实现笔记与实机 readiness 技术复习问答 |
 
 项目当前没有把真实 Nav2/TurtleBot3、真实模型联网或硬件安全说成已完成。README、
 测试输出和 roadmap 明确区分“已实现、已离线验证、待系统集成”。
@@ -95,6 +99,12 @@ to reviewed poses by runtime configuration.
 - C++ task types, states, and explicit error codes.
 - task_guard checks contract version, action, target, deadline, active-task
   state, localization readiness, and navigation readiness.
+- `task_executor` derives localization readiness from the live
+  `map -> base_link` TF and navigation readiness from Nav2 Action discovery.
+- An atomic task reservation rejects overlapping valid Goals with error 15;
+  RAII releases the slot on success, rejection, cancellation, timeout, or recovery failure.
+- `/diagnostics` reports localization, navigation, task-active state, and the
+  required frame pair once per second for simulation and hardware operations.
 - Version-controlled YAML GuardPolicy loading with fail-closed validation.
 - Strict Gateway JSON parsing, duplicate-field rejection, and Draft 7 Schema validation.
 - Provider-independent Gateway Action Client, generated task IDs, stable
@@ -130,7 +140,7 @@ to reviewed poses by runtime configuration.
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
 | M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
-| M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
+| M5 gateway and observability | In progress | OpenAI/relay profiles, fixed intent evaluation, and Runtime diagnostics complete; live credentials and events remain |
 | M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
 
 ## Build and test
@@ -162,7 +172,7 @@ Run the process-level M2 proof after building:
 Current milestone evidence:
 
     Summary: 4 packages finished
-    Summary: 64 tests, 0 errors, 0 failures, 0 skipped
+    Summary: 70 tests, 0 errors, 0 failures, 0 skipped
 
 Run the offline AI-to-ROS proof:
 
@@ -195,6 +205,15 @@ The AI smoke verifies three feedback messages and a successful terminal result.
 The Runtime smoke separately verifies `final_state: 5` for `dock`, then checks
 that `laboratory` returns `error_code: 13` with `attempts: 0` before an inner
 navigation Goal is sent.
+
+Observe the live Runtime readiness used by the Guard:
+
+    ros2 topic echo /diagnostics diagnostic_msgs/msg/DiagnosticArray
+
+Production mode requires a valid `map -> base_link` transform and a discovered
+`NavigateToPose` Action server. The two deterministic smoke scripts explicitly
+set `localization_check_enabled:=false` because their fake navigation process
+has no localization or TF tree; diagnostics reports this bypass as `WARN`.
 
 ## Repository map
 

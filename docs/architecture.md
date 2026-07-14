@@ -24,6 +24,13 @@ The runtime owns:
 - Allowed targets, maximum deadline, retry count, and keepout policy.
 - The task state machine and all cancellation propagation.
 - Navigation result handling and recovery decisions.
+- A single atomic task reservation released on every terminal path.
+
+`RobotContext` is assembled at request time. Localization readiness requires a
+live `map -> base_link` TF, navigation readiness requires the Nav2
+`NavigateToPose` Action server, and task activity comes from the atomic
+reservation. The same values are published on `/diagnostics`; they are no
+longer hard-coded test booleans.
 
 Nav2 owns planning, control, local obstacle avoidance, and its internal
 recovery behavior. The model owns none of these decisions.

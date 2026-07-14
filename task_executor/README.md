@@ -8,6 +8,10 @@ The package now contains the first M2 runtime slice:
   map-frame pose quaternion.
 - It forwards NavigateToPose feedback to ExecuteTask feedback.
 - It propagates outer cancellation to the inner Goal with bounded confirmation.
+- It derives localization readiness from `map -> base_link` TF and navigation
+  readiness from live `NavigateToPose` Action discovery.
+- It atomically reserves one task slot and returns error 15 for an overlapping Goal.
+- It publishes localization, navigation, and BUSY state on `/diagnostics`.
 - fake_navigate_to_pose_server uses the real nav2_msgs Action type and produces
   deterministic feedback, success, and cancellation behavior.
 
@@ -38,6 +42,10 @@ Automated launch evidence:
   from the installed task_guard policy.
 - one failed navigation emits RECOVERING and retries once within the original
   deadline; two failures end in SAFE_STOP with error 34.
+- a second Goal is aborted with error 15 while the first owns the task slot.
+- missing localization TF returns error 16 and missing Nav2 returns error 17.
+- diagnostics distinguish ready, localization-unavailable, navigation-unavailable,
+  task-active, and explicit localization-check bypass states.
 - both test processes exit cleanly.
 
 Run it with:
@@ -47,8 +55,8 @@ Run it with:
 
 Not complete yet:
 
-- bounded retry and recovery state transitions.
-- connection to a running Nav2 stack.
+- connection to a running Nav2 stack and physical robot.
+- hardware emergency-stop, motor watchdog, and device heartbeat integration.
 - reviewed recovery actions beyond the minimal fixed retry loop.
 
 No model-facing code belongs in this package.

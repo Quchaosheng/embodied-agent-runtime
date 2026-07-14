@@ -76,6 +76,9 @@ Deliver:
 - Minimal `agent_gateway` that converts a model response to the JSON contract.
 - `TaskEvent` publisher, diagnostics, Foxglove visualization, and rosbag demo.
 
+Current: model profiles, fixed intent evaluation, and live Runtime diagnostics
+are implemented. TaskEvent, Foxglove, and rosbag evidence remain.
+
 Accept: changing the model provider does not modify Guard, executor, or Nav2
 code.
 
