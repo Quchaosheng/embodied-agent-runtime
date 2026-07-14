@@ -61,14 +61,13 @@ Proof: a fake Nav2 server that aborts twice produces exactly two attempts and
 
 ## Session 5: TurtleBot3 Simulation
 
-Read the TurtleBot3 launch files in `reading-map.md` and start the selected
-simulation world.
+Read the TurtleBot3 launch files in `reading-map.md`, then compare them with
+`simulation/launch/runtime_nav2_sim.launch.py`. Trace how world, map, spawn
+pose, AMCL initial pose, simulated time, and Nav2 lifecycle fit together.
 
-Build next: one launch command for the Runtime plus Nav2 and TurtleBot3.
-Replace the placeholder target poses only after inspecting the simulation map.
-
-Proof: `dock`, `workbench`, and `home` succeed repeatedly. RViz displays each
-target, the current Goal, and the restricted area.
+Proof: run `scripts/smoke_nav2_sim.sh` and explain why its two real-Nav2 Goals
+complement rather than replace the deterministic fake-Action tests. RViz must
+display each target and label the current restricted polygon as unenforced.
 
 ## Session 6: Gateway Protocol
 

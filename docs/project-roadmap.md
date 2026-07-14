@@ -60,12 +60,16 @@ Learn: `NavigateToPose` feedback/result and Nav2 recovery behavior.
 
 Deliver:
 
-- Reproducible map, launch file, named targets, and one keepout zone.
+- Reproducible TurtleBot3/Gazebo/Nav2 launch, matching map, and named targets.
 - Target-pose mapping loaded only from version-controlled configuration.
 - RViz markers for targets and the restricted area.
 
-Accept: `dock`, `workbench`, and `home` can be reached in simulation; invalid
-targets and keepout requests are refused by the Runtime.
+Current: launch composition, AMCL initialization, reviewed target poses, RViz
+markers, and a two-Goal headless smoke are implemented. Local execution waits
+for the full simulation packages.
+
+Accept: `dock`, `workbench`, and `home` can be reached in simulation. Keepout
+acceptance remains separate until a Nav2 costmap filter and refusal test exist.
 
 ## M5: Gateway and observability
 

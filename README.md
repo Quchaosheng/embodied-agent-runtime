@@ -4,8 +4,8 @@ A safety-bounded ROS 2 runtime that lets an AI model request approved robot
 tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
-> Current status: ROS 2 Jazzy workspace verified. Four packages build
-> successfully. Latest local evidence: 64 tests, 0 errors, 0 failures, plus
+> Current status: ROS 2 Jazzy workspace verified. Five packages build
+> successfully. Latest local evidence: 74 tests, 0 errors, 0 failures, plus
 > repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
 > Action bridge and offline Fake AI now turn Chinese user intent into a guarded
 > task and return feedback/result. A version-controlled set of 20 Chinese intent
@@ -16,8 +16,10 @@ trajectories, recovery logic, or Nav2.
 > Runtime launch tests cover outer Action success, feedback,
 > Guard rejection, confirmed cancellation, global deadline expiry, and process
 > cleanup. Bounded retry, recovery exhaustion, and SAFE_STOP are also verified.
-> Version-controlled target pose loading is complete; real Nav2 and TurtleBot3
-> simulation remain next.
+> A reproducible TurtleBot3 Burger + Gazebo Sim + AMCL + Nav2 launch, initial
+> localization helper, RViz scene view, and headless system smoke are now
+> implemented. This machine still needs the full simulation packages before a
+> real Gazebo run can be recorded, so system evidence remains explicitly open.
 
 ## 中文速览
 
@@ -29,18 +31,19 @@ trajectories, recovery logic, or Nav2.
 
 | 维度 | 当前证据 |
 | --- | --- |
-| ROS 2 包 | 4 个：契约、Guard、执行器、AI Gateway |
+| ROS 2 包 | 5 个：契约、Guard、执行器、AI Gateway、Nav2 仿真编排 |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、重复键拒绝、全局 deadline、确认取消、有限恢复、失败关闭 YAML |
-| 自动化测试 | 64 tests，覆盖 C++ 单测、Python 单测和 9 个进程级 launch 用例 |
+| 自动化测试 | 74 tests，覆盖 C++ 单测、Python 单测、地图/场景配置和 9 个进程级 launch 用例 |
 | AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
-| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe |
+| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe、Nav2 headless smoke 脚本 |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
-| 学习沉淀 | 15 课中文实现笔记与 24 个技术复习问答 |
+| 学习沉淀 | 16 课中文实现笔记与 Nav2 系统集成技术复习问答 |
 
-项目当前没有把真实 Nav2/TurtleBot3、真实模型联网或硬件安全说成已完成。README、
-测试输出和 roadmap 明确区分“已实现、已离线验证、待系统集成”。
+项目当前没有把“写好 Nav2 launch”说成“真实 Gazebo 已跑通”，也没有把真实模型联网
+或硬件安全说成已完成。README、测试输出和 roadmap 明确区分“已实现、已离线验证、
+待本机系统验证”。
 
 ## Why this project exists
 
@@ -62,8 +65,8 @@ Nav2 Goal exists.
       -> ExecuteTask Action Server                implemented outer lifecycle
       -> task_guard                               implemented safety authority
       -> task_executor                            implemented outer/inner adapter
-      -> NavigateToPose Action / Nav2             fake server implemented; real integration planned
-      -> TurtleBot3 simulation                    planned system demo
+      -> NavigateToPose Action / Nav2             fake tests + real launch implemented
+      -> TurtleBot3 Burger / Gazebo Sim           local system run pending dependencies
 
 The Guard decision combines three inputs:
 
@@ -117,6 +120,14 @@ to reviewed poses by runtime configuration.
   enforcement, finite coordinates, normalized yaw, and quaternion conversion.
 - Deterministic fake NavigateToPose Action Server using the real `nav2_msgs`
   interface.
+- `runtime_simulation` composes TurtleBot3 Burger, Gazebo Sim, the matching
+  static map, AMCL, Nav2 lifecycle bringup, the Runtime, and an RViz scene view.
+- Bounded AMCL initial-pose publication aligns localization with the Gazebo
+  spawn pose; named targets use reviewed free cells on the upstream map.
+- An occupancy-grid validator rejects named targets outside the map, on
+  occupied/unknown cells, or without 0.32 m Burger clearance.
+- A headless system smoke waits for active Nav2 and sends two sequential
+  `ExecuteTask` Goals through the real `NavigateToPose` server.
 - Unit tests for accepted requests, semantic rejection, invalid policy files, and malformed JSON.
 - `launch_testing` coverage for feedback/result mapping, unknown targets,
   cancellation propagation, and clean process shutdown.
@@ -129,7 +140,7 @@ to reviewed poses by runtime configuration.
 | M1 contract and semantic Guard | Complete | Guard, YAML policy, and strict JSON adapter verified |
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
-| M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
+| M4 Nav2 and TurtleBot3 | In progress | Reproducible launch and smoke implemented; local packages and live Gazebo evidence pending |
 | M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
 | M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
 
@@ -141,9 +152,9 @@ before building so CMake uses /usr/bin/python3.
     cd ~/embodied_ws
     source /opt/ros/jazzy/setup.bash
     rosdep install --from-paths src --ignore-src --rosdistro jazzy -r -y
-    colcon build --symlink-install --packages-up-to task_executor agent_gateway
+    colcon build --symlink-install --packages-up-to runtime_simulation agent_gateway
     source install/setup.bash
-    colcon test --packages-select task_guard agent_gateway task_executor
+    colcon test --packages-select task_guard agent_gateway task_executor runtime_simulation
     colcon test-result --verbose
 
 Run the complete pre-push release gate from the repository root:
@@ -151,7 +162,7 @@ Run the complete pre-push release gate from the repository root:
     bash scripts/verify_release.sh
 
 This command checks repository metadata and possible credentials, rebuilds all
-four packages, runs the complete test result set, evaluates 20 offline Chinese
+five packages, runs the complete non-Gazebo test result set, evaluates 20 offline Chinese
 intents, and runs both process smoke tests. GitHub Actions reproduces the same
 core evidence on Ubuntu 24.04 with ROS 2 Jazzy.
 
@@ -161,8 +172,8 @@ Run the process-level M2 proof after building:
 
 Current milestone evidence:
 
-    Summary: 4 packages finished
-    Summary: 64 tests, 0 errors, 0 failures, 0 skipped
+    Summary: 5 packages finished
+    Summary: 74 tests, 0 errors, 0 failures, 0 skipped
 
 Run the offline AI-to-ROS proof:
 
@@ -191,6 +202,33 @@ Real-provider evaluation sends 20 model requests and may incur service cost. A
 request that is unsupported, negated, or asks for multiple targets is expected
 to produce no tool call and is rejected before ROS.
 
+## Nav2 and TurtleBot3 system simulation
+
+Install the real system dependencies once:
+
+    sudo apt update
+    sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+      ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-navigation2
+
+Then build and start the graphical system:
+
+    cd ~/embodied_ws
+    source /opt/ros/jazzy/setup.bash
+    colcon build --symlink-install --packages-up-to runtime_simulation
+    source install/setup.bash
+    ros2 launch runtime_simulation runtime_nav2_sim.launch.py
+
+For repeatable evidence instead of a manual RViz click-through:
+
+    bash src/embodied-agent-runtime/scripts/smoke_nav2_sim.sh
+
+The smoke launches headless Gazebo, waits for Nav2 lifecycle activation, and
+sends `home -> dock -> workbench` as two outer Runtime Goals. It is deliberately
+kept separate from the fast release gate because a full physics simulation is
+slower and needs additional system packages. The configured restricted-area
+polygon is currently an RViz marker with `enforced: false`; Nav2 keepout-filter
+enforcement is not claimed.
+
 The AI smoke verifies three feedback messages and a successful terminal result.
 The Runtime smoke separately verifies `final_state: 5` for `dock`, then checks
 that `laboratory` returns `error_code: 13` with `attempts: 0` before an inner
@@ -204,7 +242,7 @@ navigation Goal is sent.
 | task_guard | C++ validation and static safety policy |
 | task_executor | Outer Action Server and inner Nav2 Action Client |
 | agent_gateway | Model-output normalization, provider boundary, and outer Action Client |
-| simulation | TurtleBot3/Nav2 maps, targets, and launch configuration |
+| simulation | TurtleBot3/Gazebo/Nav2 launch, AMCL initialization, targets, markers, and system smoke support |
 | test | Deterministic fault and simulation scenarios |
 | docs | Architecture, roadmap, learning, and project material |
 

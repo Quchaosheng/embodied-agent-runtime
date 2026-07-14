@@ -61,7 +61,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install \
-            --packages-up-to task_executor agent_gateway
+            --packages-up-to runtime_simulation agent_gateway
 
       - name: Run tests
         shell: bash
@@ -70,7 +70,7 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test --packages-select \
-            task_contract task_guard task_executor agent_gateway
+            task_contract task_guard task_executor agent_gateway runtime_simulation
           colcon test-result --verbose
 
       - name: Run offline intent evaluation
