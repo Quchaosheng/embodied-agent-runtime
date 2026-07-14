@@ -7,6 +7,8 @@ The package now contains the first M2 runtime slice:
 - It loads named targets from version-controlled YAML and converts yaw to a
   map-frame pose quaternion.
 - It forwards NavigateToPose feedback to ExecuteTask feedback.
+- It publishes reliable transient-local TaskEvent transitions with terminal
+  error codes and attempt counts.
 - It propagates outer cancellation to the inner Goal with bounded confirmation.
 - fake_navigate_to_pose_server uses the real nav2_msgs Action type and produces
   deterministic feedback, success, and cancellation behavior.
@@ -38,6 +40,8 @@ Automated launch evidence:
   from the installed task_guard policy.
 - one failed navigation emits RECOVERING and retries once within the original
   deadline; two failures end in SAFE_STOP with error 34.
+- TaskEvent sequences cover success, Guard rejection, cancellation, deadline,
+  retry, and recovery exhaustion; a late subscriber receives retained history.
 - both test processes exit cleanly.
 
 Run it with:
@@ -47,8 +51,8 @@ Run it with:
 
 Not complete yet:
 
-- bounded retry and recovery state transitions.
 - connection to a running Nav2 stack.
+- ROS diagnostics and persistent rosbag evidence.
 - reviewed recovery actions beyond the minimal fixed retry loop.
 
 No model-facing code belongs in this package.

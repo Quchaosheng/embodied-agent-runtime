@@ -82,7 +82,10 @@ executor, Nav2, or simulation file.
 
 ## Session 7: Observability and Regression
 
-Build next: publish `TaskEvent`, collect diagnostics, open the data in
+Implemented: publish reliable transient-local `TaskEvent` transitions and
+verify complete lifecycle sequences plus late-subscriber history.
+
+Build next: collect ROS diagnostics, open TaskEvent and health data in
 Foxglove, and record one rosbag.
 
 Proof: the test suite contains twenty fixed scenarios and the README contains

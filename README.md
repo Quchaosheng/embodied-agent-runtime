@@ -5,7 +5,7 @@ tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
 > Current status: ROS 2 Jazzy workspace verified. Four packages build
-> successfully. Latest local evidence: 64 tests, 0 errors, 0 failures, plus
+> successfully. Latest local evidence: 65 tests, 0 errors, 0 failures, plus
 > repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
 > Action bridge and offline Fake AI now turn Chinese user intent into a guarded
 > task and return feedback/result. A version-controlled set of 20 Chinese intent
@@ -32,7 +32,7 @@ trajectories, recovery logic, or Nav2.
 | ROS 2 包 | 4 个：契约、Guard、执行器、AI Gateway |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、重复键拒绝、全局 deadline、确认取消、有限恢复、失败关闭 YAML |
-| 自动化测试 | 64 tests，覆盖 C++ 单测、Python 单测和 9 个进程级 launch 用例 |
+| 自动化测试 | 65 tests，覆盖 C++ 单测、Python 单测和 10 个进程级 launch 用例 |
 | AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
 | 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
@@ -108,6 +108,9 @@ to reviewed poses by runtime configuration.
   fail-closed cases, including negation, multiple targets, and prompt injection.
 - Outer ExecuteTask Action Server with named-target mapping and bounded inner
   cancellation confirmation.
+- Reliable transient-local `TaskEvent` stream for validation, dispatch,
+  running, recovery, cancellation, and every terminal state; late subscribers
+  can inspect the most recent 50 transitions without replaying a task.
 - Global task deadline based on monotonic time, followed by a fixed 500 ms
   cancellation-confirmation grace period.
 - Version-controlled recovery policy with two total navigation attempts.
@@ -130,7 +133,7 @@ to reviewed poses by runtime configuration.
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
 | M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
-| M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
+| M5 gateway and observability | In progress | Provider profiles, intent evaluation, and TaskEvent complete; live credentials and diagnostics remain |
 | M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
 
 ## Build and test
@@ -162,7 +165,7 @@ Run the process-level M2 proof after building:
 Current milestone evidence:
 
     Summary: 4 packages finished
-    Summary: 64 tests, 0 errors, 0 failures, 0 skipped
+    Summary: 65 tests, 0 errors, 0 failures, 0 skipped
 
 Run the offline AI-to-ROS proof:
 
@@ -195,6 +198,16 @@ The AI smoke verifies three feedback messages and a successful terminal result.
 The Runtime smoke separately verifies `final_state: 5` for `dock`, then checks
 that `laboratory` returns `error_code: 13` with `attempts: 0` before an inner
 navigation Goal is sent.
+
+Observe task transitions without becoming the Action client:
+
+    ros2 topic echo /task_events task_contract/msg/TaskEvent \
+      --qos-reliability reliable \
+      --qos-durability transient_local \
+      --qos-depth 50
+
+The retained history is process-local observability, not a persistent audit
+log. Rosbag-based replay and ROS diagnostics remain separate roadmap items.
 
 ## Repository map
 
@@ -247,6 +260,7 @@ hardware.
 - Chinese project answers: docs/project-talking-points.zh-CN.md
 - Latest guided lesson: docs/learning-session-14-openai-and-relay.zh-CN.md
 - GitHub release lesson: docs/learning-session-15-github-release-engineering.zh-CN.md
+- TaskEvent observability lesson: docs/learning-session-16-task-event-observability.zh-CN.md
 - Architecture and trust boundary: docs/architecture.md
 - Ordered implementation roadmap: docs/project-roadmap.md
 - Final demonstration: docs/final-demo-spec.md
