@@ -18,6 +18,8 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
 - ROS 2 Jazzy GitHub Actions workflow and release verification gate.
 - Third-party dependency and license inventory without vendored source trees.
 - CI rosdep initialization and bounded update retry for clean GitHub runners.
+- GitHub-native SVG hero, trust-boundary architecture, fail-closed flow, state
+  machine, and project status badges.
 
 ### Not Yet Released
 
