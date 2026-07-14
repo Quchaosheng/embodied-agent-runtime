@@ -1,17 +1,26 @@
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "task_contract/action/execute_task.hpp"
 #include "task_executor/target_map.hpp"
 #include "task_guard/task_guard.hpp"
+#include "tf2/time.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 
 using namespace std::chrono_literals;
 
@@ -32,7 +41,18 @@ class ExecuteTaskServer : public rclcpp::Node {
             ament_index_cpp::get_package_share_directory("task_guard") +
             "/config/task_policy.yaml")),
         guard_(policy_) {
+    localization_check_enabled_ = declare_parameter<bool>("localization_check_enabled", true);
+    map_frame_ = declare_parameter<std::string>("map_frame", "map");
+    base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
+    if (map_frame_.empty() || base_frame_.empty() || map_frame_ == base_frame_) {
+      throw std::invalid_argument("map_frame and base_frame must be non-empty and different");
+    }
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
     nav_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
+    diagnostics_publisher_ =
+        create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+    diagnostics_timer_ = create_wall_timer(1s, [this]() { publish_diagnostics(); });
     server_ = rclcpp_action::create_server<ExecuteTask>(
         this, "execute_task",
         [](const rclcpp_action::GoalUUID&, std::shared_ptr<const ExecuteTask::Goal>) {
@@ -45,6 +65,75 @@ class ExecuteTaskServer : public rclcpp::Node {
   }
 
  private:
+  class TaskReservation {
+   public:
+    explicit TaskReservation(std::atomic<bool>& active) : active_(active) {
+      bool expected = false;
+      acquired_ = active_.compare_exchange_strong(expected, true);
+    }
+
+    ~TaskReservation() {
+      if (acquired_) {
+        active_.store(false);
+      }
+    }
+
+    TaskReservation(const TaskReservation&) = delete;
+    TaskReservation& operator=(const TaskReservation&) = delete;
+
+    bool acquired() const { return acquired_; }
+
+   private:
+    std::atomic<bool>& active_;
+    bool acquired_{false};
+  };
+
+  bool localization_ready() const {
+    return !localization_check_enabled_ ||
+           tf_buffer_->canTransform(map_frame_, base_frame_, tf2::TimePointZero);
+  }
+
+  task_guard::RobotContext robot_context(bool task_active) const {
+    return {localization_ready(), nav_client_->action_server_is_ready(), task_active};
+  }
+
+  static diagnostic_msgs::msg::KeyValue diagnostic_value(const std::string& key, bool value) {
+    diagnostic_msgs::msg::KeyValue item;
+    item.key = key;
+    item.value = value ? "true" : "false";
+    return item;
+  }
+
+  void publish_diagnostics() {
+    const auto context = robot_context(task_active_.load());
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.name = get_fully_qualified_name() + std::string("/readiness");
+    status.hardware_id = "embodied_runtime";
+    if (!context.localization_ready || !context.navigation_ready) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.message = !context.localization_ready ? "localization transform unavailable"
+                                                   : "NavigateToPose Action unavailable";
+    } else if (!localization_check_enabled_) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status.message = "localization transform check disabled";
+    } else {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      status.message = context.task_active ? "ready; task active" : "ready; idle";
+    }
+    status.values.push_back(diagnostic_value("localization_ready", context.localization_ready));
+    status.values.push_back(diagnostic_value("navigation_ready", context.navigation_ready));
+    status.values.push_back(diagnostic_value("task_active", context.task_active));
+    diagnostic_msgs::msg::KeyValue frames;
+    frames.key = "required_transform";
+    frames.value = map_frame_ + " -> " + base_frame_;
+    status.values.push_back(frames);
+
+    diagnostic_msgs::msg::DiagnosticArray message;
+    message.header.stamp = now();
+    message.status.push_back(std::move(status));
+    diagnostics_publisher_->publish(message);
+  }
+
   task_contract::TaskRequest request(const ExecuteTask::Goal& goal) const {
     return {goal.contract_version, static_cast<task_contract::TaskAction>(goal.action),
             goal.task_id, goal.target, goal.deadline_s};
@@ -103,8 +192,9 @@ class ExecuteTaskServer : public rclcpp::Node {
 
   void execute(const std::shared_ptr<OuterHandle>& handle) {
     const auto started_at = std::chrono::steady_clock::now();
-    const task_guard::RobotContext ready{true, true, false};
-    const auto validation = guard_.validate(request(*handle->get_goal()), ready);
+    TaskReservation reservation(task_active_);
+    const auto context = robot_context(!reservation.acquired());
+    const auto validation = guard_.validate(request(*handle->get_goal()), context);
     if (!validation.accepted()) {
       abort_with(handle, validation.code, validation.detail);
       return;
@@ -241,7 +331,15 @@ class ExecuteTaskServer : public rclcpp::Node {
   task_executor::TargetMap targets_;
   task_guard::GuardPolicy policy_;
   task_guard::TaskGuard guard_;
+  bool localization_check_enabled_{true};
+  std::string map_frame_;
+  std::string base_frame_;
+  std::atomic<bool> task_active_{false};
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr nav_client_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
+  rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Server<ExecuteTask>::SharedPtr server_;
 };
 
