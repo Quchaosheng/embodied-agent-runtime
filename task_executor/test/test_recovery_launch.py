@@ -22,6 +22,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="retry_success",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     exhausted_navigation = launch_ros.actions.Node(
@@ -35,6 +36,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="recovery_exhausted",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     deadline_navigation = launch_ros.actions.Node(
@@ -48,6 +50,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="retry_deadline",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     return launch.LaunchDescription(

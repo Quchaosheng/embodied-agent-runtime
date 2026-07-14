@@ -22,6 +22,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         output="screen",
+        parameters=[{"localization_check_enabled": False}],
     )
     return launch.LaunchDescription(
         [
@@ -124,6 +125,29 @@ class TestExecuteTaskLifecycle(unittest.TestCase):
         self.assertEqual(response.result.final_state, ExecuteTask.Result.STATE_FAILED)
         self.assertEqual(response.result.error_code, 32)
         self.assertEqual(response.result.attempts, 1)
+
+    def test_second_goal_is_rejected_while_task_is_active(self):
+        first_feedback = []
+        first_goal = self.send_goal("dock", "launch-busy-owner", first_feedback)
+        self.wait_for_feedback(first_feedback)
+
+        second_goal = self.send_goal("home", "launch-busy-rejected", [])
+        second_response = self.get_result(second_goal)
+
+        self.assertEqual(second_response.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(second_response.result.final_state, ExecuteTask.Result.STATE_FAILED)
+        self.assertEqual(second_response.result.error_code, 15)
+        self.assertEqual(second_response.result.attempts, 0)
+
+        cancel_response = self.wait_for(first_goal.cancel_goal_async())
+        self.assertEqual(len(cancel_response.goals_canceling), 1)
+        first_response = self.get_result(first_goal)
+        self.assertEqual(first_response.status, GoalStatus.STATUS_CANCELED)
+
+        third_goal = self.send_goal("home", "launch-after-busy", [])
+        third_response = self.get_result(third_goal)
+        self.assertEqual(third_response.status, GoalStatus.STATUS_SUCCEEDED)
+        self.assertEqual(third_response.result.error_code, 0)
 
 
 @launch_testing.post_shutdown_test()

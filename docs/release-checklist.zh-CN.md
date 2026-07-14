@@ -71,7 +71,7 @@ ssh-keygen -t ed25519 -C "你的公开 GitHub 邮箱"
 ## 上传后检查
 
 - [ ] GitHub Actions 的 ROS 2 CI 为绿色。
-- [ ] README 首页能直接看到中文速览和 64 tests 证据。
+- [ ] README 首页能直接看到中文速览和 70 tests 证据。
 - [ ] 仓库 About 填写 ROS 2、embodied AI、Nav2、safety runtime。
 - [ ] Topics 建议：`ros2`、`robotics`、`embodied-ai`、`nav2`、`cpp`、`python`。
 - [ ] 默认分支为 `main`。
