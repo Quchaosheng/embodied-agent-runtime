@@ -1,0 +1,9 @@
+contract_version: 1
+deadline:
+  min_s: 1
+  max_s: 91
+allowed_targets:
+  - dock
+recovery:
+  max_navigation_attempts: 2
+  cancel_confirmation_timeout_ms: 500
