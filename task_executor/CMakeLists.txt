@@ -3,6 +3,7 @@ project(task_executor)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(task_contract REQUIRED)
 find_package(task_guard REQUIRED)
@@ -32,6 +33,7 @@ add_executable(execute_task_server src/execute_task_server.cpp)
 target_compile_features(execute_task_server PUBLIC cxx_std_17)
 ament_target_dependencies(execute_task_server
   ament_index_cpp
+  geometry_msgs
   nav2_msgs
   rclcpp
   rclcpp_action

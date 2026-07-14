@@ -208,6 +208,23 @@ navigation Goal is sent.
 | test | Deterministic fault and simulation scenarios |
 | docs | Architecture, roadmap, learning, and project material |
 
+## Open-source foundation
+
+This project is built on ROS 2 and focused upstream libraries; it does not copy
+their source trees into this repository. Direct dependencies are declared in
+the four `package.xml` manifests and installed reproducibly with `rosdep`.
+
+- ROS 2 Jazzy and ament provide nodes, Actions, interfaces, and the build model.
+- Navigation2 provides the real `NavigateToPose` Action interface.
+- yaml-cpp loads reviewed runtime policy and named targets.
+- python-jsonschema validates model-facing requests.
+- GoogleTest, pytest, and launch_testing provide verification.
+
+See `THIRD_PARTY_NOTICES.md` for project links, license identifiers, and a
+strict separation between current dependencies and planned/reference-only
+projects. OpenAI-compatible support is a protocol integration using the Python
+standard library; no OpenAI SDK source is bundled.
+
 ## GitHub release quality
 
 - `.github/workflows/ros2-ci.yml` rebuilds from a clean ROS 2 Jazzy container.
@@ -217,6 +234,7 @@ navigation Goal is sent.
 - `SECURITY.md` defines credential handling and the non-certified safety scope.
 - `CHANGELOG.md` separates delivered evidence from unfinished integration.
 - `LICENSE` publishes the repository under Apache-2.0.
+- `THIRD_PARTY_NOTICES.md` records direct upstream dependencies and licenses.
 - `.gitignore` excludes ROS build trees, Python caches, local environments,
   private keys, and editor state.
 

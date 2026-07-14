@@ -16,6 +16,7 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
 - Fake, official OpenAI, and OpenAI-compatible relay provider profiles.
 - Twenty-case Chinese intent evaluation and no-ROS provider probe.
 - ROS 2 Jazzy GitHub Actions workflow and release verification gate.
+- Third-party dependency and license inventory without vendored source trees.
 
 ### Not Yet Released
 

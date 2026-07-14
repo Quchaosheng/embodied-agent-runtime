@@ -6,7 +6,7 @@
   <maintainer email="quchaosheng000406@163.com">Quchaosheng</maintainer>
   <license>Apache-2.0</license>
 
-
+  <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>python3-jsonschema</exec_depend>

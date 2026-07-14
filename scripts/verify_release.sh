@@ -18,6 +18,7 @@ fi
 required_files=(
   README.md
   LICENSE
+  THIRD_PARTY_NOTICES.md
   CHANGELOG.md
   CONTRIBUTING.md
   SECURITY.md
