@@ -13,7 +13,7 @@ reliable.
 | 3 | Timeout, cancellation, custom interfaces, and YAML policy | Global deadline and named-target allowlist | Timeout cancels navigation; invalid request never reaches it |
 | 4 | Lifecycle, readiness, diagnostics, and safe stop | Explicit node readiness and fault states | Runtime rejects tasks while not ready |
 | 5 | `launch_testing` and `rosbag2` | Deterministic fault tests and one recorded failure | Failure can be replayed and explained |
-| 6 | Nav2 and BehaviorTree.CPP | Real `NavigateToPose` adapter and reviewed recovery flow | Fixed retry and SAFE_STOP pass against fake Nav2; real Nav2 remains |
+| 6 | Nav2 and BehaviorTree.CPP | Real system launch plus reviewed recovery flow | Fake fault matrix passes; TurtleBot3/Nav2 smoke runs two sequential Goals |
 | 7 | AI JSON contract | Minimal Gateway adapter with fixed-schema output | Swapping model provider changes no C++ safety code |
 | 8 | `vcan0`, `can-utils`, SocketCAN, ACK, and device bridge | Optional device-ready bridge | Missing heartbeat or ACK blocks task execution |
 
