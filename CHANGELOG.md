@@ -18,9 +18,11 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
 - ROS 2 Jazzy GitHub Actions workflow and release verification gate.
 - Third-party dependency and license inventory without vendored source trees.
 - CI rosdep initialization and bounded update retry for clean GitHub runners.
+- Reliable transient-local TaskEvent transitions and late-subscriber lifecycle
+  verification across success, rejection, cancellation, deadline, and recovery.
 
 ### Not Yet Released
 
 - Real Nav2/TurtleBot3 simulation evidence.
 - Live OpenAI or relay evaluation evidence.
-- TaskEvent diagnostics, Foxglove, rosbag, and hardware integration.
+- ROS diagnostics, Foxglove, rosbag, and hardware integration.
