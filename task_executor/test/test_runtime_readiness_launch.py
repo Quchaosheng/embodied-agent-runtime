@@ -10,6 +10,7 @@ import launch_testing.actions
 import launch_testing.asserts
 import rclpy
 from rclpy.action import ActionClient
+from std_msgs.msg import Bool
 from task_contract.action import ExecuteTask
 
 
@@ -47,6 +48,20 @@ def generate_test_description():
         parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
+    device_unready_executor = launch_ros.actions.Node(
+        package="task_executor",
+        executable="execute_task_server",
+        namespace="device_required",
+        parameters=[
+            {
+                "localization_check_enabled": False,
+                "require_device_ready": True,
+                "device_ready_timeout_ms": 300,
+            }
+        ],
+        remappings=[("navigate_to_pose", "/navigate_to_pose")],
+        output="screen",
+    )
     return launch.LaunchDescription(
         [
             static_transform,
@@ -54,6 +69,7 @@ def generate_test_description():
             ready_executor,
             unlocalized_executor,
             navigation_unready_executor,
+            device_unready_executor,
             launch_testing.actions.ReadyToTest(),
         ]
     )
@@ -151,6 +167,36 @@ class TestRuntimeReadiness(unittest.TestCase):
         self.assertEqual(response.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(response.result.error_code, 17)
         self.assertEqual(response.result.attempts, 0)
+
+    def test_device_heartbeat_gates_task_and_expires(self):
+        status_name = "/device_required/execute_task_server/readiness"
+        self.wait_for_status(
+            status_name,
+            {"device_ready": "false", "device_ready_required": "true"},
+        )
+        unavailable = self.execute_task(
+            "/device_required/execute_task", "readiness-no-device"
+        )
+        self.assertEqual(unavailable.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(unavailable.result.error_code, 18)
+
+        publisher = self.node.create_publisher(Bool, "/device_ready", 10)
+        message = Bool()
+        message.data = True
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            publisher.publish(message)
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.wait_for_status(status_name, {"device_ready": "true"})
+
+        ready = self.execute_task("/device_required/execute_task", "readiness-device-ready")
+        self.assertEqual(ready.status, GoalStatus.STATUS_SUCCEEDED)
+
+        self.node.destroy_publisher(publisher)
+        self.wait_for_status(status_name, {"device_ready": "false"}, timeout_sec=3.0)
+        stale = self.execute_task("/device_required/execute_task", "readiness-device-stale")
+        self.assertEqual(stale.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(stale.result.error_code, 18)
 
 
 @launch_testing.post_shutdown_test()

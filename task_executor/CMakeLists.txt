@@ -11,6 +11,7 @@ find_package(task_guard REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 add_library(target_map src/target_map.cpp)
@@ -40,6 +41,7 @@ ament_target_dependencies(execute_task_server
   nav2_msgs
   rclcpp
   rclcpp_action
+  std_msgs
   task_contract
   task_guard
   tf2_ros
