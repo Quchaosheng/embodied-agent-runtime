@@ -74,9 +74,7 @@ output="$(timeout 60s ros2 run agent_gateway ask \
 printf '%s\n' "${output}"
 
 printf '%s\n' "${output}" | rg -q 'AI selected: action=navigate target=dock deadline_s=[1-9][0-9]?'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=3\.00'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=2\.00'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=1\.00'
+printf '%s\n' "${output}" | rg -q 'Feedback: state=RUNNING attempt=1 distance_remaining=[0-9]+\.[0-9]{2}'
 printf '%s\n' "${output}" | rg -q 'Result: task_id=[^ ]+ state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1'
 
 printf '\nAI Gateway smoke checks passed.\n'

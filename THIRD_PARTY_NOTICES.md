@@ -15,6 +15,7 @@ packages included in that artifact.
 | --- | --- | --- |
 | [ROS 2 Jazzy](https://docs.ros.org/en/jazzy/) | Nodes, Actions, geometry messages, interfaces, ament build, package discovery | Predominantly Apache-2.0; check each ROS package |
 | [Navigation2](https://github.com/ros-navigation/navigation2) | `nav2_msgs/action/NavigateToPose` interface | Apache-2.0 |
+| [Linux SocketCAN](https://docs.kernel.org/networking/can.html) | `PF_CAN` raw socket and CAN UAPI used by `device_bridge` | Linux kernel UAPI: GPL-2.0-only WITH Linux-syscall-note |
 | [yaml-cpp](https://github.com/jbeder/yaml-cpp) | Guard policy and named-target YAML parsing | MIT/X11 |
 | [python-jsonschema](https://github.com/python-jsonschema/jsonschema) | Draft 7 validation at the model-output boundary | MIT |
 | Python standard library | HTTP transport, JSON parsing, CLI, data types | Python Software Foundation License |
@@ -27,6 +28,7 @@ packages included in that artifact.
 | [pytest](https://github.com/pytest-dev/pytest) | Python Gateway and Provider tests | MIT |
 | ROS 2 `launch_testing` | Multi-process Action lifecycle tests | Apache-2.0 |
 | [colcon](https://colcon.readthedocs.io/) and `rosdep` | Workspace build and dependency installation | Check the installed package metadata |
+| [can-utils](https://github.com/linux-can/can-utils) | `cansend` input for the `vcan0` smoke test | GPL-2.0-only |
 | [ros-tooling/setup-ros](https://github.com/ros-tooling/setup-ros) | GitHub Actions ROS environment | Apache-2.0 |
 
 ## Protocol and Service Compatibility

@@ -25,6 +25,7 @@ required_files=(
   .github/workflows/ros2-ci.yml
   task_contract/schema/task_request.schema.json
   task_guard/config/task_policy.yaml
+  device_bridge/package.xml
   simulation/config/targets.yaml
   agent_gateway/evaluation/intent_cases.json
 )
@@ -73,12 +74,12 @@ source /opt/ros/jazzy/setup.bash
 set -u
 
 cd "${workspace_root}"
-colcon build --symlink-install --packages-up-to task_executor agent_gateway
+colcon build --symlink-install --packages-up-to task_executor agent_gateway device_bridge
 
 set +u
 source install/setup.bash
 set -u
-colcon test --packages-select task_contract task_guard task_executor agent_gateway
+colcon test --packages-select task_contract task_guard task_executor agent_gateway device_bridge
 colcon test-result --verbose
 
 ros2 run agent_gateway evaluate_intents --provider fake

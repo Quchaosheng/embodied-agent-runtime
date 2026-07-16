@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -15,6 +16,7 @@
 #include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "task_contract/action/execute_task.hpp"
 #include "task_executor/target_map.hpp"
 #include "task_guard/task_guard.hpp"
@@ -42,6 +44,12 @@ class ExecuteTaskServer : public rclcpp::Node {
             "/config/task_policy.yaml")),
         guard_(policy_) {
     localization_check_enabled_ = declare_parameter<bool>("localization_check_enabled", true);
+    require_device_ready_ = declare_parameter<bool>("require_device_ready", false);
+    const auto device_timeout_ms = declare_parameter<int>("device_ready_timeout_ms", 1000);
+    if (device_timeout_ms <= 0) {
+      throw std::invalid_argument("device_ready_timeout_ms must be positive");
+    }
+    device_ready_timeout_ = std::chrono::milliseconds(device_timeout_ms);
     map_frame_ = declare_parameter<std::string>("map_frame", "map");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     if (map_frame_.empty() || base_frame_.empty() || map_frame_ == base_frame_) {
@@ -50,6 +58,13 @@ class ExecuteTaskServer : public rclcpp::Node {
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
     nav_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
+    device_ready_subscription_ = create_subscription<std_msgs::msg::Bool>(
+        "/device_ready", 10, [this](const std_msgs::msg::Bool& message) {
+          device_ready_state_.store(message.data);
+          const auto now = std::chrono::steady_clock::now().time_since_epoch();
+          last_device_status_ns_.store(
+              std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+        });
     diagnostics_publisher_ =
         create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
     diagnostics_timer_ = create_wall_timer(1s, [this]() { publish_diagnostics(); });
@@ -94,7 +109,23 @@ class ExecuteTaskServer : public rclcpp::Node {
   }
 
   task_guard::RobotContext robot_context(bool task_active) const {
-    return {localization_ready(), nav_client_->action_server_is_ready(), task_active};
+    return {localization_ready(), nav_client_->action_server_is_ready(), task_active,
+            device_ready()};
+  }
+
+  bool device_ready() const {
+    if (!require_device_ready_) {
+      return true;
+    }
+    const auto last_status_ns = last_device_status_ns_.load();
+    if (!device_ready_state_.load() || last_status_ns <= 0) {
+      return false;
+    }
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+    const auto timeout_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(device_ready_timeout_).count();
+    return now_ns >= last_status_ns && now_ns - last_status_ns <= timeout_ns;
   }
 
   static diagnostic_msgs::msg::KeyValue diagnostic_value(const std::string& key, bool value) {
@@ -109,10 +140,15 @@ class ExecuteTaskServer : public rclcpp::Node {
     diagnostic_msgs::msg::DiagnosticStatus status;
     status.name = get_fully_qualified_name() + std::string("/readiness");
     status.hardware_id = "embodied_runtime";
-    if (!context.localization_ready || !context.navigation_ready) {
+    if (!context.localization_ready || !context.navigation_ready || !context.device_ready) {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-      status.message = !context.localization_ready ? "localization transform unavailable"
-                                                   : "NavigateToPose Action unavailable";
+      if (!context.localization_ready) {
+        status.message = "localization transform unavailable";
+      } else if (!context.navigation_ready) {
+        status.message = "NavigateToPose Action unavailable";
+      } else {
+        status.message = "device heartbeat unavailable or stale";
+      }
     } else if (!localization_check_enabled_) {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
       status.message = "localization transform check disabled";
@@ -123,6 +159,8 @@ class ExecuteTaskServer : public rclcpp::Node {
     status.values.push_back(diagnostic_value("localization_ready", context.localization_ready));
     status.values.push_back(diagnostic_value("navigation_ready", context.navigation_ready));
     status.values.push_back(diagnostic_value("task_active", context.task_active));
+    status.values.push_back(diagnostic_value("device_ready", context.device_ready));
+    status.values.push_back(diagnostic_value("device_ready_required", require_device_ready_));
     diagnostic_msgs::msg::KeyValue frames;
     frames.key = "required_transform";
     frames.value = map_frame_ + " -> " + base_frame_;
@@ -332,12 +370,17 @@ class ExecuteTaskServer : public rclcpp::Node {
   task_guard::GuardPolicy policy_;
   task_guard::TaskGuard guard_;
   bool localization_check_enabled_{true};
+  bool require_device_ready_{false};
+  std::chrono::milliseconds device_ready_timeout_{1000};
   std::string map_frame_;
   std::string base_frame_;
   std::atomic<bool> task_active_{false};
+  std::atomic<bool> device_ready_state_{false};
+  std::atomic<std::int64_t> last_device_status_ns_{0};
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr nav_client_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr device_ready_subscription_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Server<ExecuteTask>::SharedPtr server_;
