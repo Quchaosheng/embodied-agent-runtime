@@ -77,7 +77,7 @@ Run:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-python3 -m unittest test/test_audit_task_event_bag.py -v
+PYTHONPATH="$PWD" python3 test/test_audit_task_event_bag.py -v
 ```
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'scripts.audit_task_event_bag'`.
@@ -171,7 +171,7 @@ Run:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-python3 -m unittest test/test_audit_task_event_bag.py -v
+PYTHONPATH="$PWD" python3 test/test_audit_task_event_bag.py -v
 python3 -m py_compile scripts/audit_task_event_bag.py
 ```
 
