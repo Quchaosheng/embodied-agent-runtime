@@ -26,6 +26,7 @@ setup(
     entry_points={
         "console_scripts": [
             "ask = agent_gateway.cli:main",
+            "run_mission = agent_gateway.mission_cli:main",
             "evaluate_intents = agent_gateway.evaluation_cli:main",
             "probe_provider = agent_gateway.provider_probe:main",
         ],
