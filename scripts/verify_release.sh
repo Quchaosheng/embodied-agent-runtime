@@ -88,5 +88,7 @@ ROS_DOMAIN_ID=161 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_phase_2.sh"
 ROS_DOMAIN_ID=162 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_ai_gateway.sh"
+ROS_DOMAIN_ID=163 EMBODIED_WS="${workspace_root}" \
+  bash "${project_root}/scripts/smoke_ai_mission.sh"
 
 printf '\nRelease verification passed. The repository is ready for GitHub review.\n'
