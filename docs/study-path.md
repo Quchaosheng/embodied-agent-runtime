@@ -15,7 +15,8 @@ reliable.
 | 5 | `launch_testing` and `rosbag2` | Deterministic fault tests and one recorded failure | Failure can be replayed and explained |
 | 6 | Nav2 and BehaviorTree.CPP | Real system launch plus reviewed recovery flow | Fake fault matrix passes; TurtleBot3/Nav2 smoke runs two sequential Goals |
 | 7 | AI JSON contract | Minimal Gateway adapter with fixed-schema output | Swapping model provider changes no C++ safety code |
-| 8 | `vcan0`, `can-utils`, SocketCAN, ACK, and device bridge | Optional device-ready bridge | Missing heartbeat or ACK blocks task execution |
+| 8 | Bounded AI mission loop | 1-3 step plan, constrained checkpoint, read-only summary | 12/12 mission cases and real Nav2 two-step smoke pass |
+| 9 | `vcan0`, `can-utils`, SocketCAN, ACK, and device bridge | Optional device-ready bridge | Missing heartbeat or ACK blocks task execution |
 
 ## Why SocketCAN is last
 

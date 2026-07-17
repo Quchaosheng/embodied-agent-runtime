@@ -89,6 +89,19 @@ Foxglove, and record one rosbag.
 Proof: the test suite contains twenty fixed scenarios and the README contains
 one success trace plus one timeout-to-safe-stop trace.
 
+## Session 18: Bounded AI Mission Agent
+
+Read `learning-session-18-bounded-ai-mission-agent.zh-CN.md`, then trace
+`MissionModel.plan() -> MissionRunner -> ExecuteTask -> MissionModel.decide()`.
+Explain why AI participates at planning, checkpoint, and summary stages while
+coordinates and every ROS Goal remain outside the model boundary.
+
+Proof: the Fake model passes 12/12 fixed mission cases with zero unsafe
+acceptances. The offline mission smoke completes two ExecuteTask steps, and the
+opt-in system smoke completes `dock -> workbench` through real local Nav2.
+Provider failure, an unavailable transition, or an expired mission budget does
+not create the next Goal.
+
 ## Working rhythm
 
 For every session:

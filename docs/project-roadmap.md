@@ -72,25 +72,31 @@ the outer `ExecuteTask` Runtime in Gazebo Sim.
 Accept: `dock`, `workbench`, and `home` can be reached in simulation. Keepout
 acceptance remains separate until a Nav2 costmap filter and refusal test exist.
 
-## M5: Gateway and observability
+## M5: Gateway and bounded AI mission
 
-Learn: structured tool-call normalization, not autonomous planning.
+Learn: structured tool-call normalization and constrained task-level agency.
 
 Deliver:
 
 - Minimal `agent_gateway` that converts a model response to the JSON contract.
-- `TaskEvent` publisher, diagnostics, Foxglove visualization, and rosbag demo.
+- Strict 1-3 step MissionPlan and serial MissionRunner.
+- Runtime-offered checkpoint transitions and read-only summaries.
+- Fake, official OpenAI, and OpenAI-compatible relay profiles.
 
-Accept: changing the model provider does not modify Guard, executor, or Nav2
-code.
+Complete: 20/20 single-task cases, 12/12 mission cases with zero unsafe
+acceptances, offline process smoke, and a Fake-model mission through real local
+Nav2. Changing the model provider does not modify Guard, executor, or Nav2.
 
 ## M6: Regression suite and release quality
 
 Deliver:
 
 - Twenty fixed fault and success scenarios.
+- Twelve fixed bounded mission scenarios.
 - Fast fake-Action tests and a smaller TurtleBot3/Nav2 simulation suite.
 - CI, formatting, linting, README demo, architecture diagram, and error table.
+- `TaskEvent` publisher, diagnostics, Foxglove visualization, and rosbag demo.
 
-Accept: all tests pass repeatedly from a clean workspace and the README gives
-another developer a reproducible demo path.
+In progress: the release gate, CI, and reviewer-facing evidence exist;
+TaskEvent/Foxglove/rosbag remain on the observability branch. Accept when all
+tests pass repeatedly from a clean workspace and one task trace can be replayed.
