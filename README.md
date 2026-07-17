@@ -30,9 +30,10 @@ A safety-bounded ROS 2 runtime that lets an AI model request approved robot
 tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
-> Current status: ROS 2 Jazzy workspace verified. Five packages build
-> successfully. Latest local evidence: 77 tests, 0 errors, 0 failures, plus
-> repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
+> Current status: the integration branch combines five ROS 2 packages and the
+> independently verified Runtime, AI Gateway, SocketCAN readiness, and TaskEvent
+> MCAP smoke paths. It requires one fresh merged CI run before a new combined
+> test total is claimed. A provider-independent ROS
 > Action bridge and offline Fake AI now turn Chinese user intent into a guarded
 > task and return feedback/result. A version-controlled set of 20 Chinese intent
 > cases checks accepted, unsupported, negated, multi-target, and prompt-injection
@@ -64,12 +65,12 @@ trajectories, recovery logic, or Nav2.
 | ROS 2 包 | 5 个：契约、Guard、执行器、AI Gateway、SocketCAN Device Bridge |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、TF/Nav2/CAN readiness、原子 BUSY、全局 deadline、确认取消、有限恢复 |
-| 自动化测试 | 77 tests，覆盖 C++ 单测、Python 单测和 15 个进程级 launch 用例 |
+| 自动化测试 | 合并前分支各自通过 C++/Python/launch 测试；合并后的精确总数以 CI 结果为准 |
 | AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
-| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe、真实 `PF_CAN` vcan smoke |
+| 可重复演示 | Runtime smoke、AI→ROS smoke、TaskEvent MCAP 审计、无 ROS Provider probe、真实 `PF_CAN` vcan smoke |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
-| 学习沉淀 | 19 课中文实现笔记与实机 readiness 技术复习问答 |
+| 学习沉淀 | 20 课中文实现笔记与可复习技术复习问答 |
 
 项目当前没有把真实 Nav2/TurtleBot3、真实模型联网或硬件安全说成已完成。README、
 测试输出和 roadmap 明确区分“已实现、已离线验证、待系统集成”。
@@ -162,6 +163,12 @@ within the bounded window.
   fail-closed cases, including negation, multiple targets, and prompt injection.
 - Outer ExecuteTask Action Server with named-target mapping and bounded inner
   cancellation confirmation.
+- Reliable transient-local `TaskEvent` stream for validation, dispatch,
+  running, recovery, cancellation, and every terminal state; late subscribers
+  can inspect the most recent 50 transitions without replaying a task.
+- Standard rosbag2/MCAP persistence proof that records one successful task and
+  one Guard rejection, reads the bag back, and asserts exact state order,
+  terminal error code, and attempt count.
 - Global task deadline based on monotonic time, followed by a fixed 500 ms
   cancellation-confirmation grace period.
 - Version-controlled recovery policy with two total navigation attempts.
@@ -184,8 +191,8 @@ within the bounded window.
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
 | M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
-| M5 gateway and observability | In progress | OpenAI/relay profiles, fixed intent evaluation, Runtime diagnostics, and SocketCAN readiness complete; TaskEvent/Foxglove/rosbag remain |
-| M6 regression and release | In progress | CI workflow and twenty AI intent cases complete; full system matrix remains |
+| M5 gateway and observability | In progress | Provider profiles, intent evaluation, Runtime diagnostics, SocketCAN readiness, TaskEvent, and MCAP audit complete; Foxglove remains |
+| M6 regression and release | In progress | The CI workflow and twenty AI intent cases are present; the merged system matrix must run before release |
 
 ## Build and test
 
@@ -205,9 +212,10 @@ Run the complete pre-push release gate from the repository root:
     bash scripts/verify_release.sh
 
 This command checks repository metadata and possible credentials, rebuilds all
-five packages, runs the complete test result set, evaluates 20 offline Chinese
-intents, and runs both process smoke tests. GitHub Actions reproduces the same
-core evidence on Ubuntu 24.04 with ROS 2 Jazzy.
+five packages, runs the complete test result set and focused bag-reader test,
+evaluates 20 offline Chinese intents, and runs the available process smoke
+tests. GitHub Actions reproduces the portable evidence on Ubuntu 24.04 with
+ROS 2 Jazzy; the `vcan0` proof remains conditional on kernel-module access.
 
 Run the process-level M2 proof after building:
 
@@ -215,8 +223,7 @@ Run the process-level M2 proof after building:
 
 Current milestone evidence:
 
-    Summary: 5 packages finished
-    Summary: 77 tests, 0 errors, 0 failures, 0 skipped
+    Pending: run the merged CI matrix before recording a combined package and test summary.
 
 Run the offline AI-to-ROS proof:
 
@@ -273,6 +280,23 @@ periodic heartbeat permits one task, and stale heartbeat rejects again. This is
 a communication-readiness proof, not motor control, an emergency stop, or a
 hardware safety certification.
 
+Observe task transitions without becoming the Action client:
+
+    ros2 topic echo /task_events task_contract/msg/TaskEvent \
+      --qos-reliability reliable \
+      --qos-durability transient_local \
+      --qos-depth 50
+
+The retained DDS history is process-local. Persist and verify it across process
+restarts with standard rosbag2/MCAP:
+
+    EMBODIED_WS=~/embodied_ws bash scripts/smoke_task_event_bag.sh
+
+The smoke records `bag-success` and `bag-rejected`, reads the generated bag
+through `rosbag2_py`, and checks exact state sequences and terminal fields.
+Generated bags stay under the temporary directory and are never committed.
+Foxglove integration remains a separate roadmap item.
+
 ## Repository map
 
 | Directory | Responsibility |
@@ -316,7 +340,7 @@ standard library; no OpenAI SDK source is bundled.
 - `LICENSE` publishes the repository under Apache-2.0.
 - `THIRD_PARTY_NOTICES.md` records direct upstream dependencies and licenses.
 - `.gitignore` excludes ROS build trees, Python caches, local environments,
-  private keys, and editor state.
+  private keys, generated MCAP bags, and editor state.
 
 The workflow intentionally uses only Fake Provider. GitHub secrets are not
 required, and CI cannot spend model credits or send a robot Action to real
@@ -325,8 +349,10 @@ hardware.
 ## Project and design notes
 
 - Chinese project answers: docs/project-talking-points.zh-CN.md
-- Latest guided lesson: docs/learning-session-19-socketcan-device-readiness.zh-CN.md
+- Latest guided lesson: docs/learning-session-20-rosbag-task-audit.zh-CN.md
 - GitHub release lesson: docs/learning-session-15-github-release-engineering.zh-CN.md
+- TaskEvent observability lesson: docs/learning-session-16-task-event-observability.zh-CN.md
+- Rosbag task audit lesson: docs/learning-session-20-rosbag-task-audit.zh-CN.md
 - Architecture and trust boundary: docs/architecture.md
 - Ordered implementation roadmap: docs/project-roadmap.md
 - Final demonstration: docs/final-demo-spec.md
