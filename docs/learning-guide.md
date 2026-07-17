@@ -83,10 +83,11 @@ executor, Nav2, or simulation file.
 ## Session 7: Observability and Regression
 
 Runtime readiness diagnostics are implemented from the same TF, Nav2, and BUSY
-facts used by the Guard. Read lesson 18 and inspect the readiness launch test.
+facts used by the Guard. Reliable transient-local `TaskEvent` transitions and
+their rosbag2/MCAP audit are also implemented; read lessons 18 through 20.
 
-Build next: publish `TaskEvent`, open diagnostics and events in Foxglove, and
-record one rosbag.
+Build next: open diagnostics and events in Foxglove, then record a combined
+health and task-event demonstration.
 
 Proof: the test suite contains twenty fixed scenarios and the README contains
 one success trace plus one timeout-to-safe-stop trace.

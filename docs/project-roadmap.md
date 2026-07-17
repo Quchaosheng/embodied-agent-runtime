@@ -81,6 +81,10 @@ Current: model profiles, fixed intent evaluation, live Runtime diagnostics, and
 the SocketCAN readiness gate are implemented. TaskEvent, Foxglove, and rosbag
 evidence remain.
 
+Current: provider profiles, fixed intent evaluation, TaskEvent, and a
+deterministic rosbag2/MCAP persistence audit are implemented. Diagnostics and
+Foxglove evidence remain on their independent branches or roadmap.
+
 Accept: changing the model provider does not modify Guard, executor, or Nav2
 code.
 

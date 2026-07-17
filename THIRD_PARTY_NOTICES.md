@@ -27,6 +27,7 @@ packages included in that artifact.
 | [GoogleTest](https://github.com/google/googletest) | C++ Guard and target-map unit tests | BSD-3-Clause |
 | [pytest](https://github.com/pytest-dev/pytest) | Python Gateway and Provider tests | MIT |
 | ROS 2 `launch_testing` | Multi-process Action lifecycle tests | Apache-2.0 |
+| [rosbag2](https://github.com/ros2/rosbag2) and its MCAP storage plugin | TaskEvent recording, persisted inspection, and replay evidence | Apache-2.0 |
 | [colcon](https://colcon.readthedocs.io/) and `rosdep` | Workspace build and dependency installation | Check the installed package metadata |
 | [can-utils](https://github.com/linux-can/can-utils) | `cansend` input for the `vcan0` smoke test | GPL-2.0-only |
 | [ros-tooling/setup-ros](https://github.com/ros-tooling/setup-ros) | GitHub Actions ROS environment | Apache-2.0 |
@@ -48,7 +49,7 @@ not imported and they are not current runtime dependencies:
   only if reviewed recovery actions outgrow the current bounded C++ loop.
 - [TurtleBot3](https://github.com/ROBOTIS-GIT/turtlebot3) and its simulations:
   planned Nav2 system demonstration.
-- Foxglove bridge and rosbag2: planned observability and replay evidence.
+- Foxglove bridge: planned visualization after observability and simulation are integrated.
 - Qwen-Agent and ROS 2 examples: reading references only.
 
 Before any planned dependency becomes runtime code, add it to the appropriate
