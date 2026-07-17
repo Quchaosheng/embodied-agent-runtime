@@ -24,6 +24,8 @@ required_files=(
   SECURITY.md
   .github/workflows/ros2-ci.yml
   task_contract/schema/task_request.schema.json
+  agent_gateway/schema/mission_plan.schema.json
+  agent_gateway/evaluation/mission_cases.json
   task_guard/config/task_policy.yaml
   simulation/package.xml
   simulation/config/targets.yaml
@@ -84,6 +86,7 @@ colcon test --packages-select \
 colcon test-result --verbose
 
 ros2 run agent_gateway evaluate_intents --provider fake
+ros2 run agent_gateway evaluate_missions --provider fake
 ROS_DOMAIN_ID=161 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_phase_2.sh"
 ROS_DOMAIN_ID=162 EMBODIED_WS="${workspace_root}" \

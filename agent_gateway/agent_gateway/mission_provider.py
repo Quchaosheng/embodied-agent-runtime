@@ -67,8 +67,18 @@ class FakeMissionModel:
         normalized = user_text.strip()
         if not normalized:
             raise ProviderError("mission text must not be empty")
-        if any(word in normalized.lower() for word in ("不要", "别去", "取消", "not ")):
-            raise ProviderError("fake mission model rejected negated intent")
+        unsafe_markers = (
+            "不要",
+            "别去",
+            "取消",
+            "not ",
+            "或者",
+            "忽略",
+            "prompt",
+            "坐标",
+        )
+        if any(word in normalized.lower() for word in unsafe_markers):
+            raise ProviderError("fake mission model rejected unsafe or ambiguous intent")
 
         aliases = {
             "充电桩": "dock",
