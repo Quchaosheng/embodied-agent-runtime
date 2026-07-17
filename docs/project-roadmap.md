@@ -64,9 +64,10 @@ Deliver:
 - Target-pose mapping loaded only from version-controlled configuration.
 - RViz markers for targets and the restricted area.
 
-Current: launch composition, AMCL initialization, reviewed target poses, RViz
-markers, and a two-Goal headless smoke are implemented. Local execution waits
-for the full simulation packages.
+Complete: launch composition, AMCL initialization, reviewed target poses, RViz
+markers, and a two-Goal headless smoke are implemented. On 2026-07-17 Nav2
+reached active and both `home -> dock` and `dock -> workbench` succeeded through
+the outer `ExecuteTask` Runtime in Gazebo Sim.
 
 Accept: `dock`, `workbench`, and `home` can be reached in simulation. Keepout
 acceptance remains separate until a Nav2 costmap filter and refusal test exist.

@@ -1,7 +1,7 @@
 # Changelog
 
 All notable project changes are recorded here. The project currently uses a
-single pre-release line while Nav2/TurtleBot3 system evidence remains open.
+single pre-release line while live-model and hardware evidence remain open.
 
 ## [Unreleased]
 
@@ -21,10 +21,12 @@ single pre-release line while Nav2/TurtleBot3 system evidence remains open.
 - Reproducible TurtleBot3 Burger, Gazebo Sim, AMCL, Nav2, Runtime, and RViz launch.
 - Reviewed free-space named targets, bounded initial-pose publication, scene markers,
   and a two-Goal headless Nav2 system smoke script.
+- Local Nav2/TurtleBot3 system evidence: lifecycle active and two sequential
+  outer Runtime Goals succeeded through Gazebo Sim on 2026-07-17.
+- Exact lifecycle-state checking with a regression test that rejects `inactive`.
 
 ### Not Yet Released
 
-- Local real Nav2/TurtleBot3 smoke evidence after installing the system packages.
 - Enforced Nav2 keepout costmap filter; the current polygon is visualization-only.
 - Live OpenAI or relay evaluation evidence.
 - TaskEvent diagnostics, Foxglove, rosbag, and hardware integration.

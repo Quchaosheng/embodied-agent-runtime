@@ -5,7 +5,7 @@ tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
 > Current status: ROS 2 Jazzy workspace verified. Five packages build
-> successfully. Latest local evidence: 74 tests, 0 errors, 0 failures, plus
+> successfully. Latest local evidence: 76 tests, 0 errors, 0 failures, plus
 > repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
 > Action bridge and offline Fake AI now turn Chinese user intent into a guarded
 > task and return feedback/result. A version-controlled set of 20 Chinese intent
@@ -17,9 +17,9 @@ trajectories, recovery logic, or Nav2.
 > Guard rejection, confirmed cancellation, global deadline expiry, and process
 > cleanup. Bounded retry, recovery exhaustion, and SAFE_STOP are also verified.
 > A reproducible TurtleBot3 Burger + Gazebo Sim + AMCL + Nav2 launch, initial
-> localization helper, RViz scene view, and headless system smoke are now
-> implemented. This machine still needs the full simulation packages before a
-> real Gazebo run can be recorded, so system evidence remains explicitly open.
+> localization helper, RViz scene view, and headless system smoke are verified
+> locally. On 2026-07-17, `bt_navigator` reached active and the outer Runtime
+> completed `home -> dock -> workbench` through real Nav2 and Gazebo Sim.
 
 ## 中文速览
 
@@ -34,16 +34,15 @@ trajectories, recovery logic, or Nav2.
 | ROS 2 包 | 5 个：契约、Guard、执行器、AI Gateway、Nav2 仿真编排 |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、重复键拒绝、全局 deadline、确认取消、有限恢复、失败关闭 YAML |
-| 自动化测试 | 74 tests，覆盖 C++ 单测、Python 单测、地图/场景配置和 9 个进程级 launch 用例 |
+| 自动化测试 | 76 tests，覆盖 C++ 单测、Python 单测、地图/场景配置和 9 个进程级 launch 用例 |
 | AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
-| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe、Nav2 headless smoke 脚本 |
+| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe、已实跑的 Nav2 headless smoke |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
-| 学习沉淀 | 16 课中文实现笔记与 Nav2 系统集成技术复习问答 |
+| 学习沉淀 | 17 课中文实现笔记与 Nav2 系统集成技术复习问答 |
 
-项目当前没有把“写好 Nav2 launch”说成“真实 Gazebo 已跑通”，也没有把真实模型联网
-或硬件安全说成已完成。README、测试输出和 roadmap 明确区分“已实现、已离线验证、
-待本机系统验证”。
+项目用本机实际 Gazebo/Nav2 运行记录支撑系统仿真结论，但没有把真实模型联网、
+真机安全或 keepout 强制说成已完成。README、测试输出和 roadmap 明确区分这些证据边界。
 
 ## Why this project exists
 
@@ -65,8 +64,8 @@ Nav2 Goal exists.
       -> ExecuteTask Action Server                implemented outer lifecycle
       -> task_guard                               implemented safety authority
       -> task_executor                            implemented outer/inner adapter
-      -> NavigateToPose Action / Nav2             fake tests + real launch implemented
-      -> TurtleBot3 Burger / Gazebo Sim           local system run pending dependencies
+      -> NavigateToPose Action / Nav2             fake tests + real system run verified
+      -> TurtleBot3 Burger / Gazebo Sim           two sequential goals verified locally
 
 The Guard decision combines three inputs:
 
@@ -140,7 +139,7 @@ to reviewed poses by runtime configuration.
 | M1 contract and semantic Guard | Complete | Guard, YAML policy, and strict JSON adapter verified |
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
-| M4 Nav2 and TurtleBot3 | In progress | Reproducible launch and smoke implemented; local packages and live Gazebo evidence pending |
+| M4 Nav2 and TurtleBot3 | Complete | Nav2 active; `home -> dock -> workbench` succeeded through the outer Runtime on 2026-07-17 |
 | M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
 | M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
 
@@ -173,7 +172,7 @@ Run the process-level M2 proof after building:
 Current milestone evidence:
 
     Summary: 5 packages finished
-    Summary: 74 tests, 0 errors, 0 failures, 0 skipped
+    Summary: 76 tests, 0 errors, 0 failures, 0 skipped
 
 Run the offline AI-to-ROS proof:
 
@@ -208,7 +207,8 @@ Install the real system dependencies once:
 
     sudo apt update
     sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
-      ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-navigation2
+      ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-navigation2 \
+      ros-jazzy-rviz2
 
 Then build and start the graphical system:
 
@@ -228,6 +228,15 @@ kept separate from the fast release gate because a full physics simulation is
 slower and needs additional system packages. The configured restricted-area
 polygon is currently an RViz marker with `enforced: false`; Nav2 keepout-filter
 enforcement is not claimed.
+
+Local system evidence recorded on 2026-07-17:
+
+    bt_navigator: active
+    nav2-smoke-dock: final_state 5, error_code 0, attempts 1, SUCCEEDED
+    nav2-smoke-workbench: final_state 5, error_code 0, attempts 1, SUCCEEDED
+
+The lifecycle check is anchored to the exact `active` state; a regression test
+ensures `inactive` cannot produce a false positive.
 
 The AI smoke verifies three feedback messages and a successful terminal result.
 The Runtime smoke separately verifies `final_state: 5` for `dock`, then checks
@@ -250,7 +259,7 @@ navigation Goal is sent.
 
 This project is built on ROS 2 and focused upstream libraries; it does not copy
 their source trees into this repository. Direct dependencies are declared in
-the four `package.xml` manifests and installed reproducibly with `rosdep`.
+the five `package.xml` manifests and installed reproducibly with `rosdep`.
 
 - ROS 2 Jazzy and ament provide nodes, Actions, interfaces, and the build model.
 - Navigation2 provides the real `NavigateToPose` Action interface.
