@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Embodied Agent Runtime Mission Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "steps"],
+  "properties": {
+    "contract_version": {
+      "const": 1
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "target", "deadline_s"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["navigate"]
+          },
+          "target": {
+            "type": "string",
+            "enum": ["dock", "workbench", "home"]
+          },
+          "deadline_s": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90
+          }
+        }
+      }
+    }
+  }
+}
