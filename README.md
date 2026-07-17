@@ -5,27 +5,30 @@ tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
 > Current status: ROS 2 Jazzy workspace verified. Five packages build
-> successfully. Latest local evidence: 76 tests, 0 errors, 0 failures, plus
+> successfully. Latest local evidence: 123 tests, 0 errors, 0 failures, plus
 > repeatable Runtime and AI Gateway smoke tests. A provider-independent ROS
-> Action bridge and offline Fake AI now turn Chinese user intent into a guarded
-> task and return feedback/result. A version-controlled set of 20 Chinese intent
-> cases checks accepted, unsupported, negated, multi-target, and prompt-injection
-> inputs. Official OpenAI and configurable OpenAI-compatible relay profiles,
-> plus a no-ROS provider probe, are implemented and tested offline; no real
-> model service is connected yet.
+> Action bridge and offline Fake AI now turn Chinese user intent into either one
+> guarded task or a bounded 1-3 step mission. Fixed Fake-model evaluations pass
+> 20/20 single-task cases and 12/12 mission cases with zero unsafe mission
+> acceptances. Official OpenAI and configurable OpenAI-compatible relay profiles,
+> plus no-ROS probes, are implemented and protocol-tested offline; no real model
+> service is connected yet.
 > Runtime launch tests cover outer Action success, feedback,
 > Guard rejection, confirmed cancellation, global deadline expiry, and process
 > cleanup. Bounded retry, recovery exhaustion, and SAFE_STOP are also verified.
 > A reproducible TurtleBot3 Burger + Gazebo Sim + AMCL + Nav2 launch, initial
 > localization helper, RViz scene view, and headless system smoke are verified
 > locally. On 2026-07-17, `bt_navigator` reached active and the outer Runtime
-> completed `home -> dock -> workbench` through real Nav2 and Gazebo Sim.
+> completed the AI-planned `dock -> workbench` mission through the Guard,
+> ExecuteTask, real Nav2, and Gazebo Sim.
 
 ## 中文速览
 
-这是一个“AI 只表达任务意图、确定性 Runtime 掌握运动安全边界”的 ROS 2
-项目。模型只能从 `dock`、`workbench`、`home` 中请求一个命名目标；坐标、deadline、
-取消确认、重试上限、恢复策略和 Nav2 调用全部由受测试的 C++ Runtime 控制。
+这是一个“AI 负责理解和任务级决策，确定性 Runtime 掌握运动权”的 ROS 2
+项目。模型可以规划 1-3 个 `dock` / `workbench` / `home` 命名目标，
+并在步骤间从 Runtime 提供的有限选项中决定继续、回家或终止。坐标、
+deadline、取消确认、重试上限、恢复策略和 Nav2 调用仍全部由受测试的
+C++ Runtime 控制。
 
 ### 可量化工程量
 
@@ -34,15 +37,32 @@ trajectories, recovery logic, or Nav2.
 | ROS 2 包 | 5 个：契约、Guard、执行器、AI Gateway、Nav2 仿真编排 |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、重复键拒绝、全局 deadline、确认取消、有限恢复、失败关闭 YAML |
-| 自动化测试 | 76 tests，覆盖 C++ 单测、Python 单测、地图/场景配置和 9 个进程级 launch 用例 |
-| AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
-| 可重复演示 | Runtime smoke、AI→ROS smoke、无 ROS Provider probe、已实跑的 Nav2 headless smoke |
+| 自动化测试 | 123 tests，覆盖 C++/Python 单测、Action launch、地图/场景配置和 Mission 状态机 |
+| AI 评测 | 单任务 20/20；多步 Mission 12/12，`unsafe_acceptances=0` |
+| 可重复演示 | Runtime/AI/Mission smoke、无 ROS probe、已实跑的 AI Mission + Nav2 headless smoke |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
-| 学习沉淀 | 17 课中文实现笔记与 Nav2 系统集成技术复习问答 |
+| 学习沉淀 | 18 课中文实现笔记与 AI/Nav2 系统集成技术复习问答 |
 
 项目用本机实际 Gazebo/Nav2 运行记录支撑系统仿真结论，但没有把真实模型联网、
 真机安全或 keepout 强制说成已完成。README、测试输出和 roadmap 明确区分这些证据边界。
+
+### 一条能讲清的 AI 主线
+
+```text
+“先去充电桩，再去工作台”
+  -> FakeMissionModel / 可选真实 Provider        AI 参与 1：规划
+  -> strict MissionPlan(dock, workbench)
+  -> ExecuteTask(dock) -> C++ Guard -> real Nav2 -> success
+  -> checkpoint choices: abort / continue / return_home
+  -> AI selects continue                                  AI 参与 2：受限决策
+  -> ExecuteTask(workbench) -> C++ Guard -> real Nav2 -> success
+  -> read-only summary                                    AI 参与 3：解释
+```
+
+每次运动都必须重新通过 `ExecuteTask -> task_guard -> Nav2`。AI 不能生成
+坐标、速度、轨迹、重试次数、task ID 或 ROS 消息；`return_home` 也只是一个
+普通、再次受 Guard 校验的命名任务。
 
 ## Why this project exists
 
@@ -59,13 +79,15 @@ Nav2 Goal exists.
 
 ## Architecture
 
-    User intent / model output                    untrusted
-      -> agent_gateway                            normalization + Action bridge implemented
-      -> ExecuteTask Action Server                implemented outer lifecycle
-      -> task_guard                               implemented safety authority
-      -> task_executor                            implemented outer/inner adapter
-      -> NavigateToPose Action / Nav2             fake tests + real system run verified
-      -> TurtleBot3 Burger / Gazebo Sim           two sequential goals verified locally
+    User intent
+      -> MissionModel.plan()                      untrusted, closed MissionPlan
+      -> MissionRunner                            serial steps + bounded transitions
+      -> MissionModel.decide()                    only Runtime-offered choices
+      -> ExecuteTask Action Server                outer lifecycle
+      -> task_guard                               final task safety authority
+      -> NavigateToPose / Nav2                    planning and control
+      -> TurtleBot3 Burger / Gazebo Sim           real two-step mission verified
+      -> MissionModel.summarize()                 read-only, no Action access
 
 The Guard decision combines three inputs:
 
@@ -108,6 +130,14 @@ to reviewed poses by runtime configuration.
   remote HTTPS enforcement, and a one-request probe that sends no ROS Action.
 - Version-controlled AI intent evaluation with 12 accepted commands and 8
   fail-closed cases, including negation, multiple targets, and prompt injection.
+- Strict 1-3 step MissionPlan validation with a 180-second total budget and no
+  adjacent duplicate target.
+- Three bounded mission-model stages: planning, Runtime-constrained checkpoint
+  selection, and a read-only summary with deterministic fallback.
+- Serial MissionRunner execution through the existing ExecuteTask client;
+  invalid or unavailable checkpoint responses abort without a new Goal.
+- Twelve fixed mission cases, a no-motion mission probe, an offline process
+  smoke, and an opt-in Fake-model mission through real Nav2.
 - Outer ExecuteTask Action Server with named-target mapping and bounded inner
   cancellation confirmation.
 - Global task deadline based on monotonic time, followed by a fixed 500 ms
@@ -140,8 +170,8 @@ to reviewed poses by runtime configuration.
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
 | M4 Nav2 and TurtleBot3 | Complete | Nav2 active; `home -> dock -> workbench` succeeded through the outer Runtime on 2026-07-17 |
-| M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
-| M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
+| M5 bounded AI mission | Complete | 20/20 intent + 12/12 mission evaluation; real Nav2 executes `dock -> workbench` |
+| M6 observability and release | In progress | CI/release gate implemented; TaskEvent, rosbag, live model, and hardware remain |
 
 ## Build and test
 
@@ -172,7 +202,9 @@ Run the process-level M2 proof after building:
 Current milestone evidence:
 
     Summary: 5 packages finished
-    Summary: 76 tests, 0 errors, 0 failures, 0 skipped
+    Summary: 123 tests, 0 errors, 0 failures, 0 skipped
+    Intent evaluation: 20/20 passed (100.0%)
+    Mission evaluation: 12/12 passed; unsafe_acceptances=0
 
 Run the offline AI-to-ROS proof:
 
@@ -192,6 +224,15 @@ Before any ROS process, verify one model request with the no-motion probe:
 Run the fixed 20-case Chinese intent evaluation without network access:
 
     ros2 run agent_gateway evaluate_intents --provider fake
+
+Run the bounded mission evaluation and a no-motion plan probe:
+
+    ros2 run agent_gateway evaluate_missions --provider fake
+    ros2 run agent_gateway probe_mission --provider fake "先去充电桩，再去工作台"
+
+Run the complete offline mission through ExecuteTask and fake navigation:
+
+    bash src/embodied-agent-runtime/scripts/smoke_ai_mission.sh
 
 After configuring a real compatible service, the same command can evaluate it:
 
@@ -222,6 +263,11 @@ For repeatable evidence instead of a manual RViz click-through:
 
     bash src/embodied-agent-runtime/scripts/smoke_nav2_sim.sh
 
+Opt into the bounded Fake-model mission while keeping the same real Nav2 stack:
+
+    NAV2_SMOKE_MODE=mission AI_MISSION_SMOKE_PROVIDER=fake \
+      bash src/embodied-agent-runtime/scripts/smoke_nav2_sim.sh
+
 The smoke launches headless Gazebo, waits for Nav2 lifecycle activation, and
 sends `home -> dock -> workbench` as two outer Runtime Goals. It is deliberately
 kept separate from the fast release gate because a full physics simulation is
@@ -229,11 +275,13 @@ slower and needs additional system packages. The configured restricted-area
 polygon is currently an RViz marker with `enforced: false`; Nav2 keepout-filter
 enforcement is not claimed.
 
-Local system evidence recorded on 2026-07-17:
+Local AI mission system evidence recorded on 2026-07-17:
 
-    bt_navigator: active
-    nav2-smoke-dock: final_state 5, error_code 0, attempts 1, SUCCEEDED
-    nav2-smoke-workbench: final_state 5, error_code 0, attempts 1, SUCCEEDED
+    Mission plan: dock -> workbench
+    Step result: target=dock ... SUCCEEDED
+    Step result: target=workbench ... SUCCEEDED
+    AI decision: continue
+    Mission result: completed
 
 The lifecycle check is anchored to the exact `active` state; a regression test
 ensures `inactive` cannot produce a false positive.
@@ -292,8 +340,9 @@ hardware.
 ## Project and design notes
 
 - Chinese project answers: docs/project-talking-points.zh-CN.md
-- Latest guided lesson: docs/learning-session-14-openai-and-relay.zh-CN.md
+- Latest guided lesson: docs/learning-session-18-bounded-ai-mission-agent.zh-CN.md
 - GitHub release lesson: docs/learning-session-15-github-release-engineering.zh-CN.md
+- Bounded AI mission lesson: docs/learning-session-18-bounded-ai-mission-agent.zh-CN.md
 - Architecture and trust boundary: docs/architecture.md
 - Ordered implementation roadmap: docs/project-roadmap.md
 - Final demonstration: docs/final-demo-spec.md
