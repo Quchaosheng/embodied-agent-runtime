@@ -19,8 +19,8 @@ now implemented. Reproduce their process-level proof with
 `scripts/smoke_phase_2.sh`. The automated `launch_testing` fixture now covers
 success, feedback, rejection, cancellation, global deadline, and process exit.
 Bounded retry now reuses the original deadline and ends in SAFE_STOP after two
-failures. The next proof is version-controlled target poses and real Nav2. Do
-not let the model provide coordinates.
+failures. Version-controlled target poses and real Nav2 are also verified; the
+model still cannot provide coordinates.
 
 Proof: an automated test covers accepted Goal, feedback, success, and client
 cancellation.
@@ -68,6 +68,8 @@ pose, AMCL initial pose, simulated time, and Nav2 lifecycle fit together.
 Proof: run `scripts/smoke_nav2_sim.sh` and explain why its two real-Nav2 Goals
 complement rather than replace the deterministic fake-Action tests. RViz must
 display each target and label the current restricted polygon as unenforced.
+The local 2026-07-17 evidence is `bt_navigator` active followed by successful
+`home -> dock -> workbench` outer Runtime Goals.
 
 ## Session 6: Gateway Protocol
 
