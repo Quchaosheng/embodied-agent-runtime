@@ -140,7 +140,7 @@ Run:
 ```bash
 cd /mnt/old-linux/current-data/sheng/embodied_ws_nav2
 PATH="/usr/bin:/bin:${PATH}" \
-  colcon build --symlink-install --packages-up-to runtime_simulation \
+  colcon build --symlink-install --packages-up-to runtime_simulation agent_gateway \
   --cmake-clean-cache \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
 ```
@@ -157,7 +157,9 @@ set +u
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 set -u
-colcon test --packages-up-to runtime_simulation --event-handlers console_direct+
+colcon test --packages-select \
+  task_contract task_guard task_executor agent_gateway runtime_simulation \
+  --event-handlers console_direct+
 colcon test-result --verbose
 ```
 
@@ -228,7 +230,7 @@ Run:
 ```bash
 cd /mnt/old-linux/current-data/sheng/embodied_ws_nav2
 PATH="/usr/bin:/bin:${PATH}" \
-  colcon build --symlink-install --packages-up-to runtime_simulation \
+  colcon build --symlink-install --packages-up-to runtime_simulation agent_gateway \
   --cmake-clean-cache \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
 set +u
