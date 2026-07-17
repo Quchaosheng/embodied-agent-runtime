@@ -1,4 +1,30 @@
-# Embodied Agent Runtime
+<p align="center">
+  <img src="docs/assets/hero.svg" width="100%" alt="Embodied Agent Runtime — AI intent in, guarded ROS 2 tasks out">
+</p>
+
+<h1 align="center">Embodied Agent Runtime</h1>
+
+<p align="center">
+  <strong>A safety-bounded bridge between probabilistic AI intent and deterministic robot execution.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml"><img src="https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg" alt="ROS 2 CI"></a>
+  <img src="https://img.shields.io/badge/ROS_2-Jazzy-22314E?logo=ros&logoColor=white" alt="ROS 2 Jazzy">
+  <img src="https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04">
+  <img src="https://img.shields.io/badge/C++-17-00599C?logo=cplusplus&logoColor=white" alt="C++17">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/tests-64_passing-2ea44f" alt="64 tests passing">
+  <img src="https://img.shields.io/badge/intent_eval-20%2F20-20b2aa" alt="20 of 20 intent evaluations passing">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a>
+</p>
+
+<p align="center">
+  <a href="#中文速览">中文速览</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#build-and-test">Build &amp; Test</a> ·
+  <a href="docs/project-talking-points.zh-CN.md">Project Notes</a>
+</p>
 
 A safety-bounded ROS 2 runtime that lets an AI model request approved robot
 tasks without giving the model direct control of coordinates, velocity,
@@ -57,13 +83,7 @@ Nav2 Goal exists.
 
 ## Architecture
 
-    User intent / model output                    untrusted
-      -> agent_gateway                            normalization + Action bridge implemented
-      -> ExecuteTask Action Server                implemented outer lifecycle
-      -> task_guard                               implemented safety authority
-      -> task_executor                            implemented outer/inner adapter
-      -> NavigateToPose Action / Nav2             fake server implemented; real integration planned
-      -> TurtleBot3 simulation                    planned system demo
+![Trust-boundary architecture](docs/assets/architecture.svg)
 
 The Guard decision combines three inputs:
 
@@ -72,6 +92,13 @@ The Guard decision combines three inputs:
 - TaskRequest: what the caller wants.
 - GuardPolicy: what this deployment permits.
 - RobotContext: whether the robot is currently ready and idle.
+
+### Fail-closed request flow
+
+![Fail-closed request flow](docs/assets/request-flow.svg)
+
+Every rejection exits before the next side-effect boundary. Invalid model
+output creates no ROS Action; Guard rejection creates no inner Nav2 Goal.
 
 ## Safety contract
 
@@ -87,6 +114,14 @@ The model-facing request is deliberately narrow:
 The model cannot provide coordinates, velocity commands, trajectories,
 behavior-tree XML, retry counts, or recovery policy. Named targets are mapped
 to reviewed poses by runtime configuration.
+
+## Bounded execution state machine
+
+![Bounded task state machine](docs/assets/state-machine.svg)
+
+Retries reuse the original monotonic deadline. Cancellation is not reported as
+complete until the inner Action reaches a confirmed terminal canceled state
+within the bounded window.
 
 ## Implemented today
 
@@ -131,7 +166,7 @@ to reviewed poses by runtime configuration.
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
 | M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
 | M5 gateway and observability | In progress | OpenAI/relay profiles and fixed intent evaluation tested offline; live credentials and events remain |
-| M6 regression and release | In progress | Twenty fixed AI intent cases complete; full system matrix and CI remain |
+| M6 regression and release | In progress | CI workflow and twenty AI intent cases complete; full system matrix remains |
 
 ## Build and test
 
