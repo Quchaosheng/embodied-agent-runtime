@@ -27,6 +27,9 @@ required_files=(
   task_guard/config/task_policy.yaml
   simulation/config/targets.yaml
   agent_gateway/evaluation/intent_cases.json
+  scripts/audit_task_event_bag.py
+  scripts/smoke_task_event_bag.sh
+  test/test_audit_task_event_bag.py
 )
 
 for required_file in "${required_files[@]}"; do
@@ -78,6 +81,8 @@ colcon build --symlink-install --packages-up-to task_executor agent_gateway
 set +u
 source install/setup.bash
 set -u
+PYTHONPATH="${project_root}" \
+  python3 "${project_root}/test/test_audit_task_event_bag.py" -v
 colcon test --packages-select task_contract task_guard task_executor agent_gateway
 colcon test-result --verbose
 
@@ -86,5 +91,7 @@ ROS_DOMAIN_ID=161 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_phase_2.sh"
 ROS_DOMAIN_ID=162 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_ai_gateway.sh"
+ROS_DOMAIN_ID=163 EMBODIED_WS="${workspace_root}" \
+  bash "${project_root}/scripts/smoke_task_event_bag.sh"
 
 printf '\nRelease verification passed. The repository is ready for GitHub review.\n'
