@@ -82,11 +82,12 @@ executor, Nav2, or simulation file.
 
 ## Session 7: Observability and Regression
 
-Implemented: publish reliable transient-local `TaskEvent` transitions and
-verify complete lifecycle sequences plus late-subscriber history.
+Implemented: publish reliable transient-local `TaskEvent` transitions, verify
+complete lifecycle sequences and late-subscriber history, then persist two
+fixed timelines to MCAP and read them back through rosbag2.
 
-Build next: collect ROS diagnostics, open TaskEvent and health data in
-Foxglove, and record one rosbag.
+Build next: collect ROS diagnostics and open TaskEvent plus health data in
+Foxglove after the observability branches are integrated.
 
 Proof: the test suite contains twenty fixed scenarios and the README contains
 one success trace plus one timeout-to-safe-stop trace.
