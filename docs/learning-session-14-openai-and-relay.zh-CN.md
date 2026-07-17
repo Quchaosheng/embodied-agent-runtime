@@ -168,6 +168,6 @@ fragment，并继续把所有响应当不可信数据。配置能力不等于信
 - [x] `/v1` 或完整 Chat Completions URL 兼容。
 - [x] 单请求无 ROS 探针。
 - [x] Offline smoke 默认显式 Fake，避免意外费用。
-- [x] 当前总计 64 tests 通过。
+- [x] 当前总计 65 tests 通过。
 - [ ] 用户在本机设置模型名与 Key。
 - [ ] 真实 probe、20 条评测和 AI + 假 Nav2 smoke。

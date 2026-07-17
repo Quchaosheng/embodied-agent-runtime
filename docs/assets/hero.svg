@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title description">
+  <title id="title">Embodied Agent Runtime</title>
+  <desc id="description">AI intent enters a strict ROS 2 safety runtime before guarded Nav2 execution.</desc>
+  <defs>
+    <linearGradient id="backgroundGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071426"/>
+      <stop offset="0.55" stop-color="#0a2038"/>
+      <stop offset="1" stop-color="#07111f"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="0.68" cy="0.35" r="0.62">
+      <stop offset="0" stop-color="#18d7ef" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#18d7ef" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="gridPattern" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M 44 0 L 0 0 0 44" fill="none" stroke="#67dff0" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000814" flood-opacity="0.55"/>
+    </filter>
+    <filter id="lineGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blurredLine"/>
+      <feMerge>
+        <feMergeNode in="blurredLine"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3ee6f5"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="560" rx="30" fill="url(#backgroundGradient)"/>
+  <rect width="1600" height="560" rx="30" fill="url(#cyanGlow)"/>
+  <rect x="1" y="1" width="1598" height="558" rx="29" fill="url(#gridPattern)" stroke="#2ac9dc" stroke-opacity="0.25" stroke-width="2"/>
+
+  <g transform="translate(90 98)" filter="url(#softShadow)">
+    <circle cx="190" cy="180" r="148" fill="#081a2e" stroke="#29d6e8" stroke-width="3" stroke-opacity="0.55"/>
+    <circle cx="190" cy="180" r="116" fill="none" stroke="#29d6e8" stroke-width="1.5" stroke-dasharray="9 12" stroke-opacity="0.35"/>
+    <path d="M 112 176 L 127 126 Q 132 108 151 108 L 229 108 Q 248 108 253 126 L 268 176" fill="#0f3550" stroke="#5be9f6" stroke-width="4"/>
+    <rect x="104" y="164" width="172" height="88" rx="30" fill="#102d45" stroke="#5be9f6" stroke-width="4"/>
+    <circle cx="150" cy="204" r="13" fill="#6ff5ff" filter="url(#lineGlow)"/>
+    <circle cx="230" cy="204" r="13" fill="#6ff5ff" filter="url(#lineGlow)"/>
+    <path d="M 163 232 Q 190 249 217 232" fill="none" stroke="#6ff5ff" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 190 107 L 190 72" stroke="#5be9f6" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="190" cy="58" r="13" fill="#ffcb6b" stroke="#fff0bd" stroke-width="3"/>
+    <circle cx="119" cy="270" r="30" fill="#07111f" stroke="#88f2fb" stroke-width="5"/>
+    <circle cx="261" cy="270" r="30" fill="#07111f" stroke="#88f2fb" stroke-width="5"/>
+    <path d="M 79 158 L 44 134 M 301 158 L 336 134 M 76 211 L 37 215 M 304 211 L 343 215" stroke="#29d6e8" stroke-width="3" stroke-linecap="round" opacity="0.65"/>
+  </g>
+
+  <g transform="translate(465 105)">
+    <text x="0" y="35" fill="#70edf7" font-family="Inter, Segoe UI, sans-serif" font-size="21" font-weight="700" letter-spacing="5">SAFETY-BOUNDED ROS 2 RUNTIME</text>
+    <text x="0" y="113" fill="#f4fbff" font-family="Inter, Segoe UI, sans-serif" font-size="58" font-weight="800" letter-spacing="1">EMBODIED AGENT</text>
+    <text x="0" y="180" fill="#f4fbff" font-family="Inter, Segoe UI, sans-serif" font-size="58" font-weight="800" letter-spacing="1">RUNTIME</text>
+    <text x="3" y="232" fill="#a8c9d8" font-family="Inter, Segoe UI, sans-serif" font-size="25">AI intent in. Guarded robot tasks out.</text>
+
+    <g transform="translate(0 275)" font-family="Inter, Segoe UI, sans-serif" font-size="17" font-weight="700">
+      <rect x="0" y="0" width="205" height="48" rx="24" fill="#0e3a4a" stroke="#2ce0ef" stroke-opacity="0.75"/>
+      <text x="102" y="31" text-anchor="middle" fill="#8ff6ff">STRICT CONTRACT</text>
+      <rect x="220" y="0" width="178" height="48" rx="24" fill="#18364c" stroke="#69b9ff" stroke-opacity="0.75"/>
+      <text x="309" y="31" text-anchor="middle" fill="#b4dcff">DUAL ACTION</text>
+      <rect x="413" y="0" width="235" height="48" rx="24" fill="#213b3a" stroke="#66e3a4" stroke-opacity="0.75"/>
+      <text x="530" y="31" text-anchor="middle" fill="#a9f6cb">BOUNDED RECOVERY</text>
+    </g>
+  </g>
+
+  <g transform="translate(500 468)" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700">
+    <text x="0" y="0" fill="#a8c9d8">MODEL</text>
+    <path d="M 78 -7 H 152" stroke="#3ee6f5" stroke-width="3" marker-end="url(#arrowCyan)"/>
+    <text x="173" y="0" fill="#a8c9d8">GATEWAY</text>
+    <path d="M 280 -7 H 354" stroke="#3ee6f5" stroke-width="3" marker-end="url(#arrowCyan)"/>
+    <text x="375" y="0" fill="#a8c9d8">GUARD</text>
+    <path d="M 455 -7 H 529" stroke="#3ee6f5" stroke-width="3" marker-end="url(#arrowCyan)"/>
+    <text x="550" y="0" fill="#a8c9d8">NAV2</text>
+  </g>
+
+  <text x="1510" y="515" text-anchor="end" fill="#5d8598" font-family="Inter, Segoe UI, sans-serif" font-size="15">NO MODEL-GENERATED COORDINATES · VELOCITIES · RETRIES</text>
+</svg>

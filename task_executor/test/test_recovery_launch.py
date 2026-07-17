@@ -4,10 +4,23 @@ import launch_testing
 import launch_testing.actions
 import launch_testing.asserts
 import rclpy
+import time
 import unittest
 from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
 from task_contract.action import ExecuteTask
+from task_contract.msg import TaskEvent
+
+
+def task_event_qos():
+    return QoSProfile(
+        depth=50,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
 
 
 def generate_test_description():
@@ -22,6 +35,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="retry_success",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     exhausted_navigation = launch_ros.actions.Node(
@@ -35,6 +49,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="recovery_exhausted",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     deadline_navigation = launch_ros.actions.Node(
@@ -48,6 +63,7 @@ def generate_test_description():
         package="task_executor",
         executable="execute_task_server",
         namespace="retry_deadline",
+        parameters=[{"localization_check_enabled": False}],
         output="screen",
     )
     return launch.LaunchDescription(
@@ -85,6 +101,14 @@ class TestBoundedRecovery(unittest.TestCase):
 
     def execute_task(self, action_name, task_id, deadline_s=5):
         feedback = []
+        events = []
+        namespace = action_name.rsplit("/", 1)[0]
+        event_subscription = self.node.create_subscription(
+            TaskEvent,
+            f"{namespace}/task_events",
+            events.append,
+            task_event_qos(),
+        )
         client = ActionClient(self.node, ExecuteTask, action_name)
         self.assertTrue(client.wait_for_server(timeout_sec=5.0))
 
@@ -107,10 +131,23 @@ class TestBoundedRecovery(unittest.TestCase):
         goal_handle = self.wait_for(goal_future)
         self.assertTrue(goal_handle.accepted)
         response = self.wait_for(goal_handle.get_result_async())
-        return response, feedback
+        deadline = time.monotonic() + 5.0
+        while (
+            not any(
+                event.task_id == task_id
+                and event.state == response.result.final_state
+                for event in events
+            )
+            and time.monotonic() < deadline
+        ):
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        task_events = [event for event in events if event.task_id == task_id]
+        self.assertTrue(task_events)
+        self.node.destroy_subscription(event_subscription)
+        return response, feedback, task_events
 
     def test_first_failure_retries_and_succeeds(self):
-        response, feedback = self.execute_task(
+        response, feedback, events = self.execute_task(
             "/retry_success/execute_task", "recovery-success"
         )
 
@@ -130,9 +167,22 @@ class TestBoundedRecovery(unittest.TestCase):
             if state == ExecuteTask.Feedback.STATE_RECOVERING
         ]
         self.assertEqual(recovering, [1])
+        self.assertEqual(
+            [event.state for event in events],
+            [
+                TaskEvent.STATE_VALIDATING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_RECOVERING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_SUCCEEDED,
+            ],
+        )
+        self.assertEqual([event.attempt for event in events[-4:]], [1, 2, 2, 2])
 
     def test_two_failures_end_in_safe_stop(self):
-        response, feedback = self.execute_task(
+        response, feedback, events = self.execute_task(
             "/recovery_exhausted/execute_task", "recovery-exhausted"
         )
 
@@ -146,9 +196,23 @@ class TestBoundedRecovery(unittest.TestCase):
             if state == ExecuteTask.Feedback.STATE_RECOVERING
         ]
         self.assertEqual(recovering, [1])
+        self.assertEqual(
+            [event.state for event in events],
+            [
+                TaskEvent.STATE_VALIDATING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_RECOVERING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_SAFE_STOP,
+            ],
+        )
+        self.assertEqual(events[-1].error_code, 34)
+        self.assertEqual(events[-1].attempt, 2)
 
     def test_retry_does_not_reset_deadline(self):
-        response, feedback = self.execute_task(
+        response, feedback, events = self.execute_task(
             "/retry_deadline/execute_task", "recovery-deadline", deadline_s=1
         )
 
@@ -162,6 +226,20 @@ class TestBoundedRecovery(unittest.TestCase):
             if state == ExecuteTask.Feedback.STATE_RECOVERING
         ]
         self.assertEqual(recovering, [1])
+        self.assertEqual(
+            [event.state for event in events],
+            [
+                TaskEvent.STATE_VALIDATING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_RECOVERING,
+                TaskEvent.STATE_DISPATCHING,
+                TaskEvent.STATE_RUNNING,
+                TaskEvent.STATE_CANCELLING,
+                TaskEvent.STATE_FAILED,
+            ],
+        )
+        self.assertEqual(events[-1].error_code, 32)
 
 
 @launch_testing.post_shutdown_test()

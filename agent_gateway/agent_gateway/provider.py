@@ -125,6 +125,27 @@ class OpenAICompatibleProvider:
             raise ProviderError("OPENAI_API_KEY is required")
         return cls(base_url, model, api_key, timeout_s)
 
+    def _chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": 0,
+        }
+        if tools is not None:
+            payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
+
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return self._transport(self._endpoint, headers, payload, self._timeout_s)
+
     def generate_task(self, user_text: str, schema: dict[str, Any]) -> str:
         if not user_text.strip():
             raise ProviderError("user text must not be empty")
@@ -134,38 +155,29 @@ class OpenAICompatibleProvider:
             for key, value in schema.items()
             if key not in {"$schema", "title"}
         }
-        payload = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Interpret the user intent. Call submit_robot_task exactly once "
-                        "only when the user clearly requests one approved named target. "
-                        "Otherwise do not call any tool. "
-                        "Never invent coordinates, velocities, paths, retries, or tools."
-                    ),
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Interpret the user intent. Call submit_robot_task exactly once "
+                    "only when the user clearly requests one approved named target. "
+                    "Otherwise do not call any tool. "
+                    "Never invent coordinates, velocities, paths, retries, or tools."
+                ),
+            },
+            {"role": "user", "content": user_text},
+        ]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": self.tool_name,
+                    "description": "Submit one approved named robot task",
+                    "parameters": tool_schema,
                 },
-                {"role": "user", "content": user_text},
-            ],
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": self.tool_name,
-                        "description": "Submit one approved named robot task",
-                        "parameters": tool_schema,
-                    },
-                }
-            ],
-            "tool_choice": "auto",
-            "temperature": 0,
-        }
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-
-        response = self._transport(self._endpoint, headers, payload, self._timeout_s)
+            }
+        ]
+        response = self._chat(messages, tools, "auto")
         try:
             tool_calls = response["choices"][0]["message"]["tool_calls"]
         except (KeyError, IndexError, TypeError) as error:

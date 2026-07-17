@@ -19,8 +19,8 @@ now implemented. Reproduce their process-level proof with
 `scripts/smoke_phase_2.sh`. The automated `launch_testing` fixture now covers
 success, feedback, rejection, cancellation, global deadline, and process exit.
 Bounded retry now reuses the original deadline and ends in SAFE_STOP after two
-failures. The next proof is version-controlled target poses and real Nav2. Do
-not let the model provide coordinates.
+failures. Version-controlled target poses and real Nav2 are also verified; the
+model still cannot provide coordinates.
 
 Proof: an automated test covers accepted Goal, feedback, success, and client
 cancellation.
@@ -61,14 +61,15 @@ Proof: a fake Nav2 server that aborts twice produces exactly two attempts and
 
 ## Session 5: TurtleBot3 Simulation
 
-Read the TurtleBot3 launch files in `reading-map.md` and start the selected
-simulation world.
+Read the TurtleBot3 launch files in `reading-map.md`, then compare them with
+`simulation/launch/runtime_nav2_sim.launch.py`. Trace how world, map, spawn
+pose, AMCL initial pose, simulated time, and Nav2 lifecycle fit together.
 
-Build next: one launch command for the Runtime plus Nav2 and TurtleBot3.
-Replace the placeholder target poses only after inspecting the simulation map.
-
-Proof: `dock`, `workbench`, and `home` succeed repeatedly. RViz displays each
-target, the current Goal, and the restricted area.
+Proof: run `scripts/smoke_nav2_sim.sh` and explain why its two real-Nav2 Goals
+complement rather than replace the deterministic fake-Action tests. RViz must
+display each target and label the current restricted polygon as unenforced.
+The local 2026-07-17 evidence is `bt_navigator` active followed by successful
+`home -> dock -> workbench` outer Runtime Goals.
 
 ## Session 6: Gateway Protocol
 
@@ -82,11 +83,28 @@ executor, Nav2, or simulation file.
 
 ## Session 7: Observability and Regression
 
-Build next: publish `TaskEvent`, collect diagnostics, open the data in
-Foxglove, and record one rosbag.
+Runtime readiness diagnostics are implemented from the same TF, Nav2, and BUSY
+facts used by the Guard. Reliable transient-local `TaskEvent` transitions and
+their rosbag2/MCAP audit are also implemented; read lessons 18 through 20.
+
+Build next: open diagnostics and events in Foxglove, then record a combined
+health and task-event demonstration.
 
 Proof: the test suite contains twenty fixed scenarios and the README contains
 one success trace plus one timeout-to-safe-stop trace.
+
+## Session 18: Bounded AI Mission Agent
+
+Read `learning-session-18-bounded-ai-mission-agent.zh-CN.md`, then trace
+`MissionModel.plan() -> MissionRunner -> ExecuteTask -> MissionModel.decide()`.
+Explain why AI participates at planning, checkpoint, and summary stages while
+coordinates and every ROS Goal remain outside the model boundary.
+
+Proof: the Fake model passes 12/12 fixed mission cases with zero unsafe
+acceptances. The offline mission smoke completes two ExecuteTask steps, and the
+opt-in system smoke completes `dock -> workbench` through real local Nav2.
+Provider failure, an unavailable transition, or an expired mission budget does
+not create the next Goal.
 
 ## Working rhythm
 

@@ -56,11 +56,14 @@ or delegate safety decisions to a model.
 Repository: `turtlebot3`
 
 - `turtlebot3_navigation2/launch/navigation2.launch.py`
-- `turtlebot3_bringup/launch/robot.launch.py`
+- `turtlebot3_navigation2/param/burger.yaml`
+- `turtlebot3_navigation2/map/map.yaml`
 
 Repository: `turtlebot3_simulations`
 
 - `turtlebot3_gazebo/launch/turtlebot3_world.launch.py`
+- `turtlebot3_gazebo/launch/spawn_turtlebot3.launch.py`
+- `turtlebot3_gazebo/launch/robot_state_publisher.launch.py`
 - `turtlebot3_gazebo/launch/turtlebot3_house.launch.py`
 - `turtlebot3_gazebo/rviz/tb3_gazebo.rviz`
 
