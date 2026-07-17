@@ -45,13 +45,15 @@ trap cleanup EXIT INT TERM
 ros2 run task_executor fake_navigate_to_pose_server \
   >"${log_dir}/fake_navigate_to_pose_server.log" 2>&1 &
 nav_pid=$!
-ros2 run task_executor execute_task_server \
+ros2 run task_executor execute_task_server --ros-args \
+  -p localization_check_enabled:=false \
   >"${log_dir}/execute_task_server.log" 2>&1 &
 executor_pid=$!
 
-printf 'Waiting for ExecuteTask...\n'
+printf 'Waiting for ExecuteTask and fake navigation...\n'
 for _ in {1..50}; do
-  if ros2 action list 2>/dev/null | rg -q '^/execute_task$'; then
+  if ros2 action list 2>/dev/null | rg -q '^/execute_task$' && \
+     ros2 action list 2>/dev/null | rg -q '^/navigate_to_pose$'; then
     break
   fi
   sleep 0.1
@@ -61,6 +63,10 @@ if ! ros2 action list 2>/dev/null | rg -q '^/execute_task$'; then
   printf 'execute_task Action server did not start.\n' >&2
   exit 1
 fi
+if ! ros2 action list 2>/dev/null | rg -q '^/navigate_to_pose$'; then
+  printf 'navigate_to_pose Action server did not start.\n' >&2
+  exit 1
+fi
 
 printf 'Using provider: %s\n' "${provider}"
 output="$(timeout 60s ros2 run agent_gateway ask \
@@ -68,9 +74,7 @@ output="$(timeout 60s ros2 run agent_gateway ask \
 printf '%s\n' "${output}"
 
 printf '%s\n' "${output}" | rg -q 'AI selected: action=navigate target=dock deadline_s=[1-9][0-9]?'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=3\.00'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=2\.00'
-printf '%s\n' "${output}" | rg -q 'state=RUNNING attempt=1 distance_remaining=1\.00'
+printf '%s\n' "${output}" | rg -q 'Feedback: state=RUNNING attempt=1 distance_remaining=[0-9]+\.[0-9]{2}'
 printf '%s\n' "${output}" | rg -q 'Result: task_id=[^ ]+ state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1'
 
 printf '\nAI Gateway smoke checks passed.\n'

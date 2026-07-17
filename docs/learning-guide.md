@@ -82,8 +82,11 @@ executor, Nav2, or simulation file.
 
 ## Session 7: Observability and Regression
 
-Build next: publish `TaskEvent`, collect diagnostics, open the data in
-Foxglove, and record one rosbag.
+Runtime readiness diagnostics are implemented from the same TF, Nav2, and BUSY
+facts used by the Guard. Read lesson 18 and inspect the readiness launch test.
+
+Build next: publish `TaskEvent`, open diagnostics and events in Foxglove, and
+record one rosbag.
 
 Proof: the test suite contains twenty fixed scenarios and the README contains
 one success trace plus one timeout-to-safe-stop trace.

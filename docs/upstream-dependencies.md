@@ -10,6 +10,8 @@ and license acknowledgements are recorded in `THIRD_PARTY_NOTICES.md`.
 | --- | --- | --- |
 | Navigation2 | Navigation executor | `nav2_msgs/action/NavigateToPose` Action Client |
 | ROS 2 Jazzy | Nodes, Actions, interfaces, package discovery | `rclcpp`, `rclpy`, ament, rosidl |
+| Linux SocketCAN | Read-only controller-heartbeat input | `PF_CAN` raw socket on `vcan0` or physical CAN interface |
+| can-utils | Reproducible virtual-CAN stimulus | `cansend` used only by the vcan smoke script |
 | yaml-cpp | Reviewed policy and target configuration | Linked C++ library |
 | python-jsonschema | Model-output Schema validation | Installed Python package |
 | GoogleTest, pytest, launch_testing | Unit and process verification | Test-only dependencies |
@@ -24,8 +26,6 @@ installed by `rosdep`; their source repositories are not Git submodules.
   currently installed as a package dependency.
 - Foxglove bridge, RViz markers, and rosbag2: planned observability evidence.
 - Qwen-Agent and ROS 2 examples: learning references only; no framework import.
-- Optional device-readiness extension: Linux SocketCAN and `can-utils` for a
-  `vcan0` test bus. This is introduced only after the core Runtime is stable.
 
 ## Version policy
 
