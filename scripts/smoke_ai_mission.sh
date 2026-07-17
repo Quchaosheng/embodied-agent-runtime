@@ -66,11 +66,11 @@ output="$(timeout 60s ros2 run agent_gateway run_mission \
   --provider "${provider}" --yes '先去充电桩，再去工作台' 2>&1)"
 printf '%s\n' "${output}"
 
-printf '%s\n' "${output}" | rg -q 'Mission plan: dock -> workbench'
-printf '%s\n' "${output}" | rg -q 'Step result: target=dock state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1'
-printf '%s\n' "${output}" | rg -q 'Step result: target=workbench state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1'
-[[ "$(printf '%s\n' "${output}" | rg -c '^AI decision: continue$')" -eq 1 ]]
-printf '%s\n' "${output}" | rg -q '^Mission result: completed$'
-printf '%s\n' "${output}" | rg -q '^AI summary: .+'
+rg -q 'Mission plan: dock -> workbench' <<<"${output}"
+rg -q 'Step result: target=dock state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1' <<<"${output}"
+rg -q 'Step result: target=workbench state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1' <<<"${output}"
+[[ "$(rg -c '^AI decision: continue$' <<<"${output}")" -eq 1 ]]
+rg -q '^Mission result: completed$' <<<"${output}"
+rg -q '^AI summary: .+' <<<"${output}"
 
 printf '\nAI mission smoke checks passed.\n'
