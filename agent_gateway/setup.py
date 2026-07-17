@@ -13,7 +13,7 @@ setup(
         ("share/" + package_name + "/schema", ["schema/mission_plan.schema.json"]),
         (
             "share/" + package_name + "/evaluation",
-            ["evaluation/intent_cases.json"],
+            ["evaluation/intent_cases.json", "evaluation/mission_cases.json"],
         ),
     ],
     install_requires=["setuptools", "jsonschema"],
@@ -28,6 +28,8 @@ setup(
             "ask = agent_gateway.cli:main",
             "run_mission = agent_gateway.mission_cli:main",
             "evaluate_intents = agent_gateway.evaluation_cli:main",
+            "evaluate_missions = agent_gateway.mission_evaluation_cli:main",
+            "probe_mission = agent_gateway.mission_probe:main",
             "probe_provider = agent_gateway.provider_probe:main",
         ],
     },
