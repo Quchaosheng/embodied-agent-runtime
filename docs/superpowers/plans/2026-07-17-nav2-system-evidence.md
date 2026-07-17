@@ -139,8 +139,9 @@ Run:
 
 ```bash
 cd /mnt/old-linux/current-data/sheng/embodied_ws_nav2
-env -u CONDA_PREFIX -u PYTHONPATH \
+PATH="/usr/bin:/bin:${PATH}" \
   colcon build --symlink-install --packages-up-to runtime_simulation \
+  --cmake-clean-cache \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
 ```
 
@@ -226,8 +227,9 @@ Run:
 
 ```bash
 cd /mnt/old-linux/current-data/sheng/embodied_ws_nav2
-env -u CONDA_PREFIX -u PYTHONPATH \
+PATH="/usr/bin:/bin:${PATH}" \
   colcon build --symlink-install --packages-up-to runtime_simulation \
+  --cmake-clean-cache \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
 set +u
 source /opt/ros/jazzy/setup.bash
