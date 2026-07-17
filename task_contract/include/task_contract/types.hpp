@@ -39,6 +39,7 @@ enum class ErrorCode : std::uint8_t {
   kTaskAlreadyRunning = 15,
   kRobotNotReady = 16,
   kNavigationNotReady = 17,
+  kDeviceNotReady = 18,
   kNavRejected = 30,
   kNavAborted = 31,
   kTaskTimedOut = 32,
