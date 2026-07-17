@@ -23,7 +23,8 @@ requires at least 0.32 m of free-space clearance around every named target.
 ```bash
 sudo apt update
 sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
-  ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-navigation2
+  ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-navigation2 \
+  ros-jazzy-rviz2
 ```
 
 Check them without starting motion or simulation:
@@ -63,6 +64,10 @@ bash scripts/smoke_nav2_sim.sh
 The smoke waits for the Nav2 lifecycle stack, then sends two sequential
 `ExecuteTask` Goals. They travel through the real Nav2 `NavigateToPose` Action,
 not the deterministic fake server used by fast tests.
+
+On 2026-07-17 this command was verified locally with ROS 2 Jazzy: Nav2 reached
+`active`, then `home -> dock` and `dock -> workbench` both returned Runtime
+`final_state: 5`, `error_code: 0`, `attempts: 1`, and ROS Action `SUCCEEDED`.
 
 ## Deliberate limitation
 
