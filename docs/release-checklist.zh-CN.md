@@ -7,7 +7,9 @@
 - [ ] 仓库根目录存在 LICENSE 文件，并与 package metadata 一致。
 - [ ] `THIRD_PARTY_NOTICES.md` 区分当前依赖与规划/参考项目。
 - [ ] `bash scripts/verify_release.sh` 完整通过。
+- [ ] `bash scripts/smoke_task_event_bag.sh` 能从 MCAP 读回并校验任务时间线。
 - [ ] `git status` 不包含 `build/`、`install/`、`log/`、缓存或密钥。
+- [ ] `git status` 不包含 `.mcap`、rosbag metadata 或其他生成运行证据。
 - [ ] README 中没有把真实 Nav2、真实模型或硬件集成写成已完成。
 - [ ] 中转站、OpenAI 和 GitHub 凭据都没有进入文件或命令历史。
 
