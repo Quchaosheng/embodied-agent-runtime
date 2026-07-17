@@ -75,6 +75,15 @@ Deliver:
 
 - Minimal `agent_gateway` that converts a model response to the JSON contract.
 - `TaskEvent` publisher, diagnostics, Foxglove visualization, and rosbag demo.
+- Optional read-only SocketCAN heartbeat input for hardware readiness.
+
+Current: model profiles, fixed intent evaluation, live Runtime diagnostics, and
+the SocketCAN readiness gate are implemented. TaskEvent, Foxglove, and rosbag
+evidence remain.
+
+Current: provider profiles, fixed intent evaluation, TaskEvent, and a
+deterministic rosbag2/MCAP persistence audit are implemented. Diagnostics and
+Foxglove evidence remain on their independent branches or roadmap.
 
 Accept: changing the model provider does not modify Guard, executor, or Nav2
 code.
@@ -86,6 +95,9 @@ Deliver:
 - Twenty fixed fault and success scenarios.
 - Fast fake-Action tests and a smaller TurtleBot3/Nav2 simulation suite.
 - CI, formatting, linting, README demo, architecture diagram, and error table.
+
+Current: five packages and 77 tests are in the local release gate. The full
+Nav2 simulation matrix and repeated clean-run evidence remain.
 
 Accept: all tests pass repeatedly from a clean workspace and the README gives
 another developer a reproducible demo path.

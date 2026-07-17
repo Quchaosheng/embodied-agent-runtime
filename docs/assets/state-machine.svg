@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title description">
+  <title id="title">Bounded task execution state machine</title>
+  <desc id="description">Task states show validation, dispatch, running, recovery, cancellation, success, safe stop, and failure with bounded loops.</desc>
+  <defs>
+    <linearGradient id="stateBackground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071426"/>
+      <stop offset="1" stop-color="#0b2032"/>
+    </linearGradient>
+    <marker id="stateArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#43dce9"/>
+    </marker>
+    <marker id="stateArrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#62e6a1"/>
+    </marker>
+    <marker id="stateArrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ff7192"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="760" rx="24" fill="url(#stateBackground)"/>
+  <text x="72" y="68" fill="#f3fbff" font-family="Inter, Segoe UI, sans-serif" font-size="36" font-weight="800">BOUNDED TASK STATE MACHINE</text>
+  <text x="72" y="104" fill="#8fb3c4" font-family="Inter, Segoe UI, sans-serif" font-size="19">Retries share one monotonic deadline. Cancellation requires bounded confirmation.</text>
+
+  <g font-family="Inter, Segoe UI, sans-serif">
+    <g transform="translate(70 300)">
+      <rect width="160" height="88" rx="44" fill="#1b2c40" stroke="#7c9bb8" stroke-width="2"/>
+      <text x="80" y="53" text-anchor="middle" fill="#e6f0f6" font-size="21" font-weight="700">IDLE</text>
+    </g>
+    <g transform="translate(290 300)">
+      <rect width="200" height="88" rx="24" fill="#163349" stroke="#4cd8e6" stroke-width="2"/>
+      <text x="100" y="43" text-anchor="middle" fill="#ecfcff" font-size="20" font-weight="700">VALIDATING</text>
+      <text x="100" y="67" text-anchor="middle" fill="#8fc4d0" font-size="14">contract + policy</text>
+    </g>
+    <g transform="translate(550 300)">
+      <rect width="200" height="88" rx="24" fill="#17364a" stroke="#5eaee8" stroke-width="2"/>
+      <text x="100" y="43" text-anchor="middle" fill="#eef8ff" font-size="20" font-weight="700">DISPATCHING</text>
+      <text x="100" y="67" text-anchor="middle" fill="#9bbbd1" font-size="14">inner Action goal</text>
+    </g>
+    <g transform="translate(810 300)">
+      <rect width="200" height="88" rx="24" fill="#193a42" stroke="#58d6bf" stroke-width="2"/>
+      <text x="100" y="43" text-anchor="middle" fill="#ecfff9" font-size="20" font-weight="700">RUNNING</text>
+      <text x="100" y="67" text-anchor="middle" fill="#9ec9bd" font-size="14">feedback conversion</text>
+    </g>
+    <g transform="translate(1130 152)">
+      <rect width="210" height="88" rx="24" fill="#163c30" stroke="#60e49d" stroke-width="2"/>
+      <text x="105" y="53" text-anchor="middle" fill="#d6ffe7" font-size="21" font-weight="700">SUCCEEDED</text>
+    </g>
+    <g transform="translate(1100 300)">
+      <rect width="240" height="88" rx="24" fill="#3c3320" stroke="#ffcb6b" stroke-width="2"/>
+      <text x="120" y="40" text-anchor="middle" fill="#fff0c9" font-size="20" font-weight="700">RECOVERING</text>
+      <text x="120" y="65" text-anchor="middle" fill="#d2bf91" font-size="14">attempt budget remains</text>
+    </g>
+    <g transform="translate(810 510)">
+      <rect width="220" height="88" rx="24" fill="#3b2930" stroke="#ff879f" stroke-width="2"/>
+      <text x="110" y="42" text-anchor="middle" fill="#ffe3e9" font-size="20" font-weight="700">CANCELLING</text>
+      <text x="110" y="66" text-anchor="middle" fill="#d2a5b0" font-size="14">500 ms confirmation</text>
+    </g>
+    <g transform="translate(1130 510)">
+      <rect width="210" height="88" rx="24" fill="#263548" stroke="#97b3d6" stroke-width="2"/>
+      <text x="105" y="53" text-anchor="middle" fill="#e5f0ff" font-size="21" font-weight="700">CANCELLED</text>
+    </g>
+    <g transform="translate(1390 300)">
+      <rect width="170" height="88" rx="24" fill="#4a2724" stroke="#ff8d74" stroke-width="2"/>
+      <text x="85" y="42" text-anchor="middle" fill="#ffe0d8" font-size="19" font-weight="700">SAFE STOP</text>
+      <text x="85" y="65" text-anchor="middle" fill="#d9a89c" font-size="13">error 34</text>
+    </g>
+    <g transform="translate(290 510)">
+      <rect width="200" height="88" rx="24" fill="#44232f" stroke="#ff7192" stroke-width="2"/>
+      <text x="100" y="42" text-anchor="middle" fill="#ffdce5" font-size="20" font-weight="700">FAILED</text>
+      <text x="100" y="66" text-anchor="middle" fill="#d5a0ad" font-size="14">explicit error code</text>
+    </g>
+  </g>
+
+  <g fill="none" stroke="#43dce9" stroke-width="4" marker-end="url(#stateArrow)">
+    <path d="M 230 344 H 282"/>
+    <path d="M 490 344 H 542"/>
+    <path d="M 750 344 H 802"/>
+  </g>
+  <path d="M 1010 326 C 1060 290 1080 220 1122 202" fill="none" stroke="#62e6a1" stroke-width="4" marker-end="url(#stateArrowGreen)"/>
+  <text x="1046" y="269" fill="#94f3bd" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700">NAV SUCCESS</text>
+  <path d="M 1010 344 H 1092" fill="none" stroke="#ffcb6b" stroke-width="4" marker-end="url(#stateArrow)"/>
+  <text x="1051" y="326" text-anchor="middle" fill="#ffdc93" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700">ABORT</text>
+  <path d="M 1100 370 C 1010 450 760 454 650 397" fill="none" stroke="#ffcb6b" stroke-width="4" stroke-dasharray="10 8" marker-end="url(#stateArrow)"/>
+  <text x="860" y="448" text-anchor="middle" fill="#ffdc93" font-family="Inter, Segoe UI, sans-serif" font-size="15" font-weight="700">RETRY ONCE · SAME DEADLINE</text>
+  <path d="M 1340 344 H 1382" fill="none" stroke="#ff7192" stroke-width="4" marker-end="url(#stateArrowRed)"/>
+  <text x="1361" y="326" text-anchor="middle" fill="#ffa3b6" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700">EXHAUSTED</text>
+  <path d="M 910 388 V 502" fill="none" stroke="#ff879f" stroke-width="4" marker-end="url(#stateArrowRed)"/>
+  <text x="926" y="452" fill="#ffa9ba" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">CANCEL / DEADLINE</text>
+  <path d="M 1030 554 H 1122" fill="none" stroke="#62e6a1" stroke-width="4" marker-end="url(#stateArrowGreen)"/>
+  <text x="1076" y="537" text-anchor="middle" fill="#94f3bd" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700">CONFIRMED</text>
+  <path d="M 810 568 C 650 650 500 636 490 568" fill="none" stroke="#ff7192" stroke-width="4" marker-end="url(#stateArrowRed)"/>
+  <text x="650" y="650" text-anchor="middle" fill="#ffa3b6" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">TIMEOUT / CANCEL UNCONFIRMED</text>
+  <path d="M 390 388 V 502" fill="none" stroke="#ff7192" stroke-width="4" marker-end="url(#stateArrowRed)"/>
+  <text x="406" y="452" fill="#ffa3b6" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">GUARD REJECT</text>
+
+  <g font-family="Inter, Segoe UI, sans-serif">
+    <rect x="72" y="678" width="1456" height="48" rx="16" fill="#101f30" stroke="#29475b"/>
+    <text x="800" y="708" text-anchor="middle" fill="#9ebac8" font-size="16">No unbounded loops · No deadline reset · No silent task substitution · SAFE_STOP is software state, not a hardware E-stop</text>
+  </g>
+</svg>

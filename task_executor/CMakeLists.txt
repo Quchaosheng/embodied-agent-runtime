@@ -3,12 +3,15 @@ project(task_executor)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(task_contract REQUIRED)
 find_package(task_guard REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 add_library(target_map src/target_map.cpp)
@@ -33,12 +36,15 @@ add_executable(execute_task_server src/execute_task_server.cpp)
 target_compile_features(execute_task_server PUBLIC cxx_std_17)
 ament_target_dependencies(execute_task_server
   ament_index_cpp
+  diagnostic_msgs
   geometry_msgs
   nav2_msgs
   rclcpp
   rclcpp_action
+  std_msgs
   task_contract
   task_guard
+  tf2_ros
 )
 target_link_libraries(execute_task_server target_map)
 
@@ -71,6 +77,7 @@ if(BUILD_TESTING)
   )
   add_launch_test(test/test_execute_task_launch.py TIMEOUT 30)
   add_launch_test(test/test_recovery_launch.py TIMEOUT 30)
+  add_launch_test(test/test_runtime_readiness_launch.py TIMEOUT 30)
 endif()
 
 ament_package()
