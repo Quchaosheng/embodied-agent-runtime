@@ -409,7 +409,8 @@ Run:
 
 ```bash
 xmllint --noout task_executor/package.xml
-rosdep check --from-paths task_executor --ignore-src --rosdistro jazzy
+rosdep check --from-paths task_contract task_guard task_executor \
+  --ignore-src --rosdistro jazzy
 ```
 
 Expected: XML validation exits 0 and rosdep reports all dependencies satisfied.

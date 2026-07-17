@@ -16,3 +16,5 @@ htmlcov/
 !*.example.env
 *.pem
 *.key
+*.mcap
+task-event-bag-*/
