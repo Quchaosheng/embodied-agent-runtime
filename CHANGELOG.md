@@ -15,6 +15,11 @@ single pre-release line while live-model and hardware evidence remain open.
 - Fake navigation server, launch tests, and two process smoke tests.
 - Fake, official OpenAI, and OpenAI-compatible relay provider profiles.
 - Twenty-case Chinese intent evaluation and no-ROS provider probe.
+- Strict bounded MissionPlan, three-stage MissionModel boundary, and serial
+  MissionRunner through the existing ExecuteTask Action.
+- Twelve-case mission evaluation, no-motion mission probe, and offline mission smoke.
+- Opt-in Fake-model mission through real local Nav2, including ordered
+  `dock -> workbench` success and one bounded checkpoint decision.
 - ROS 2 Jazzy GitHub Actions workflow and release verification gate.
 - Third-party dependency and license inventory without vendored source trees.
 - CI rosdep initialization and bounded update retry for clean GitHub runners.
@@ -24,6 +29,8 @@ single pre-release line while live-model and hardware evidence remain open.
 - Local Nav2/TurtleBot3 system evidence: lifecycle active and two sequential
   outer Runtime Goals succeeded through Gazebo Sim on 2026-07-17.
 - Exact lifecycle-state checking with a regression test that rejects `inactive`.
+- A simulation-only collision-monitor timeout override for the 5 Hz TurtleBot3
+  laser, with regression coverage for the effective Nav2 parameter.
 
 ### Not Yet Released
 

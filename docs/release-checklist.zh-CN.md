@@ -9,6 +9,8 @@
 - [ ] `bash scripts/verify_release.sh` 完整通过。
 - [ ] `git status` 不包含 `build/`、`install/`、`log/`、缓存或密钥。
 - [ ] README 将已实跑的 Nav2 smoke 与未联网真实模型、未完成硬件集成分开表述。
+- [ ] README 的 `123 tests`、单任务 `20/20` 和 Mission `12/12` 与最新本地输出一致。
+- [ ] README 明确说明 checkpoint 失败不会发新 Goal，`return_home` 仍通过 Guard。
 - [ ] 中转站、OpenAI 和 GitHub 凭据都没有进入文件或命令历史。
 
 ## GitHub 身份信息
@@ -71,7 +73,7 @@ ssh-keygen -t ed25519 -C "你的公开 GitHub 邮箱"
 ## 上传后检查
 
 - [ ] GitHub Actions 的 ROS 2 CI 为绿色。
-- [ ] README 首页能直接看到中文速览、76 tests 和真实 Nav2 系统证据。
+- [ ] README 首页能直接看到中文速览、123 tests、12/12 Mission 和真实 Nav2 系统证据。
 - [ ] 仓库 About 填写 ROS 2、embodied AI、Nav2、safety runtime。
 - [ ] Topics 建议：`ros2`、`robotics`、`embodied-ai`、`nav2`、`cpp`、`python`。
 - [ ] 默认分支为 `main`。
