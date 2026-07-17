@@ -12,6 +12,17 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from nav2_common.launch import RewrittenYaml
+
+
+def _nav2_parameters(source_file):
+    return RewrittenYaml(
+        source_file=source_file,
+        param_rewrites={
+            "collision_monitor.ros__parameters.scan.source_timeout": "0.5"
+        },
+        convert_types=True,
+    )
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -23,7 +34,7 @@ def generate_launch_description() -> LaunchDescription:
 
     world = LaunchConfiguration("world")
     map_yaml = LaunchConfiguration("map")
-    nav2_params = LaunchConfiguration("params_file")
+    nav2_params = _nav2_parameters(LaunchConfiguration("params_file"))
     rviz_config = LaunchConfiguration("rviz_config")
 
     ros_gz_launch = PathJoinSubstitution(

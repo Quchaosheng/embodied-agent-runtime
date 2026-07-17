@@ -5,7 +5,14 @@ set -Eeuo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_root="$(cd "${script_dir}/.." && pwd)"
 workspace_root="${EMBODIED_WS:-${source_root}}"
+smoke_mode="${NAV2_SMOKE_MODE:-direct}"
+mission_provider="${AI_MISSION_SMOKE_PROVIDER:-fake}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-$((20 + $$ % 180))}"
+
+if ! bash "${script_dir}/validate_nav2_smoke_mode.sh" "${smoke_mode}"; then
+  printf 'Unsupported NAV2_SMOKE_MODE: %s\n' "${smoke_mode}" >&2
+  exit 1
+fi
 
 if [[ ! -f "${workspace_root}/install/setup.bash" && -f "${HOME}/embodied_ws/install/setup.bash" ]]; then
   workspace_root="${HOME}/embodied_ws"
@@ -71,22 +78,37 @@ if ! ros2 action list 2>/dev/null | rg -q '^/execute_task$'; then
   exit 1
 fi
 
-printf '\n[1/2] Navigate from home to dock through the real Nav2 stack\n'
-dock_output="$(timeout 120s ros2 action send_goal /execute_task \
-  task_contract/action/ExecuteTask \
-  '{contract_version: 1, action: 1, task_id: nav2-smoke-dock, target: dock, deadline_s: 90}' \
-  --feedback 2>&1)"
-printf '%s\n' "${dock_output}"
-printf '%s\n' "${dock_output}" | rg -q 'final_state: 5'
-printf '%s\n' "${dock_output}" | rg -q 'Goal finished with status: SUCCEEDED'
+if [[ "${smoke_mode}" == "mission" ]]; then
+  printf '\nRun a bounded AI mission through the real Nav2 stack\n'
+  mission_output="$(timeout 240s ros2 run agent_gateway run_mission \
+    --provider "${mission_provider}" --yes \
+    '先去充电桩，再去工作台' 2>&1)"
+  printf '%s\n' "${mission_output}"
+  rg -q 'Mission plan: dock -> workbench' <<<"${mission_output}"
+  rg -q 'Step result: target=dock state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1' <<<"${mission_output}"
+  rg -q 'Step result: target=workbench state=SUCCEEDED goal_status=SUCCEEDED error_code=0 attempts=1' <<<"${mission_output}"
+  [[ "$(rg -c '^AI decision: continue$' <<<"${mission_output}")" -eq 1 ]]
+  rg -q '^Mission result: completed$' <<<"${mission_output}"
+  rg -q '^AI summary: .+' <<<"${mission_output}"
+  printf '\nAI mission/Nav2 system smoke checks passed.\n'
+else
+  printf '\n[1/2] Navigate from home to dock through the real Nav2 stack\n'
+  dock_output="$(timeout 120s ros2 action send_goal /execute_task \
+    task_contract/action/ExecuteTask \
+    '{contract_version: 1, action: 1, task_id: nav2-smoke-dock, target: dock, deadline_s: 90}' \
+    --feedback 2>&1)"
+  printf '%s\n' "${dock_output}"
+  printf '%s\n' "${dock_output}" | rg -q 'final_state: 5'
+  printf '%s\n' "${dock_output}" | rg -q 'Goal finished with status: SUCCEEDED'
 
-printf '\n[2/2] Navigate from dock to workbench as a second sequential task\n'
-workbench_output="$(timeout 120s ros2 action send_goal /execute_task \
-  task_contract/action/ExecuteTask \
-  '{contract_version: 1, action: 1, task_id: nav2-smoke-workbench, target: workbench, deadline_s: 90}' \
-  --feedback 2>&1)"
-printf '%s\n' "${workbench_output}"
-printf '%s\n' "${workbench_output}" | rg -q 'final_state: 5'
-printf '%s\n' "${workbench_output}" | rg -q 'Goal finished with status: SUCCEEDED'
+  printf '\n[2/2] Navigate from dock to workbench as a second sequential task\n'
+  workbench_output="$(timeout 120s ros2 action send_goal /execute_task \
+    task_contract/action/ExecuteTask \
+    '{contract_version: 1, action: 1, task_id: nav2-smoke-workbench, target: workbench, deadline_s: 90}' \
+    --feedback 2>&1)"
+  printf '%s\n' "${workbench_output}"
+  printf '%s\n' "${workbench_output}" | rg -q 'final_state: 5'
+  printf '%s\n' "${workbench_output}" | rg -q 'Goal finished with status: SUCCEEDED'
 
-printf '\nReal Nav2/TurtleBot3 system smoke checks passed.\n'
+  printf '\nReal Nav2/TurtleBot3 system smoke checks passed.\n'
+fi
