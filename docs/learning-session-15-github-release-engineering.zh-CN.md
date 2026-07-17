@@ -56,7 +56,7 @@ bash scripts/verify_release.sh
 技术复习时不要只说“写了很多代码”，而要说可验证产物：
 
 > 我把项目拆成 4 个 ROS 2 包，完成外层任务 Action 和内层 Nav2 Action 的双层生命周期；
-> 64 项测试覆盖 C++ Guard、Python Gateway、配置失败关闭和 9 个进程级 launch 用例；
+> 65 项测试覆盖 C++ Guard、Python Gateway、配置失败关闭和 10 个进程级 launch 用例；
 > 另外有 20 条中文意图评测和两个端到端 smoke。仓库提供 Ubuntu 24.04/ROS Jazzy CI，
 > 可以从干净工作区重复构建，而不是只在我的电脑上运行。
 
@@ -103,7 +103,7 @@ gh repo create
 CI 使用 Fake Provider 验证确定性协议和 Runtime；真实模型用受控的手工 probe 与固定语料
 评测，结果单独记录。
 
-### 问：64 tests 是否都等于真实机器人测试？
+### 问：65 tests 是否都等于真实机器人测试？
 
 答：不等于。它们包含单元、配置、协议和进程级 Action 测试，证明 Runtime 语义；真实
 Nav2/TurtleBot3 仍是单独的系统集成里程碑。准确区分测试层级比夸大数字更专业。

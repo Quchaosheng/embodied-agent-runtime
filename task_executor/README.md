@@ -7,6 +7,8 @@ The package now contains the first M2 runtime slice:
 - It loads named targets from version-controlled YAML and converts yaw to a
   map-frame pose quaternion.
 - It forwards NavigateToPose feedback to ExecuteTask feedback.
+- It publishes reliable transient-local TaskEvent transitions with terminal
+  error codes and attempt counts.
 - It propagates outer cancellation to the inner Goal with bounded confirmation.
 - It derives localization readiness from `map -> base_link` TF and navigation
   readiness from live `NavigateToPose` Action discovery.
@@ -50,6 +52,8 @@ Automated launch evidence:
 - missing or stale required device heartbeat returns error 18 with zero attempts.
 - diagnostics distinguish ready, localization-unavailable, navigation-unavailable,
   task-active, and explicit localization-check bypass states.
+- TaskEvent sequences cover success, Guard rejection, cancellation, deadline,
+  retry, and recovery exhaustion; a late subscriber receives retained history.
 - both test processes exit cleanly.
 
 Run it with:
@@ -59,6 +63,8 @@ Run it with:
 
 Not complete yet:
 
+- connection to a running Nav2 stack and physical robot.
+- hardware emergency-stop, motor watchdog, and physical controller command/ACK integration.
 - connection to a running Nav2 stack and physical robot.
 - hardware emergency-stop, motor watchdog, and physical controller command/ACK integration.
 - reviewed recovery actions beyond the minimal fixed retry loop.

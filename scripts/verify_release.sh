@@ -32,6 +32,9 @@ required_files=(
   device_bridge/package.xml
   simulation/config/targets.yaml
   agent_gateway/evaluation/intent_cases.json
+  scripts/audit_task_event_bag.py
+  scripts/smoke_task_event_bag.sh
+  test/test_audit_task_event_bag.py
 )
 
 for required_file in "${required_files[@]}"; do
@@ -84,6 +87,8 @@ set +u
 source install/setup.bash
 set -u
 colcon test --packages-select task_contract task_guard task_executor agent_gateway device_bridge
+PYTHONPATH="${project_root}" \
+  python3 "${project_root}/test/test_audit_task_event_bag.py" -v
 colcon test-result --verbose
 
 ros2 run agent_gateway evaluate_intents --provider fake
@@ -91,5 +96,7 @@ ROS_DOMAIN_ID=161 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_phase_2.sh"
 ROS_DOMAIN_ID=162 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_ai_gateway.sh"
+ROS_DOMAIN_ID=163 EMBODIED_WS="${workspace_root}" \
+  bash "${project_root}/scripts/smoke_task_event_bag.sh"
 
 printf '\nRelease verification passed. The repository is ready for GitHub review.\n'

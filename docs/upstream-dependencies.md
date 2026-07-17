@@ -14,6 +14,7 @@ and license acknowledgements are recorded in `THIRD_PARTY_NOTICES.md`.
 | can-utils | Reproducible virtual-CAN stimulus | `cansend` used only by the vcan smoke script |
 | yaml-cpp | Reviewed policy and target configuration | Linked C++ library |
 | python-jsonschema | Model-output Schema validation | Installed Python package |
+| rosbag2 and MCAP storage | Persisted TaskEvent audit evidence | ROS 2 CLI and `rosbag2_py` API |
 | GoogleTest, pytest, launch_testing | Unit and process verification | Test-only dependencies |
 
 All current direct dependencies are declared in the package manifests and are
@@ -24,7 +25,7 @@ installed by `rosdep`; their source repositories are not Git submodules.
 - BehaviorTree.CPP: optional reviewed recovery workflow; not currently linked.
 - TurtleBot3 and TurtleBot3 Simulations: planned system demonstration; not
   currently installed as a package dependency.
-- Foxglove bridge, RViz markers, and rosbag2: planned observability evidence.
+- Foxglove bridge and RViz markers: planned visualization evidence.
 - Qwen-Agent and ROS 2 examples: learning references only; no framework import.
 
 ## Version policy
