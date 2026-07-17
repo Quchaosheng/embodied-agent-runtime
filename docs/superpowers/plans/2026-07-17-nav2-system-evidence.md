@@ -52,7 +52,7 @@ pkill -TERM -x cpptools || true
 pkill -TERM -x cpptools-srv || true
 ```
 
-Expected: VS Code and Codex remain running. If either index process restarts and opens the cache again, stop here rather than force deletion.
+Expected: VS Code and Codex remain running. If either index process restarts and opens the cache again, preserve its active database and continue only with unused cache subdirectories.
 
 - [ ] **Step 3: Verify the cache is unused, remove it, and confirm recovered space**
 
@@ -64,7 +64,7 @@ rm -rf ~/.cache/vscode-cpptools
 df -h /
 ```
 
-Expected: the test exits 0, the cache directory is absent, and root free space increases by roughly 20 GiB.
+Expected: the test exits 0, the cache directory is absent, and root free space increases by roughly 20 GiB. If the indexer restarted, use `lsof` and `fuser` to identify its active database, preserve that subdirectory, and delete only unopened sibling indexes and `ipch`; root must have at least 10 GiB free before APT starts.
 
 - [ ] **Step 4: Install the minimum reviewed Jazzy packages**
 

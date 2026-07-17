@@ -43,7 +43,8 @@ RViz 截图是 README 展示资料，不是 headless 系统验证的通过条件
 2. 只终止正在占用缓存的 `cpptools` 和 `cpptools-srv` 子进程，不关闭
    VS Code 或 Codex。
 3. 确认缓存没有打开文件后删除该目录；若进程自动重启并再次
-   占用，则停止清理并报告，不强制删除。
+   占用，则保留活动数据库，只删除经 `lsof`/`fuser` 确认未占用的旧索引和
+   `ipch`，不强制删除活动文件。
 4. 确认根分区空间已足够，再安装最小依赖集：
    `navigation2`、`nav2-bringup`、`turtlebot3-gazebo` 和
    `turtlebot3-navigation2`。
