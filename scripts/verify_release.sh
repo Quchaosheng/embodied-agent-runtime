@@ -23,6 +23,10 @@ required_files=(
   CONTRIBUTING.md
   SECURITY.md
   .github/workflows/ros2-ci.yml
+  docs/assets/hero.svg
+  docs/assets/architecture.svg
+  docs/assets/request-flow.svg
+  docs/assets/state-machine.svg
   task_contract/schema/task_request.schema.json
   task_guard/config/task_policy.yaml
   simulation/config/targets.yaml
