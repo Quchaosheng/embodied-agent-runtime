@@ -7,6 +7,7 @@ import rclpy
 import time
 import unittest
 from action_msgs.msg import GoalStatus
+from diagnostic_msgs.msg import DiagnosticArray
 from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy
 from rclpy.qos import QoSProfile
@@ -58,16 +59,37 @@ class TestExecuteTaskLifecycle(unittest.TestCase):
         self.node = rclpy.create_node(f"execute_task_launch_test_{self._testMethodName}")
         self.client = ActionClient(self.node, ExecuteTask, "/execute_task")
         self.events = []
+        self.statuses = {}
         self.event_subscription = self.node.create_subscription(
             TaskEvent,
             "/task_events",
             self.events.append,
             task_event_qos(),
         )
+        self.diagnostics_subscription = self.node.create_subscription(
+            DiagnosticArray, "/diagnostics", self.on_diagnostics, 10
+        )
         self.assertTrue(self.client.wait_for_server(timeout_sec=5.0))
+        self.wait_for_navigation_ready()
 
     def tearDown(self):
         self.node.destroy_node()
+
+    def on_diagnostics(self, message):
+        for status in message.status:
+            self.statuses[status.name] = status
+
+    def wait_for_navigation_ready(self, timeout_sec=6.0):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            status = self.statuses.get("/execute_task_server/readiness")
+            if status is None:
+                continue
+            values = {item.key: item.value for item in status.values}
+            if values.get("navigation_ready") == "true":
+                return
+        self.fail("executor diagnostics did not report navigation_ready=true")
 
     def wait_for(self, future, timeout_sec=5.0):
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=timeout_sec)
