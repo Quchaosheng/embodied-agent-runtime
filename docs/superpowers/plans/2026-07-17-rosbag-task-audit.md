@@ -245,7 +245,7 @@ cleanup() {
   local status=$?
   trap - EXIT INT TERM
   if [[ -n "${recorder_pid}" ]] && kill -0 "${recorder_pid}" 2>/dev/null; then
-    kill -INT "${recorder_pid}" 2>/dev/null || true
+    kill -TERM "${recorder_pid}" 2>/dev/null || true
     wait "${recorder_pid}" 2>/dev/null || true
   fi
   for pid in "${pids[@]}"; do
@@ -307,7 +307,7 @@ printf '%s\n' "${rejected_output}"
 printf '%s\n' "${rejected_output}" | rg -q 'error_code: 13'
 printf '%s\n' "${rejected_output}" | rg -q 'attempts: 0'
 
-kill -INT "${recorder_pid}"
+kill -TERM "${recorder_pid}"
 wait "${recorder_pid}"
 recorder_pid=""
 

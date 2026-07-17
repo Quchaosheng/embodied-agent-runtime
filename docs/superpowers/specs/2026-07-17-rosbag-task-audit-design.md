@@ -74,7 +74,7 @@ text form that shell assertions and project demonstrations can inspect.
 2. Starts fake navigation and `task_executor` in an isolated ROS domain.
 3. Starts `ros2 bag record` with MCAP storage before sending any Goal.
 4. Sends the success and rejection Goals with fixed task IDs.
-5. Stops the recorder with SIGINT and waits for a clean exit.
+5. Stops the background recorder with SIGTERM and waits for a clean flush.
 6. Runs the MCAP reader.
 7. Asserts exact state order and terminal error/attempt values.
 8. Removes the temporary bag on success and retains it on failure.
