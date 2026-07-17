@@ -14,7 +14,6 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04">
   <img src="https://img.shields.io/badge/C++-17-00599C?logo=cplusplus&logoColor=white" alt="C++17">
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
-  <img src="https://img.shields.io/badge/tests-64_passing-2ea44f" alt="64 tests passing">
   <img src="https://img.shields.io/badge/intent_eval-20%2F20-20b2aa" alt="20 of 20 intent evaluations passing">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a>
 </p>
@@ -30,12 +29,12 @@ A safety-bounded ROS 2 runtime that lets an AI model request approved robot
 tasks without giving the model direct control of coordinates, velocity,
 trajectories, recovery logic, or Nav2.
 
-> Current status: the integration branch combines five ROS 2 packages and the
-> independently verified Runtime, AI Gateway, SocketCAN readiness, and TaskEvent
-> MCAP smoke paths. It requires one fresh merged CI run before a new combined
-> test total is claimed. A provider-independent ROS
-> Action bridge and offline Fake AI now turn Chinese user intent into a guarded
-> task and return feedback/result. A version-controlled set of 20 Chinese intent
+> Current status: the integration branch combines six ROS 2 packages and the
+> independently verified Runtime, AI Gateway, bounded mission planner, SocketCAN
+> readiness, and TaskEvent MCAP smoke paths. It requires one fresh merged CI run
+> before a new combined test total is claimed. A provider-independent ROS
+> Action bridge and offline Fake AI now turn Chinese user intent into one guarded
+> task or a bounded 1-3 step mission. A version-controlled set of 20 Chinese intent
 > cases checks accepted, unsupported, negated, multi-target, and prompt-injection
 > inputs. Official OpenAI and configurable OpenAI-compatible relay profiles,
 > plus a no-ROS provider probe, are implemented and tested offline; no real
@@ -49,8 +48,8 @@ trajectories, recovery logic, or Nav2.
 > standard `/diagnostics` topic. An optional read-only `device_bridge` now
 > converts a versioned SocketCAN heartbeat into a fail-closed readiness input;
 > real motor control and hardware safety remain out of scope.
-> Version-controlled target pose loading is complete; real Nav2 and TurtleBot3
-> simulation remain next.
+> Version-controlled target pose loading is complete. Local Nav2/TurtleBot3
+> simulation evidence exists; physical hardware and fresh merged CI evidence remain separate gates.
 
 ## 中文速览
 
@@ -62,18 +61,17 @@ trajectories, recovery logic, or Nav2.
 
 | 维度 | 当前证据 |
 | --- | --- |
-| ROS 2 包 | 5 个：契约、Guard、执行器、AI Gateway、SocketCAN Device Bridge |
+| ROS 2 包 | 6 个：契约、Guard、执行器、AI Gateway、SocketCAN Device Bridge、Nav2 仿真编排 |
 | 双层 Action | 外层 `ExecuteTask` + 内层真实 `NavigateToPose` 接口 |
 | 安全机制 | 严格 Schema、TF/Nav2/CAN readiness、原子 BUSY、全局 deadline、确认取消、有限恢复 |
 | 自动化测试 | 合并前分支各自通过 C++/Python/launch 测试；合并后的精确总数以 CI 结果为准 |
-| AI 评测 | 20 条固定中文语料：12 条合法任务 + 8 条拒绝/对抗输入 |
-| 可重复演示 | Runtime smoke、AI→ROS smoke、TaskEvent MCAP 审计、无 ROS Provider probe、真实 `PF_CAN` vcan smoke |
+| AI 评测 | 20 条单任务中文语料与 12 条 Mission 语料；合并后的精确结果由 CI 重新记录 |
+| 可重复演示 | Runtime、AI→ROS、AI Mission、TaskEvent MCAP 审计、无 ROS Provider probe、真实 `PF_CAN` vcan smoke |
 | 模型接入 | Fake、官方 OpenAI、OpenAI-compatible 中转站三种 profile |
 | 工程化 | GitHub Actions、发布自检、贡献规范、安全说明、变更记录 |
 | 学习沉淀 | 20 课中文实现笔记与可复习技术复习问答 |
 
-项目当前没有把真实 Nav2/TurtleBot3、真实模型联网或硬件安全说成已完成。README、
-测试输出和 roadmap 明确区分“已实现、已离线验证、待系统集成”。
+项目保留本地 Nav2/TurtleBot3 仿真证据，但没有把真实模型联网、物理 CAN、物理停止或硬件安全说成已完成。README、测试输出和 roadmap 明确区分这些边界。
 
 ## Why this project exists
 
@@ -95,6 +93,12 @@ Nav2 Goal exists.
     SocketCAN controller heartbeat                untrusted device input
       -> device_bridge                            Linux PF_CAN parser + timeout
       -> /device_ready                            optional Runtime readiness input
+
+    User intent
+      -> MissionModel.plan()                      closed 1-3 step MissionPlan
+      -> MissionRunner                            serial steps and bounded choices
+      -> ExecuteTask                              Guarded task boundary for every step
+      -> Nav2 / TurtleBot3 simulation             local system evidence
 
 The Guard decision combines three inputs:
 
@@ -190,9 +194,9 @@ within the bounded window.
 | M1 contract and semantic Guard | Complete | Guard, YAML policy, and strict JSON adapter verified |
 | M2 outer Action and fake navigation | Complete | Success, feedback, rejection, cancel, and timeout tests pass |
 | M3 bounded recovery | Complete | Retry success, exhaustion, SAFE_STOP, and shared deadline verified |
-| M4 Nav2 and TurtleBot3 | In progress | Target YAML verified; Nav2/TurtleBot3 dependencies not installed |
-| M5 gateway and observability | In progress | Provider profiles, intent evaluation, Runtime diagnostics, SocketCAN readiness, TaskEvent, and MCAP audit complete; Foxglove remains |
-| M6 regression and release | In progress | The CI workflow and twenty AI intent cases are present; the merged system matrix must run before release |
+| M4 Nav2 and TurtleBot3 | Local evidence | A local headless `dock -> workbench` Runtime mission reached active Nav2; physical hardware remains separate |
+| M5 gateway, mission, and observability | In progress | Provider profiles, bounded MissionPlan, diagnostics, SocketCAN readiness, TaskEvent, and MCAP audit are present; Foxglove remains |
+| M6 regression and release | In progress | CI now covers all six packages and smoke paths; the merged matrix must run before release |
 
 ## Build and test
 
@@ -202,9 +206,9 @@ before building so CMake uses /usr/bin/python3.
     cd ~/embodied_ws
     source /opt/ros/jazzy/setup.bash
     rosdep install --from-paths src --ignore-src --rosdistro jazzy -r -y
-    colcon build --symlink-install --packages-up-to task_executor agent_gateway device_bridge
+    colcon build --symlink-install --packages-up-to task_executor agent_gateway device_bridge runtime_simulation
     source install/setup.bash
-    colcon test --packages-select task_contract task_guard task_executor agent_gateway device_bridge
+    colcon test --packages-select task_contract task_guard task_executor agent_gateway device_bridge runtime_simulation
     colcon test-result --verbose
 
 Run the complete pre-push release gate from the repository root:
@@ -212,10 +216,11 @@ Run the complete pre-push release gate from the repository root:
     bash scripts/verify_release.sh
 
 This command checks repository metadata and possible credentials, rebuilds all
-five packages, runs the complete test result set and focused bag-reader test,
-evaluates 20 offline Chinese intents, and runs the available process smoke
-tests. GitHub Actions reproduces the portable evidence on Ubuntu 24.04 with
-ROS 2 Jazzy; the `vcan0` proof remains conditional on kernel-module access.
+six packages, runs the complete test result set and focused bag-reader test,
+evaluates fixed intent and mission cases, and runs the portable smoke tests.
+GitHub Actions reproduces the Ubuntu 24.04/Jazzy evidence; the `vcan0` proof
+remains conditional on kernel-module access and full Gazebo simulation remains
+outside the fast release gate.
 
 Run the process-level M2 proof after building:
 
@@ -243,6 +248,16 @@ Before any ROS process, verify one model request with the no-motion probe:
 Run the fixed 20-case Chinese intent evaluation without network access:
 
     ros2 run agent_gateway evaluate_intents --provider fake
+
+Run the bounded 1-3 step Mission path with the offline Fake Provider:
+
+    ros2 run agent_gateway evaluate_missions --provider fake
+    ros2 run agent_gateway probe_mission --provider fake "先去充电桩，再去工作台"
+    ros2 run agent_gateway run_mission --provider fake --yes "先去充电桩，再去工作台"
+
+Every Mission step still enters through `ExecuteTask` and the C++ Guard. The
+model can only choose reviewed named targets and bounded Runtime transitions;
+it cannot send coordinates, Nav2 Goals, CAN frames, or actuator commands.
 
 After configuring a real compatible service, the same command can evaluate it:
 
@@ -314,7 +329,7 @@ Foxglove integration remains a separate roadmap item.
 
 This project is built on ROS 2 and focused upstream libraries; it does not copy
 their source trees into this repository. Direct dependencies are declared in
-the five ROS package manifests and installed reproducibly with `rosdep`.
+the six ROS package manifests and installed reproducibly with `rosdep`.
 
 - ROS 2 Jazzy and ament provide nodes, Actions, interfaces, and the build model.
 - Navigation2 provides the real `NavigateToPose` Action interface.
@@ -331,7 +346,8 @@ standard library; no OpenAI SDK source is bundled.
 
 ## GitHub release quality
 
-- `.github/workflows/ros2-ci.yml` rebuilds from a clean ROS 2 Jazzy container.
+- `.github/workflows/ros2-ci.yml` rebuilds on a clean Ubuntu 24.04 GitHub runner
+  with ROS 2 Jazzy.
 - `.github/CODEOWNERS` assigns review ownership to `@Quchaosheng`.
 - `scripts/verify_release.sh` is the local pre-push gate.
 - `CONTRIBUTING.md` records safety-preserving change rules.
@@ -353,6 +369,8 @@ hardware.
 - GitHub release lesson: docs/learning-session-15-github-release-engineering.zh-CN.md
 - TaskEvent observability lesson: docs/learning-session-16-task-event-observability.zh-CN.md
 - Rosbag task audit lesson: docs/learning-session-20-rosbag-task-audit.zh-CN.md
+- Nav2/TurtleBot3 system lesson: docs/learning-session-17-nav2-turtlebot3-simulation.zh-CN.md
+- Bounded AI Mission lesson: docs/learning-session-18-bounded-ai-mission-agent.zh-CN.md
 - Architecture and trust boundary: docs/architecture.md
 - Ordered implementation roadmap: docs/project-roadmap.md
 - Final demonstration: docs/final-demo-spec.md

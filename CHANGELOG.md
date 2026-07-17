@@ -29,9 +29,15 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
   verification across success, rejection, cancellation, deadline, and recovery.
 - Rosbag2/MCAP persistence and deterministic audit of successful and rejected
   TaskEvent timelines.
+- Strict 1-3 step MissionPlan validation, a bounded MissionModel boundary, and
+  serial MissionRunner execution through the existing ExecuteTask Action.
+- Fixed mission evaluation, a no-motion mission probe, and offline mission smoke.
+- Reproducible TurtleBot3 Burger, Gazebo Sim, AMCL, Nav2, Runtime, and RViz launch.
+- Local Nav2/TurtleBot3 evidence for an ordered `dock -> workbench` mission and
+  lifecycle checking that rejects `inactive` as a false positive.
 
 ### Not Yet Released
 
-- Real Nav2/TurtleBot3 simulation evidence.
+- Enforced Nav2 keepout costmap filtering; the current restricted-area polygon is visualization-only.
 - Live OpenAI or relay evaluation evidence.
 - Foxglove visualization and physical controller command/ACK integration.
