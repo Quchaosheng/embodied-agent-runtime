@@ -65,7 +65,7 @@ jobs:
         run: |
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon build --symlink-install \
-            --packages-up-to task_executor agent_gateway device_bridge
+            --packages-up-to task_executor agent_gateway device_bridge runtime_simulation
 
       - name: Run unit and launch tests
         shell: bash
@@ -74,7 +74,7 @@ jobs:
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           source install/setup.bash
           colcon test --packages-select \
-            task_contract task_guard task_executor agent_gateway device_bridge \
+            task_contract task_guard task_executor agent_gateway device_bridge runtime_simulation \
             --event-handlers console_direct+ --return-code-on-test-failure
           colcon test-result --test-result-base build --all --verbose
 
@@ -90,6 +90,7 @@ jobs:
           ROS_DOMAIN_ID=161 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_phase_2.sh
           ROS_DOMAIN_ID=162 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_ai_gateway.sh
           ROS_DOMAIN_ID=163 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_task_event_bag.sh
+          ROS_DOMAIN_ID=164 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_ai_mission.sh
 
       - name: Run SocketCAN vcan smoke when supported
         shell: bash
@@ -103,4 +104,4 @@ jobs:
           sudo ip link set vcan0 up
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           source "${EMBODIED_WS}/install/setup.bash"
-          ROS_DOMAIN_ID=164 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_vcan_readiness.sh
+          ROS_DOMAIN_ID=165 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_vcan_readiness.sh

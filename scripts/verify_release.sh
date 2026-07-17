@@ -28,8 +28,11 @@ required_files=(
   docs/assets/request-flow.svg
   docs/assets/state-machine.svg
   task_contract/schema/task_request.schema.json
+  agent_gateway/schema/mission_plan.schema.json
+  agent_gateway/evaluation/mission_cases.json
   task_guard/config/task_policy.yaml
   device_bridge/package.xml
+  simulation/package.xml
   simulation/config/targets.yaml
   agent_gateway/evaluation/intent_cases.json
   scripts/audit_task_event_bag.py
@@ -81,22 +84,27 @@ source /opt/ros/jazzy/setup.bash
 set -u
 
 cd "${workspace_root}"
-colcon build --symlink-install --packages-up-to task_executor agent_gateway device_bridge
+colcon build --symlink-install --packages-up-to \
+  task_executor agent_gateway device_bridge runtime_simulation
 
 set +u
 source install/setup.bash
 set -u
-colcon test --packages-select task_contract task_guard task_executor agent_gateway device_bridge
+colcon test --packages-select \
+  task_contract task_guard task_executor agent_gateway device_bridge runtime_simulation
 PYTHONPATH="${project_root}" \
   python3 "${project_root}/test/test_audit_task_event_bag.py" -v
 colcon test-result --verbose
 
 ros2 run agent_gateway evaluate_intents --provider fake
+ros2 run agent_gateway evaluate_missions --provider fake
 ROS_DOMAIN_ID=161 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_phase_2.sh"
 ROS_DOMAIN_ID=162 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_ai_gateway.sh"
 ROS_DOMAIN_ID=163 EMBODIED_WS="${workspace_root}" \
   bash "${project_root}/scripts/smoke_task_event_bag.sh"
+ROS_DOMAIN_ID=164 EMBODIED_WS="${workspace_root}" \
+  bash "${project_root}/scripts/smoke_ai_mission.sh"
 
 printf '\nRelease verification passed. The repository is ready for GitHub review.\n'

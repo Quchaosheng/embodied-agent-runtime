@@ -15,6 +15,9 @@ packages included in that artifact.
 | --- | --- | --- |
 | [ROS 2 Jazzy](https://docs.ros.org/en/jazzy/) | Nodes, Actions, geometry messages, interfaces, ament build, package discovery | Predominantly Apache-2.0; check each ROS package |
 | [Navigation2](https://github.com/ros-navigation/navigation2) | `nav2_msgs/action/NavigateToPose` interface | Apache-2.0 |
+| [TurtleBot3](https://github.com/ROBOTIS-GIT/turtlebot3) | Robot model and Navigation2 configuration used by `runtime_simulation` | Apache-2.0 |
+| [TurtleBot3 Simulations](https://github.com/ROBOTIS-GIT/turtlebot3_simulations) | Gazebo world and simulated TurtleBot3 used by the system smoke | Apache-2.0 |
+| [Gazebo Sim](https://github.com/gazebosim/gz-sim) and [ros_gz](https://github.com/gazebosim/ros_gz) | Physics simulation and ROS 2 integration for the Nav2 system proof | Apache-2.0 |
 | [Linux SocketCAN](https://docs.kernel.org/networking/can.html) | `PF_CAN` raw socket and CAN UAPI used by `device_bridge` | Linux kernel UAPI: GPL-2.0-only WITH Linux-syscall-note |
 | [yaml-cpp](https://github.com/jbeder/yaml-cpp) | Guard policy and named-target YAML parsing | MIT/X11 |
 | [python-jsonschema](https://github.com/python-jsonschema/jsonschema) | Draft 7 validation at the model-output boundary | MIT |
@@ -47,8 +50,6 @@ not imported and they are not current runtime dependencies:
 
 - [BehaviorTree.CPP](https://github.com/BehaviorTree/BehaviorTree.CPP): planned
   only if reviewed recovery actions outgrow the current bounded C++ loop.
-- [TurtleBot3](https://github.com/ROBOTIS-GIT/turtlebot3) and its simulations:
-  planned Nav2 system demonstration.
 - Foxglove bridge: planned visualization after observability and simulation are integrated.
 - Qwen-Agent and ROS 2 examples: reading references only.
 

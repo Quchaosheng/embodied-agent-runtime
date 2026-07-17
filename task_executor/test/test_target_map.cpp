@@ -9,9 +9,12 @@ TEST(TargetMapTest, LoadsAllContractTargets) {
 
   ASSERT_EQ(targets.size(), 3U);
   EXPECT_DOUBLE_EQ(targets.at("dock").x, 0.0);
-  EXPECT_DOUBLE_EQ(targets.at("workbench").x, 1.0);
-  EXPECT_DOUBLE_EQ(targets.at("home").y, 1.0);
-  EXPECT_DOUBLE_EQ(targets.at("home").yaw, 1.57);
+  EXPECT_DOUBLE_EQ(targets.at("dock").y, -2.0);
+  EXPECT_DOUBLE_EQ(targets.at("workbench").x, 0.0);
+  EXPECT_DOUBLE_EQ(targets.at("workbench").y, 2.0);
+  EXPECT_DOUBLE_EQ(targets.at("home").x, -2.0);
+  EXPECT_DOUBLE_EQ(targets.at("home").y, -0.5);
+  EXPECT_DOUBLE_EQ(targets.at("home").yaw, 0.0);
   EXPECT_EQ(targets.at("dock").frame_id, "map");
 }
 
