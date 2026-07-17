@@ -196,4 +196,5 @@ Action feedback。
 - [x] 晚订阅者历史测试。
 - [x] 当前总计 65 tests 通过。
 - [ ] ROS diagnostics 健康状态。
-- [ ] Foxglove 面板与 rosbag 持久回放。
+- [x] rosbag2/MCAP 持久回读（见第二十课）。
+- [ ] Foxglove 面板。
