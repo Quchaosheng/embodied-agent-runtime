@@ -61,12 +61,12 @@ Run it with:
     colcon test --packages-select task_executor
     colcon test-result --verbose
 
-Not complete yet:
+System integration status:
 
-- connection to a running Nav2 stack and physical robot.
+- `runtime_simulation` launches this server against a real Nav2 stack and
+  provides a headless two-Goal smoke; local execution still needs the full
+  TurtleBot3/Nav2 packages installed.
 - hardware emergency-stop, motor watchdog, and physical controller command/ACK integration.
-- connection to a running Nav2 stack and physical robot.
-- hardware emergency-stop, motor watchdog, and physical controller command/ACK integration.
-- reviewed recovery actions beyond the minimal fixed retry loop.
+- Foxglove visualization and reviewed recovery actions beyond the minimal fixed retry loop.
 
 No model-facing code belongs in this package.

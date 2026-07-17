@@ -10,9 +10,10 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml", "README.md"]),
         ("share/" + package_name + "/config", ["config/provider.example.env"]),
+        ("share/" + package_name + "/schema", ["schema/mission_plan.schema.json"]),
         (
             "share/" + package_name + "/evaluation",
-            ["evaluation/intent_cases.json"],
+            ["evaluation/intent_cases.json", "evaluation/mission_cases.json"],
         ),
     ],
     install_requires=["setuptools", "jsonschema"],
@@ -25,7 +26,10 @@ setup(
     entry_points={
         "console_scripts": [
             "ask = agent_gateway.cli:main",
+            "run_mission = agent_gateway.mission_cli:main",
             "evaluate_intents = agent_gateway.evaluation_cli:main",
+            "evaluate_missions = agent_gateway.mission_evaluation_cli:main",
+            "probe_mission = agent_gateway.mission_probe:main",
             "probe_provider = agent_gateway.provider_probe:main",
         ],
     },
