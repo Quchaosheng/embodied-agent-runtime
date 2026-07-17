@@ -128,6 +128,10 @@ ValidationResult TaskGuard::validate(const task_contract::TaskRequest& request,
     return {task_contract::ErrorCode::kNavigationNotReady, "navigation is not ready"};
   }
 
+  if (!context.device_ready) {
+    return {task_contract::ErrorCode::kDeviceNotReady, "device heartbeat is not ready"};
+  }
+
   return {};
 }
 

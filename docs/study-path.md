@@ -15,25 +15,26 @@ reliable.
 | 5 | `launch_testing` and `rosbag2` | Deterministic fault tests and one recorded failure | Failure can be replayed and explained |
 | 6 | Nav2 and BehaviorTree.CPP | Real `NavigateToPose` adapter and reviewed recovery flow | Fixed retry and SAFE_STOP pass against fake Nav2; real Nav2 remains |
 | 7 | AI JSON contract | Minimal Gateway adapter with fixed-schema output | Swapping model provider changes no C++ safety code |
-| 8 | `vcan0`, `can-utils`, SocketCAN, ACK, and device bridge | Optional device-ready bridge | Missing heartbeat or ACK blocks task execution |
+| 8 | `vcan0`, `can-utils`, SocketCAN filtering, and heartbeat timeout | Read-only device-ready bridge | Missing, invalid, or stale heartbeat blocks task execution with error 18 |
 
 ## Why SocketCAN is last
 
 TurtleBot3/Nav2 navigation does not need a CAN bridge for the first safety
 runtime. Adding SocketCAN before Action cancellation, task policy, and tests
-would make failures hard to attribute. The `vcan0` extension is valuable when
-the core Runtime is already stable: it simulates a controller heartbeat and
-acknowledgement path that can gate `RobotContext` readiness.
+would make failures hard to attribute. The implemented `vcan0` extension is
+valuable because it drives the same Linux `PF_CAN` receive path as a physical
+CAN interface and gates `RobotContext` readiness.
 
 ## Scope of the device bridge
 
-The optional bridge should:
+The implemented first bridge:
 
 1. Receive a heartbeat or state frame from `vcan0`.
 2. Publish device readiness and diagnostics.
-3. Send one request frame and wait for a bounded application-level ACK.
-4. Mark the device unavailable after heartbeat or ACK timeout.
-5. Cause `task_guard` to reject new tasks when the device is unavailable.
+3. Reject wrong ID, DLC, protocol version, reserved bits, and non-data frames.
+4. Mark the device unavailable after heartbeat timeout.
+5. Cause `task_guard` to reject new tasks with error 18 before Nav2 is called.
 
-It should not command TurtleBot3 velocity or claim hardware safety. It is a
-deterministic device-integration test module.
+It does not command TurtleBot3 velocity or claim hardware safety. A bounded
+request/ACK command protocol belongs to a later real-device milestone, after
+the actual controller command set and safe-stop behavior are known.

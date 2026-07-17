@@ -23,6 +23,7 @@ struct RobotContext {
   bool localization_ready{false};
   bool navigation_ready{false};
   bool task_active{false};
+  bool device_ready{true};
 };
 
 struct ValidationResult {

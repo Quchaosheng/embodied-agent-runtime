@@ -7,18 +7,24 @@
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>ament_index_cpp</depend>
+  <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <depend>std_msgs</depend>
   <depend>task_contract</depend>
   <depend>task_guard</depend>
+  <depend>tf2_ros</depend>
   <depend>yaml-cpp</depend>
   <test_depend>action_msgs</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>launch_ros</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>rosbag2_py</test_depend>
+  <test_depend>rosbag2_storage_mcap</test_depend>
   <test_depend>rclpy</test_depend>
+  <test_depend>rosidl_runtime_py</test_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

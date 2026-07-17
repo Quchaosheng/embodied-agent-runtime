@@ -10,6 +10,12 @@ User intent or model output
   -> task_executor
   -> Nav2 NavigateToPose Action Client
   -> robot or TurtleBot3 simulation
+
+Controller heartbeat
+  -> Linux PF_CAN raw socket
+  -> device_bridge
+  -> /device_ready
+  -> RobotContext
 ```
 
 `agent_gateway` is untrusted with respect to robot motion. It only normalizes
@@ -24,17 +30,31 @@ The runtime owns:
 - Allowed targets, maximum deadline, retry count, and keepout policy.
 - The task state machine and all cancellation propagation.
 - Navigation result handling and recovery decisions.
+- A single atomic task reservation released on every terminal path.
+
+`RobotContext` is assembled at request time. Localization readiness requires a
+live `map -> base_link` TF, navigation readiness requires the Nav2
+`NavigateToPose` Action server, and task activity comes from the atomic
+reservation. Hardware deployments may additionally require a fresh
+`/device_ready` heartbeat; simulation leaves that check disabled. The same
+values are published on `/diagnostics`; they are no longer hard-coded test
+booleans.
 
 Nav2 owns planning, control, local obstacle avoidance, and its internal
 recovery behavior. The model owns none of these decisions.
 
 ## Optional device-readiness extension
 
-After the core Runtime is stable, an optional `device_bridge` may consume
-SocketCAN frames from `vcan0` or a physical CAN interface. It publishes a
-device-ready signal that becomes one input to `RobotContext`. The bridge is a
-health and acknowledgement integration boundary; it must not claim to control
-the TurtleBot3 base unless the physical platform actually uses that CAN bus.
+The implemented `device_bridge` consumes a strict versioned heartbeat from
+`vcan0` or a physical SocketCAN interface. It publishes `/device_ready=false`
+when the interface is missing, the frame is malformed or not-ready, or the
+heartbeat exceeds its timeout. `task_executor` applies a second monotonic
+freshness timeout so a bridge crash cannot leave a latched `true` value.
+
+The bridge is deliberately read-only: it sends no velocity, torque,
+trajectory, enable, or emergency-stop frame. It proves a communication-health
+boundary and error-18 task gate, not physical actuator control or certified
+hardware safety.
 
 ## Task state machine
 

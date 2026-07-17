@@ -103,6 +103,16 @@ TEST(TaskGuardTest, RejectsTaskWhenNavigationIsUnavailable) {
   EXPECT_EQ(result.code, task_contract::ErrorCode::kNavigationNotReady);
 }
 
+TEST(TaskGuardTest, RejectsTaskWhenDeviceHeartbeatIsUnavailable) {
+  task_guard::TaskGuard guard;
+  auto context = ready_context();
+  context.device_ready = false;
+
+  const auto result = guard.validate(valid_request(), context);
+
+  EXPECT_EQ(result.code, task_contract::ErrorCode::kDeviceNotReady);
+}
+
 TEST(GuardPolicyLoaderTest, LoadsVersionControlledPolicy) {
   const auto policy = task_guard::load_policy_from_yaml(TASK_GUARD_TEST_POLICY_PATH);
 
