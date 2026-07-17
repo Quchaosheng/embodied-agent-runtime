@@ -54,13 +54,15 @@ printf 'Waiting for Gazebo, AMCL, Nav2, and the Runtime Action server...\n'
 for _ in {1..180}; do
   if ros2 action list 2>/dev/null | rg -q '^/execute_task$' && \
      ros2 action list 2>/dev/null | rg -q '^/navigate_to_pose$' && \
-     ros2 lifecycle get /bt_navigator 2>/dev/null | rg -qi 'active'; then
+     ros2 lifecycle get /bt_navigator 2>/dev/null | \
+       bash "${script_dir}/is_lifecycle_active.sh"; then
     break
   fi
   sleep 1
 done
 
-if ! ros2 lifecycle get /bt_navigator 2>/dev/null | rg -qi 'active'; then
+if ! ros2 lifecycle get /bt_navigator 2>/dev/null | \
+  bash "${script_dir}/is_lifecycle_active.sh"; then
   printf 'Nav2 bt_navigator did not become active.\n' >&2
   exit 1
 fi
