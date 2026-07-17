@@ -20,9 +20,14 @@ single pre-release line while the real Nav2/TurtleBot3 milestone remains open.
 - CI rosdep initialization and bounded update retry for clean GitHub runners.
 - GitHub-native SVG hero, trust-boundary architecture, fail-closed flow, state
   machine, and project status badges.
+- Live TF/Nav2 readiness, atomic single-task ownership, and standard ROS diagnostics.
+- Launch tests for BUSY rejection, missing localization, missing navigation, and readiness recovery.
+- Read-only Linux SocketCAN heartbeat bridge with strict versioned frame parsing,
+  monotonic timeout, diagnostics, and optional Runtime gating.
+- Real `PF_CAN` vcan smoke proof for missing, ready, and stale heartbeat states.
 
 ### Not Yet Released
 
 - Real Nav2/TurtleBot3 simulation evidence.
 - Live OpenAI or relay evaluation evidence.
-- TaskEvent diagnostics, Foxglove, rosbag, and hardware integration.
+- TaskEvent diagnostics, Foxglove, rosbag, and physical controller command/ACK integration.
