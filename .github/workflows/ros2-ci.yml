@@ -86,5 +86,8 @@ jobs:
         env:
           EMBODIED_WS: /tmp/embodied_ws
         run: |
+          PYTHONPATH="${GITHUB_WORKSPACE}" \
+            python3 test/test_audit_task_event_bag.py -v
           bash scripts/smoke_phase_2.sh
           bash scripts/smoke_ai_gateway.sh
+          ROS_DOMAIN_ID=163 bash scripts/smoke_task_event_bag.sh
