@@ -45,7 +45,8 @@ trap cleanup EXIT INT TERM
 ros2 run task_executor fake_navigate_to_pose_server \
   >"${log_dir}/fake_navigate_to_pose_server.log" 2>&1 &
 nav_pid=$!
-ros2 run task_executor execute_task_server \
+ros2 run task_executor execute_task_server --ros-args \
+  -p localization_check_enabled:=false \
   >"${log_dir}/execute_task_server.log" 2>&1 &
 executor_pid=$!
 
