@@ -51,7 +51,9 @@ std::map<std::string, std::string> options(const int argc, char ** argv, const i
   }
   std::map<std::string, std::string> result;
   for (int index = first; index < argc; index += 2) {
-    if (std::string(argv[index]).rfind("--", 0) != 0 || !result.emplace(argv[index], argv[index + 1]).second) {
+    if (std::string(argv[index]).rfind("--", 0) != 0 || !result.emplace(argv[index],
+        argv[index + 1]).second)
+    {
       throw std::invalid_argument("invalid or duplicate option");
     }
   }

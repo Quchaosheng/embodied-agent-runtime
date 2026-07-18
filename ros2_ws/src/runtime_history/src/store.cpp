@@ -95,7 +95,8 @@ Store::Store(const std::string & path)
 {
   const int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
   if (sqlite3_open_v2(path.c_str(), &db_, flags, nullptr) != SQLITE_OK) {
-    const std::string message = db_ == nullptr ? "failed to open SQLite database" : sqlite3_errmsg(db_);
+    const std::string message = db_ ==
+      nullptr ? "failed to open SQLite database" : sqlite3_errmsg(db_);
     sqlite3_close(db_);
     db_ = nullptr;
     throw std::runtime_error(message);

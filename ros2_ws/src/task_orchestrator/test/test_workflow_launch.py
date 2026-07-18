@@ -33,6 +33,7 @@ def generate_test_description():
 
 
 class TestWorkflowOrchestrator(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
@@ -82,7 +83,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
 
     def _accept_child(self, request):
         self.child_goal_request_count += 1
-        if self.mode == 'shutdown_delayed_goal':
+        if self.mode in ('shutdown_delayed_goal', 'never_goal_response'):
             self.shutdown_goal_release.wait(timeout=5.0)
         elif self.mode in ('delayed_goal', 'deadline_delayed_goal'):
             time.sleep(1.2 if self.mode == 'delayed_goal' else 1.5)
@@ -111,6 +112,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         if mode in (
             'hold', 'slow_cancel', 'cancel_safe_stop',
             'delayed_goal', 'deadline_delayed_goal', 'shutdown_delayed_goal',
+            'never_goal_response',
         ):
             while not goal_handle.is_cancel_requested:
                 time.sleep(0.01)
@@ -338,6 +340,20 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         )
         self.assertEqual(self.active_child_count, 0)
 
+        self.mode = 'never_goal_response'
+        never_response = self._send_ready_goal('single_task', 'never-goal-response')
+        self._spin_until(lambda: self.child_goal_request_count == requests_before + 2)
+        cancels_before = self.child_cancel_count
+        self._future(never_response.cancel_goal_async())
+        wrapped = self._future(never_response.get_result_async(), timeout=3.0)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(wrapped.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
+        self.assertEqual(wrapped.result.error_code, 207)
+        self.shutdown_goal_release.set()
+        self._spin_until(lambda: self.child_cancel_count >= cancels_before + 1, timeout=3.0)
+        self._spin_until(lambda: self.active_child_count == 0, timeout=2.0)
+        self.shutdown_goal_release.clear()
+
         before = self.child_goal_count - 1
         self.mode = 'spontaneous_cancel'
         spontaneous = self._send_ready_goal('single_task', 'spontaneous-cancel')
@@ -402,7 +418,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         cancel_requests_before = self.child_cancel_request_count
         shutdown_started = time.monotonic()
         os.kill(proc_info[orchestrator].pid, signal.SIGINT)
-        while time.monotonic() - shutdown_started < 1.1:
+        while time.monotonic() - shutdown_started < 0.5:
             os.kill(proc_info[orchestrator].pid, 0)
             rclpy.spin_once(self.node, timeout_sec=0.02)
         self.shutdown_goal_release.set()
@@ -421,5 +437,6 @@ class TestWorkflowOrchestrator(unittest.TestCase):
 
 @launch_testing.post_shutdown_test()
 class TestProcessCleanup(unittest.TestCase):
+
     def test_clean_shutdown(self, proc_info, orchestrator):
         launch_testing.asserts.assertExitCodes(proc_info, process=orchestrator)
