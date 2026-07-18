@@ -5,13 +5,14 @@ namespace runtime_gateway
 
 InsertResult RequestRegistry::insert(const RequestRecord & record)
 {
-  if (record.request_id.empty() || record.task_id.empty()) {
+  if (record.request_id.empty() || record.task_id.empty() || record.target_id.empty()) {
     return InsertResult::INVALID;
   }
   const std::lock_guard<std::mutex> lock(mutex_);
   const auto existing = records_.find(record.request_id);
   if (existing != records_.end()) {
     return existing->second.task_id == record.task_id &&
+           existing->second.target_id == record.target_id &&
            existing->second.workflow_id == record.workflow_id ?
            InsertResult::DUPLICATE : InsertResult::CONFLICT;
   }

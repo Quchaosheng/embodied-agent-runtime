@@ -1,5 +1,4 @@
-#ifndef RUNTIME_HISTORY__STORE_HPP_
-#define RUNTIME_HISTORY__STORE_HPP_
+#pragma once
 
 #include <array>
 #include <cstdint>
@@ -56,5 +55,3 @@ private:
 };
 
 }  // namespace runtime_history
-
-#endif  // RUNTIME_HISTORY__STORE_HPP_

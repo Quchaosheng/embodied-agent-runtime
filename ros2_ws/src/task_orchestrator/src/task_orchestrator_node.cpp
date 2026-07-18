@@ -280,17 +280,27 @@ private:
         return state_->child_result.has_value() || state_->goal_response_received;
       };
     mark_timeout(response_ready);
-    state_->changed.wait(lock, response_ready);
+    if (!response_ready()) {
+      return;
+    }
     if (state_->child_result || !state_->child_handle) {
       return;
     }
 
     while (!state_->child_result && !state_->cancel_dispatched) {
       if (state_->cancel_in_flight) {
-        state_->changed.wait(lock, [this]() {
+        if (!state_->changed.wait_until(lock, cancel_deadline, [this]() {
             return state_->child_result.has_value() || !state_->cancel_in_flight;
-          });
+            }))
+        {
+          state_->cancel_timed_out = true;
+          return;
+        }
         continue;
+      }
+      if (std::chrono::steady_clock::now() >= cancel_deadline) {
+        state_->cancel_timed_out = true;
+        return;
       }
       state_->cancel_in_flight = true;
       const auto child_handle = state_->child_handle;
@@ -306,7 +316,9 @@ private:
 
     const auto child_terminal = [this]() {return state_->child_result.has_value();};
     mark_timeout(child_terminal);
-    state_->changed.wait(lock, child_terminal);
+    if (!child_terminal()) {
+      return;
+    }
   }
 
   std::shared_ptr<WorkflowState> state_;
@@ -453,7 +465,7 @@ private:
       worker_.join();
     }
     worker_ = std::thread([this, goal_handle, generation]() {
-        run_worker(goal_handle, generation);
+          run_worker(goal_handle, generation);
       });
     worker_changed_.notify_all();
   }
