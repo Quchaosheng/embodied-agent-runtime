@@ -10,6 +10,24 @@ scripts are not validated as native Windows executables.
 Do not share `build`, `install`, or `log` trees between Windows, WSL2, x86_64
 Linux, and ARM64. Remove or isolate those trees when changing environments.
 
+Check the Windows/WSL2 environment from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\windows_wsl.ps1 -Mode Check
+```
+
+Run the complete eleven-package WSL2 build and test in isolated directories:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\windows_wsl.ps1 -Mode BuildTest
+```
+
+The tool reports missing prerequisites but does not install them. Its
+`.colcon/windows-wsl` output is separate from the default Linux and ARM64
+workspace trees.
+
 ## Build and Test
 
 From an Ubuntu 24.04 or WSL2 Ubuntu 24.04 shell:
@@ -29,6 +47,13 @@ Run shell syntax checks when changing scripts:
 
 ```bash
 find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+```
+
+Run the PowerShell behavior test when changing the Windows entry point:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\test_windows_wsl.ps1
 ```
 
 On an ARM64 target, run `scripts/check_arm64_environment.sh`, then
