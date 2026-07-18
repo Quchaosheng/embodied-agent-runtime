@@ -9,13 +9,38 @@ gRPC -> ExecuteWorkflow/fixed BT -> ExecuteTask -> ExecuteDeviceCommand
 -> Device Bridge -> SocketCAN -> device -> TaskEvent -> SQLite
 ```
 
-The repository contains ten packages: interfaces, CAN protocol, virtual device, Device Bridge, Task Executor, Runtime Monitor, History, Orchestrator, Gateway, and an optional rule-based AI task adapter.
+The repository contains eleven packages: interfaces, CAN protocol, virtual
+device, Device Bridge, Task Executor, Runtime Monitor, History, Orchestrator,
+Gateway, an optional rule-based AI task adapter, and an optional ArUco
+perception adapter.
+
+## Optional ArUco Workflow Input
+
+`perception_task_adapter` detects `DICT_4X4_50` markers from an image or USB
+camera and submits only through the existing `ExecuteWorkflow` boundary:
+
+```text
+image/camera -> ArUco detection -> ExecuteWorkflow -> fixed BT runtime
+```
+
+The default fixed mappings are:
+
+| Marker ID | Workflow | Target |
+| --- | --- | --- |
+| `10` | `single_task` | `dock_a` |
+| `20` | `ready_then_task` | `home` |
+
+Camera mode requires three consecutive matching frames before submission,
+suppresses duplicate submissions, rearms after five empty frames, and rejects
+frames containing multiple mapped markers. These defaults are configurable,
+but the marker dictionary is deliberately fixed.
 
 ## Candidate Baseline
 
 This candidate targets Ubuntu 24.04 with ROS 2 Jazzy on x86_64 Linux and
-generic ARM64 Linux. The ten-package build, tests, and software-only `vcan0`
-evidence remain subject to fresh CI and target-host verification.
+generic ARM64 Linux. On 2026-07-18, GitHub Actions verified the eleven-package
+build, tests, generated ArUco image flow, fake Action server integration, and
+software-only `vcan0` workflow on Ubuntu 24.04 with ROS 2 Jazzy.
 
 ## Build
 
@@ -44,7 +69,8 @@ adapter boundaries.
 
 ## Evidence Boundary
 
-The accepted evidence is a local software chain using SocketCAN `vcan0`. It
-does not prove physical CAN hardware, physical stopping, board-specific
-BPU/NPU or camera compatibility, GPIO behavior, TLS/authentication, high
-availability, or production throughput.
+The accepted evidence is a local software chain using generated images and
+SocketCAN `vcan0`. It does not prove a physical USB camera, ARM64 or X5 target
+execution, physical CAN hardware, physical stopping, board-specific BPU/NPU
+or camera compatibility, GPIO behavior, TLS/authentication, high availability,
+or production throughput.
