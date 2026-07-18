@@ -68,6 +68,11 @@ install(TARGETS runtime_gateway_node runtime_gateway_client
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
+  find_package(ament_lint_auto REQUIRED)
+  # The project has no license headers yet.
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
   ament_add_gtest(test_request_registry test/test_request_registry.cpp)
   target_link_libraries(test_request_registry request_registry)
   ament_add_gtest(test_grpc_validation test/test_grpc_validation.cpp)

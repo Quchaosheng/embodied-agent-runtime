@@ -1,5 +1,4 @@
-#ifndef RUNTIME_GATEWAY__REQUEST_REGISTRY_HPP_
-#define RUNTIME_GATEWAY__REQUEST_REGISTRY_HPP_
+#pragma once
 
 #include <cstdint>
 #include <mutex>
@@ -14,6 +13,7 @@ struct RequestRecord
 {
   std::string request_id;
   std::string task_id;
+  std::string target_id;
   std::string workflow_id;
   std::string state;
   std::uint8_t outcome;
@@ -41,5 +41,3 @@ private:
 };
 
 }  // namespace runtime_gateway
-
-#endif  // RUNTIME_GATEWAY__REQUEST_REGISTRY_HPP_

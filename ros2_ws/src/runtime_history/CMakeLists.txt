@@ -43,6 +43,11 @@ install(DIRECTORY include/ DESTINATION include)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_lint_auto REQUIRED)
+  # The project has no license headers yet.
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
   ament_add_gtest(test_store test/test_store.cpp)
   target_link_libraries(test_store runtime_history_store SQLite::SQLite3)
   ament_add_gtest(test_recorder test/test_recorder.cpp)

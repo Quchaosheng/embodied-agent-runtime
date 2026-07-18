@@ -71,7 +71,7 @@ bool SocketCan::send(const RawFrame & frame, std::string & error) const
     error = "CAN socket is not open";
     return false;
   }
-  if (frame.size > CAN_MAX_DLEN) {
+  if (frame.size > kPayloadSize) {
     error = "CAN frame payload is too large";
     return false;
   }
@@ -118,6 +118,10 @@ ReceiveStatus SocketCan::receive(
   }
   if ((native_frame.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG)) != 0) {
     error = "unsupported extended, remote, or error CAN frame";
+    return ReceiveStatus::kError;
+  }
+  if (native_frame.can_dlc > kPayloadSize) {
+    error = "CAN frame payload is too large";
     return ReceiveStatus::kError;
   }
 

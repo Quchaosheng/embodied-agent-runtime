@@ -185,7 +185,9 @@ private:
     DeviceGoalHandle::SharedPtr handle;
     bool terminal{false};
     std::optional<DeviceGoalHandle::WrappedResult> result;
+    bool cancel_requested{false};
     bool cancel_dispatched{false};
+    std::chrono::steady_clock::time_point cancel_requested_at;
     std::chrono::steady_clock::time_point cancel_started_at;
     bool cancel_timed_out{false};
   };
@@ -196,6 +198,7 @@ private:
   static constexpr std::uint16_t kErrorCancelUnconfirmed = 113;
   static constexpr std::uint16_t kErrorUnexpectedChildResult = 114;
   static constexpr std::uint16_t kMaxApplicationCommandId = 0x7FFF;
+  static constexpr auto kLateGoalResponseGrace = std::chrono::milliseconds(2000);
 
   static bool duration_is_valid(const builtin_interfaces::msg::Duration & duration)
   {
@@ -371,13 +374,34 @@ private:
       device_goal.argument, child_ack_timeout_ms);
 
     rclcpp_action::Client<ExecuteDeviceCommand>::SendGoalOptions options;
-    options.goal_response_callback = [child](const DeviceGoalHandle::SharedPtr handle) {
+    const auto device_client = device_client_;
+    const auto worker_hook = worker_hook_;
+    options.goal_response_callback = [child, device_client, worker_hook](
+      const DeviceGoalHandle::SharedPtr handle) {
+        bool dispatch_late_cancel = false;
         {
           const std::lock_guard<std::mutex> lock(child->mutex);
           child->goal_response_received = true;
           child->handle = handle;
+          if (handle && child->cancel_requested && !child->cancel_dispatched) {
+            child->cancel_dispatched = true;
+            child->cancel_started_at = std::chrono::steady_clock::now();
+            dispatch_late_cancel = true;
+          }
         }
         child->changed.notify_all();
+        if (dispatch_late_cancel) {
+          try {
+            if (worker_hook) {
+              worker_hook(task_executor::WorkerPhase::kBeforeCancelGoal);
+            }
+            device_client->async_cancel_goal(handle);
+          } catch (...) {
+            const std::lock_guard<std::mutex> lock(child->mutex);
+            child->cancel_dispatched = false;
+            child->changed.notify_all();
+          }
+        }
       };
     options.result_callback = [child](const DeviceGoalHandle::WrappedResult & result) {
         {
@@ -397,32 +421,47 @@ private:
 
     StopCause stop_cause = StopCause::kNone;
     while (true) {
+      bool goal_response_received = false;
       {
         std::unique_lock<std::mutex> lock(child->mutex);
-        if (child->changed.wait_for(
-            lock, std::chrono::milliseconds(25),
-            [&]() {return child->goal_response_received;}))
-        {
-          break;
-        }
+        goal_response_received = child->changed.wait_for(
+          lock, std::chrono::milliseconds(25),
+          [&]() {return child->goal_response_received;});
       }
-      if (!running_) {
+      if (goal_response_received) {
+        break;
+      }
+      if (!running_ || !rclcpp::ok()) {
         stop_cause = StopCause::kShutdown;
+        break;
       } else if (goal_handle->is_canceling()) {
         stop_cause = StopCause::kUserCancel;
+        break;
       } else if (stop_cause == StopCause::kNone &&
         std::chrono::steady_clock::now() >= deadline)
       {
         stop_cause = StopCause::kDeadline;
+        break;
       }
     }
 
     DeviceGoalHandle::SharedPtr child_goal_handle;
-    if (!running_) {
+    if (!running_ || !rclcpp::ok()) {
       stop_cause = StopCause::kShutdown;
     }
     {
       const std::lock_guard<std::mutex> lock(child->mutex);
+      child_goal_handle = child->handle;
+    }
+    if (stop_cause != StopCause::kNone) {
+      publish_feedback(goal_handle, ExecuteTask::Feedback::RECOVERING, 0.6F);
+      cancel_child_once(child);
+      const auto late_response_deadline = std::chrono::steady_clock::now() +
+        std::max(kLateGoalResponseGrace,
+        std::chrono::milliseconds(cancel_timeout_ms_));
+      std::unique_lock<std::mutex> lock(child->mutex);
+      child->changed.wait_until(
+        lock, late_response_deadline, [&]() {return child->goal_response_received;});
       child_goal_handle = child->handle;
     }
     if (!child_goal_handle) {
@@ -463,6 +502,19 @@ private:
       }
       const auto current_time = std::chrono::steady_clock::now();
       record_cancel_timeout(child, current_time);
+      bool cancel_drain_expired = false;
+      {
+        const std::lock_guard<std::mutex> lock(child->mutex);
+        cancel_drain_expired = child->cancel_requested &&
+          current_time - child->cancel_requested_at >=
+          std::chrono::milliseconds(std::max<std::int64_t>(cancel_timeout_ms_, 1000));
+      }
+      if (cancel_drain_expired) {
+        finish_aborted(
+          goal_handle, ExecuteTask::Result::SAFE_STOP,
+          kErrorCancelUnconfirmed, "device cancel exceeded drain timeout");
+        return;
+      }
       if (stop_cause != StopCause::kNone) {
         cancel_child_once(child);
       }
@@ -728,6 +780,10 @@ private:
     DeviceGoalHandle::SharedPtr handle;
     {
       const std::lock_guard<std::mutex> lock(child->mutex);
+      if (!child->cancel_requested) {
+        child->cancel_requested = true;
+        child->cancel_requested_at = std::chrono::steady_clock::now();
+      }
       if (!child->handle || child->cancel_dispatched) {
         return;
       }
@@ -769,12 +825,15 @@ private:
 
   void settle_child_after_exception(const std::shared_ptr<ChildExecutionState> & child)
   {
+    cancel_child_once(child);
+    const auto deadline = std::chrono::steady_clock::now() +
+      std::chrono::milliseconds(std::max<std::int64_t>(cancel_timeout_ms_, 1000));
     {
       std::unique_lock<std::mutex> lock(child->mutex);
       if (!child->dispatch_started) {
         return;
       }
-      child->changed.wait(lock, [&]() {return child->goal_response_received;});
+      child->changed.wait_until(lock, deadline, [&]() {return child->goal_response_received;});
       if (!child->handle) {
         return;
       }
@@ -788,6 +847,9 @@ private:
       if (child->changed.wait_for(
           lock, std::chrono::milliseconds(25), [&]() {return child->terminal;}))
       {
+        return;
+      }
+      if (std::chrono::steady_clock::now() >= deadline) {
         return;
       }
     }

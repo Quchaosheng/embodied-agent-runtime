@@ -145,9 +145,9 @@ TEST_F(GrpcValidationTest, MapsNonemptySqliteStatistics)
   const std::array<std::uint64_t, 5> durations{10, 20, 30, 40, 100};
   for (std::size_t index = 0; index < durations.size(); ++index) {
     ASSERT_TRUE(store_->insert({
-      "stats-" + std::to_string(index), "dock_a", 1,
-      static_cast<std::uint8_t>(index % 4), 0, durations[index], "done",
-      static_cast<std::int64_t>(index)}));
+        "stats-" + std::to_string(index), "dock_a", 1,
+        static_cast<std::uint8_t>(index % 4), 0, durations[index], "done",
+        static_cast<std::int64_t>(index)}));
   }
   runtime_gateway::GetStatsRequest request;
   runtime_gateway::RuntimeStats reply;

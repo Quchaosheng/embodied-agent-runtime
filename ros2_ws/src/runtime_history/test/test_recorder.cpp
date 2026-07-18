@@ -200,7 +200,9 @@ TEST(RecorderTest, OverlappingExternalAndCallbackStopDoesNotDeadlock)
   ASSERT_TRUE(recorder->enqueue(record("overlap")));
   {
     std::unique_lock<std::mutex> lock(mutex);
-    ASSERT_TRUE(condition.wait_for(lock, std::chrono::seconds(2), [&]() {return callback_started;}));
+    ASSERT_TRUE(condition.wait_for(lock, std::chrono::seconds(2), [&]() {
+        return callback_started;
+        }));
   }
 
   std::thread external_stop([&]() {
