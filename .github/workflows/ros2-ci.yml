@@ -2,106 +2,101 @@ name: ROS 2 CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ros2-ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  build-test-smoke:
+  build-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
     env:
       ROS_DISTRO: jazzy
-      ROS_LOCALHOST_ONLY: '1'
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Set up ROS 2 Jazzy
-        uses: ros-tooling/setup-ros@0.7.19
+      - uses: ros-tooling/setup-ros@0.7.19
         with:
           required-ros-distributions: jazzy
 
-      - name: Create an isolated workspace
-        shell: bash
-        run: |
-          workspace="${RUNNER_TEMP}/embodied_ws"
-          mkdir -p "${workspace}/src"
-          ln -s "${GITHUB_WORKSPACE}" "${workspace}/src/embodied-agent-runtime"
-          echo "EMBODIED_WS=${workspace}" >> "${GITHUB_ENV}"
-
       - name: Install system dependencies
-        shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends can-utils ripgrep
-          source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
-            sudo rosdep init
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            can-utils \
+            cmake \
+            iproute2 \
+            kmod \
+            libgrpc++-dev \
+            libprotobuf-dev \
+            libprotoc-dev \
+            libsqlite3-dev \
+            pkg-config \
+            protobuf-compiler \
+            protobuf-compiler-grpc \
+            python3-colcon-common-extensions \
+            python3-rosdep \
+            ripgrep \
+            ros-jazzy-behaviortree-cpp
+          rosdep update
+          rosdep install --from-paths ros2_ws/src --ignore-src \
+            --rosdistro jazzy -y
+
+      - name: Check shell syntax
+        run: find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Build ten packages
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          colcon build \
+            --packages-select \
+              robot_task_interfaces runtime_can virtual_can_device device_bridge \
+              task_executor runtime_monitor runtime_history task_orchestrator \
+              runtime_gateway ai_task_adapter \
+            --cmake-args -DBUILD_TESTING=ON
+
+      - name: Test ten packages
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source ros2_ws/install/setup.bash
+          cd ros2_ws
+          set +e
+          colcon test \
+            --packages-select \
+              robot_task_interfaces runtime_can virtual_can_device device_bridge \
+              task_executor runtime_monitor runtime_history task_orchestrator \
+              runtime_gateway ai_task_adapter \
+            --return-code-on-test-failure
+          test_status=$?
+          result_file="$(mktemp)"
+          colcon test-result --test-result-base build --verbose \
+            >"$result_file" 2>&1
+          result_status=$?
+          cat "$result_file"
+          if ((test_status != 0 || result_status != 0)); then
+            annotation="$(tail -c 30000 "$result_file")"
+            annotation="${annotation//'%'/'%25'}"
+            annotation="${annotation//$'\r'/'%0D'}"
+            annotation="${annotation//$'\n'/'%0A'}"
+            printf '::error title=ROS 2 test failures::%s\n' "$annotation"
+            exit 1
           fi
-          rosdep update --rosdistro "${ROS_DISTRO}"
-          rosdep install --from-paths "${EMBODIED_WS}/src" --ignore-src \
-            --rosdistro "${ROS_DISTRO}" -r -y
 
-      - name: Check shell scripts
+      - name: Run industrial vcan E2E when supported
         shell: bash
         run: |
-          shopt -s nullglob
-          for script in scripts/*.sh; do
-            bash -n "${script}"
-          done
-
-      - name: Build packages
-        shell: bash
-        working-directory: ${{ env.EMBODIED_WS }}
-        run: |
-          source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          colcon build --symlink-install \
-            --packages-up-to task_executor agent_gateway device_bridge runtime_simulation
-
-      - name: Run unit and launch tests
-        shell: bash
-        working-directory: ${{ env.EMBODIED_WS }}
-        run: |
-          source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          source install/setup.bash
-          colcon test --packages-select \
-            task_contract task_guard task_executor agent_gateway device_bridge runtime_simulation \
-            --event-handlers console_direct+ --return-code-on-test-failure
-          colcon test-result --test-result-base build --all --verbose
-
-      - name: Run offline and persisted-event smoke tests
-        shell: bash
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          source "${EMBODIED_WS}/install/setup.bash"
-          python3 test/test_audit_task_event_bag.py -v
-          ros2 run agent_gateway evaluate_intents --provider fake
-          ROS_DOMAIN_ID=161 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_phase_2.sh
-          ROS_DOMAIN_ID=162 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_ai_gateway.sh
-          ROS_DOMAIN_ID=163 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_task_event_bag.sh
-          ROS_DOMAIN_ID=164 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_ai_mission.sh
-
-      - name: Run SocketCAN vcan smoke when supported
-        shell: bash
-        run: |
-          sudo modprobe vcan 2>/dev/null || true
-          if ! sudo ip link add dev vcan0 type vcan 2>/dev/null; then
-            echo 'vcan interface unavailable on this runner; SocketCAN smoke skipped.' >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
+          if ! ip link show vcan0 >/dev/null 2>&1; then
+            sudo modprobe vcan >/dev/null 2>&1 || true
+            sudo ip link add dev vcan0 type vcan >/dev/null 2>&1 || true
           fi
-          trap 'sudo ip link delete vcan0 type vcan 2>/dev/null || true' EXIT
-          sudo ip link set vcan0 up
-          source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          source "${EMBODIED_WS}/install/setup.bash"
-          ROS_DOMAIN_ID=165 EMBODIED_WS="${EMBODIED_WS}" bash scripts/smoke_vcan_readiness.sh
+
+          if sudo ip link set vcan0 up >/dev/null 2>&1 && \
+            ip link show vcan0 >/dev/null 2>&1; then
+            WORKSPACE="$GITHUB_WORKSPACE/ros2_ws" SETUP_VCAN=0 \
+              bash scripts/run_industrial_e2e.sh
+          else
+            echo "::notice::SKIP: runner cannot create and enable vcan0"
+          fi
