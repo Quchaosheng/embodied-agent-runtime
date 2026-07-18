@@ -1,0 +1,6 @@
+virtual_can_device:
+  ros__parameters:
+    interface_name: vcan0
+    device_id: virtual_ecu_1
+    mode: normal
+    delay_ms: 500
