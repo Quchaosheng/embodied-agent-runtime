@@ -58,9 +58,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 On an ARM64 target, run `scripts/check_arm64_environment.sh`, then
 `scripts/build_on_arm64.sh` and `scripts/run_arm64_smoke.sh`. The default
-profile is `generic-arm64`. Set `RUNTIME_PLATFORM_PROFILE=x5` only for the
-optional X5 profile; that selection does not install vendor runtimes or prove
-X5 compatibility.
+profile is `generic-arm64`; `rk3568` is a CPU-only generic alias. Set
+`RUNTIME_PLATFORM_PROFILE=x5` only for the optional X5 intent profile. These
+selections do not install vendor runtimes or prove board compatibility.
+
+Use the default Jazzy/Ubuntu 24.04 pair unless the target image requires
+Humble/Ubuntu 22.04:
+
+```bash
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/check_arm64_environment.sh
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/build_on_arm64.sh
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/run_arm64_smoke.sh
+```
 
 ## Change Rules
 
