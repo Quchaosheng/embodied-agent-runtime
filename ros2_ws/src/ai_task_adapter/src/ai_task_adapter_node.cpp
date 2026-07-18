@@ -142,10 +142,14 @@ private:
         break;
     }
 
-    RCLCPP_INFO(
-      get_logger(), "ExecuteTask result code=%d outcome=%u error_code=%u message=%s",
-      static_cast<int>(wrapped_result.code), wrapped_result.result->outcome,
-      wrapped_result.result->error_code, wrapped_result.result->message.c_str());
+    if (wrapped_result.result) {
+      RCLCPP_INFO(
+        get_logger(), "ExecuteTask result code=%d outcome=%u error_code=%u message=%s",
+        static_cast<int>(wrapped_result.code), wrapped_result.result->outcome,
+        wrapped_result.result->error_code, wrapped_result.result->message.c_str());
+    } else {
+      RCLCPP_ERROR(get_logger(), "ExecuteTask returned no result");
+    }
     rclcpp::shutdown();
   }
 

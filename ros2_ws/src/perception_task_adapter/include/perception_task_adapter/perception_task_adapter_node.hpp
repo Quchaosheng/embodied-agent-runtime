@@ -1,5 +1,4 @@
-#ifndef PERCEPTION_TASK_ADAPTER__PERCEPTION_TASK_ADAPTER_NODE_HPP_
-#define PERCEPTION_TASK_ADAPTER__PERCEPTION_TASK_ADAPTER_NODE_HPP_
+#pragma once
 
 #include <memory>
 
@@ -28,5 +27,3 @@ private:
 };
 
 }  // namespace perception_task_adapter
-
-#endif  // PERCEPTION_TASK_ADAPTER__PERCEPTION_TASK_ADAPTER_NODE_HPP_

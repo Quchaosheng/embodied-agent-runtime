@@ -1,5 +1,4 @@
-#ifndef RUNTIME_GATEWAY__LOOPBACK_SERVER_HPP_
-#define RUNTIME_GATEWAY__LOOPBACK_SERVER_HPP_
+#pragma once
 
 #include <memory>
 #include <condition_variable>
@@ -39,5 +38,3 @@ private:
 };
 
 }  // namespace runtime_gateway
-
-#endif  // RUNTIME_GATEWAY__LOOPBACK_SERVER_HPP_

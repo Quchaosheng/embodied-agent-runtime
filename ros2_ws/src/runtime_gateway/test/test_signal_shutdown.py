@@ -19,7 +19,7 @@ from robot_task_interfaces.action import ExecuteWorkflow
 
 class FakeOrchestrator(Node):
     def __init__(self):
-        super().__init__("signal_shutdown_fake_orchestrator")
+        super().__init__('signal_shutdown_fake_orchestrator')
         self.goal_received = threading.Event()
         self.cancel_received = threading.Event()
         self.terminal_release = threading.Event()
@@ -27,7 +27,7 @@ class FakeOrchestrator(Node):
         self.server = ActionServer(
             self,
             ExecuteWorkflow,
-            "execute_workflow",
+            'execute_workflow',
             execute_callback=self.execute,
             goal_callback=self.goal,
             cancel_callback=self.cancel,
@@ -48,14 +48,14 @@ class FakeOrchestrator(Node):
         goal_handle.canceled()
         result = ExecuteWorkflow.Result()
         result.outcome = ExecuteWorkflow.Result.CANCELED
-        result.message = "canceled"
+        result.message = 'canceled'
         self.terminal_published.set()
         return result
 
 
 def free_port():
     with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
+        listener.bind(('127.0.0.1', 0))
         return listener.getsockname()[1]
 
 
@@ -64,7 +64,7 @@ def wait_for_listener(port, expected, timeout=3.0):
     while time.monotonic() < deadline:
         with socket.socket() as client:
             client.settimeout(0.05)
-            listening = client.connect_ex(("127.0.0.1", port)) == 0
+            listening = client.connect_ex(('127.0.0.1', port)) == 0
         if listening == expected:
             return True
         time.sleep(0.02)
@@ -86,19 +86,19 @@ class SignalShutdownTest(unittest.TestCase):
         self.executor.add_node(self.fake)
         self.spin_thread = threading.Thread(target=self.executor.spin)
         self.spin_thread.start()
-        prefix = Path(get_package_prefix("runtime_gateway"))
-        self.node_binary = prefix / "lib/runtime_gateway/runtime_gateway_node"
-        self.client_binary = prefix / "lib/runtime_gateway/runtime_gateway_client"
+        prefix = Path(get_package_prefix('runtime_gateway'))
+        self.node_binary = prefix / 'lib/runtime_gateway/runtime_gateway_node'
+        self.client_binary = prefix / 'lib/runtime_gateway/runtime_gateway_client'
         self.port = free_port()
-        self.database = Path(f"/tmp/runtime_gateway_signal_{os.getpid()}.sqlite3")
+        self.database = Path(f'/tmp/runtime_gateway_signal_{os.getpid()}.sqlite3')
         self.process = subprocess.Popen(
             [
                 str(self.node_binary),
-                "--ros-args",
-                "-p",
-                f"port:={self.port}",
-                "-p",
-                f"database_path:={self.database}",
+                '--ros-args',
+                '-p',
+                f'port:={self.port}',
+                '-p',
+                f'database_path:={self.database}',
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -114,7 +114,7 @@ class SignalShutdownTest(unittest.TestCase):
         self.executor.shutdown(timeout_sec=2)
         self.spin_thread.join(timeout=2)
         self.fake.destroy_node()
-        for suffix in ("", "-wal", "-shm"):
+        for suffix in ('', '-wal', '-shm'):
             try:
                 Path(str(self.database) + suffix).unlink()
             except FileNotFoundError:
@@ -122,7 +122,7 @@ class SignalShutdownTest(unittest.TestCase):
 
     def test_sigint_cancels_workflow_before_ros_shutdown(self):
         environment = os.environ.copy()
-        environment["RUNTIME_GATEWAY_ADDRESS"] = f"127.0.0.1:{self.port}"
+        environment['RUNTIME_GATEWAY_ADDRESS'] = f'127.0.0.1:{self.port}'
         deadline = time.monotonic() + 3
         reply = None
         attempt = 0
@@ -130,24 +130,26 @@ class SignalShutdownTest(unittest.TestCase):
             attempt += 1
             command = [
                 str(self.client_binary),
-                "submit",
-                "--request-id",
-                f"signal-request-{attempt}",
-                "--workflow",
-                "single_task",
-                "--task-id",
-                f"signal-task-{attempt}",
-                "--target",
-                "dock_a",
-                "--timeout-ms",
-                "3000",
+                'submit',
+                '--request-id',
+                f'signal-request-{attempt}',
+                '--workflow',
+                'single_task',
+                '--task-id',
+                f'signal-task-{attempt}',
+                '--target',
+                'dock_a',
+                '--timeout-ms',
+                '3000',
             ]
-            completed = subprocess.run(command, env=environment, capture_output=True, text=True)
+            completed = subprocess.run(
+                command, env=environment, capture_output=True, text=True
+            )
             reply = json.loads(completed.stdout)
-            if completed.returncode == 0 and reply.get("accepted"):
+            if completed.returncode == 0 and reply.get('accepted'):
                 break
             time.sleep(0.05)
-        self.assertTrue(reply.get("accepted"), reply)
+        self.assertTrue(reply.get('accepted'), reply)
         self.assertTrue(self.fake.goal_received.wait(2))
 
         self.process.send_signal(signal.SIGINT)
@@ -161,8 +163,8 @@ class SignalShutdownTest(unittest.TestCase):
         self.assertEqual(self.process.returncode, 0)
         self.assertTrue(wait_for_listener(self.port, False))
         output = self.process.stdout.read()
-        self.assertNotIn("signal_handler(SIGINT/SIGTERM)", output)
+        self.assertNotIn('signal_handler(SIGINT/SIGTERM)', output)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

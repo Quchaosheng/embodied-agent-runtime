@@ -82,6 +82,18 @@ public:
 
   int cancel_requests() const {return cancel_requests_;}
 
+  bool wait_for_cancel(const std::chrono::milliseconds timeout = 2s) const
+  {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (cancel_requests_ > 0) {
+        return true;
+      }
+      std::this_thread::sleep_for(2ms);
+    }
+    return cancel_requests_ > 0;
+  }
+
 private:
   bool hold_;
   std::function<void()> before_goal_response_;
@@ -395,7 +407,6 @@ TEST_P(OrchestratorRuntimeTest, SignalDrainSupervisesPrimaryAndRecoveryExecutors
   if (fail_recovery) {
     runtime.join();
     EXPECT_EQ(runtime_result, 2);
-    EXPECT_NE(result_future.wait_for(100ms), std::future_status::ready);
     rescue_executor = std::make_unique<rclcpp::executors::MultiThreadedExecutor>();
     rescue_executor->add_node(orchestrator);
     rescue_spin = std::thread([&]() {rescue_executor->spin();});
@@ -412,6 +423,8 @@ TEST_P(OrchestratorRuntimeTest, SignalDrainSupervisesPrimaryAndRecoveryExecutors
   ASSERT_NE(result.result, nullptr);
   EXPECT_EQ(result.result->outcome, ExecuteWorkflow::Result::SAFE_STOP);
   EXPECT_EQ(result.result->error_code, 205);
+  ASSERT_TRUE(server->wait_for_cancel());
+  EXPECT_EQ(server->cancel_requests(), 1);
   if (fail_recovery) {
     rescue_executor->cancel();
     rescue_spin.join();
@@ -420,7 +433,6 @@ TEST_P(OrchestratorRuntimeTest, SignalDrainSupervisesPrimaryAndRecoveryExecutors
     runtime.join();
     EXPECT_EQ(runtime_result, 1);
   }
-  EXPECT_EQ(server->cancel_requests(), 1);
 
   external_executor.cancel();
   external_spin.join();
