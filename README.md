@@ -91,10 +91,33 @@ colcon test-result --test-result-base build --verbose
 On x86_64 Linux, build and test directly with the commands above. On ARM64,
 start with `scripts/check_arm64_environment.sh`, then run
 `scripts/build_on_arm64.sh` and `scripts/run_arm64_smoke.sh`. The default
-platform profile is `generic-arm64`; select the optional X5 profile with
-`RUNTIME_PLATFORM_PROFILE=x5`. The X5 profile records target intent only and
-does not add vendor dependencies or compatibility claims. Never reuse an
-x86_64 build, install, or log tree on ARM64.
+platform profile is `generic-arm64`; `rk3568` is a CPU-only generic ARM64
+alias, and `x5` records target intent only. Neither profile adds vendor
+dependencies or compatibility claims. Never reuse an x86_64 build, install,
+or log tree on ARM64.
+
+The ARM scripts default to ROS 2 Jazzy on Ubuntu 24.04:
+
+```bash
+RUNTIME_PLATFORM_PROFILE=generic-arm64 ROS_DISTRO=jazzy \
+  bash scripts/check_arm64_environment.sh
+bash scripts/build_on_arm64.sh
+bash scripts/run_arm64_smoke.sh
+```
+
+For an RK3568 image based on Ubuntu 22.04, use ROS 2 Humble:
+
+```bash
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/check_arm64_environment.sh
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/build_on_arm64.sh
+RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
+  bash scripts/run_arm64_smoke.sh
+```
+
+The scripts accept only `jazzy`/Ubuntu 24.04 and `humble`/Ubuntu 22.04 pairs.
+They still require a real ARM64 target for native evidence.
 
 32-bit ARM is not supported. BPU/NPU runtimes, cameras, GPIO, and physical CAN
 adapters remain board-specific integration work behind their respective

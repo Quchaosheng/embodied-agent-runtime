@@ -4,9 +4,11 @@ set -Eeuo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 repository=$(cd "$script_dir/.." && pwd -P)
 workspace="$repository/ros2_ws"
-report="$repository/arm64-smoke-report.txt"
+ros_distro=${ROS_DISTRO:-jazzy}
+report="$repository/arm64-${ros_distro}-smoke-report.txt"
 profile=${RUNTIME_PLATFORM_PROFILE:-generic-arm64}
 export RUNTIME_PLATFORM_PROFILE="$profile"
+export ROS_DISTRO="$ros_distro"
 packages=(
   robot_task_interfaces runtime_can virtual_can_device device_bridge
   task_executor runtime_monitor runtime_history task_orchestrator
@@ -14,7 +16,7 @@ packages=(
 )
 
 case "$profile" in
-  generic-arm64|x5) ;;
+  generic-arm64|rk3568|x5) ;;
   *)
     printf 'Unsupported ARM64 platform profile: %s\n' "$profile" >&2
     exit 2
@@ -27,7 +29,7 @@ esac
 }
 
 set +u
-source /opt/ros/jazzy/setup.bash
+source "/opt/ros/$ros_distro/setup.bash"
 source "$workspace/install/setup.bash"
 set -u
 cd "$workspace"
