@@ -23,6 +23,7 @@ namespace
 using namespace std::chrono_literals;
 using ExecuteWorkflow = robot_task_interfaces::action::ExecuteWorkflow;
 using GoalHandle = rclcpp_action::ClientGoalHandle<ExecuteWorkflow>;
+constexpr auto kCancelActiveTimeout = 5s;
 
 bool valid(const SubmitWorkflowRequest & request)
 {
@@ -48,6 +49,7 @@ void fill_task(const RequestRecord & record, TaskRecord * reply)
 {
   reply->set_found(true);
   reply->set_task_id(record.task_id);
+  reply->set_target_id(record.target_id);
   reply->set_state(record.state);
   reply->set_outcome(record.outcome);
   reply->set_error_code(record.error_code);
@@ -95,7 +97,8 @@ struct GatewayService::State
     std::function<void()> before_send_value,
     std::function<void()> before_cancel_lookup_value,
     std::function<void()> before_cancel_dispatch_value)
-  : store(value), action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
+  : store(value),
+    action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
     before_send(std::move(before_send_value)),
     before_cancel_lookup(std::move(before_cancel_lookup_value)),
     before_cancel_dispatch(std::move(before_cancel_dispatch_value)), logger(node.get_logger())
@@ -169,7 +172,8 @@ grpc::Status GatewayService::SubmitWorkflow(
     return {grpc::StatusCode::INVALID_ARGUMENT, "required fields and timeout_ms must be valid"};
   }
   const RequestRecord initial{
-    request->request_id(), request->task_id(), request->workflow_id(), "SUBMITTING", 0, 0, ""};
+    request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
+    "SUBMITTING", 0, 0, ""};
   const auto inserted = state_->registry.insert(initial);
   if (inserted == InsertResult::DUPLICATE) {
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
@@ -206,7 +210,8 @@ grpc::Status GatewayService::SubmitWorkflow(
   goal.task_id = request->task_id();
   goal.target_id = request->target_id();
   goal.allowed_duration.sec = static_cast<std::int32_t>(request->timeout_ms() / 1000);
-  goal.allowed_duration.nanosec = static_cast<std::uint32_t>((request->timeout_ms() % 1000) * 1000000);
+  goal.allowed_duration.nanosec = static_cast<std::uint32_t>((request->timeout_ms() % 1000) *
+    1000000);
 
   const std::weak_ptr<State> weak_state = state_;
   rclcpp_action::Client<ExecuteWorkflow>::SendGoalOptions options;
@@ -309,8 +314,8 @@ grpc::Status GatewayService::SubmitWorkflow(
   {
     std::unique_lock<std::mutex> lock(state_->mutex);
     state_->changed.wait_for(lock, 50ms, [&]() {
-      const auto pending = state_->goals.find(request->request_id());
-      return pending == state_->goals.end() || !pending->second.pending;
+        const auto pending = state_->goals.find(request->request_id());
+        return pending == state_->goals.end() || !pending->second.pending;
     });
   }
   const auto current = state_->registry.get_by_request_id(request->request_id()).value();
@@ -471,15 +476,27 @@ void GatewayService::cancel_active()
     (void)state_->dispatch_cancel(request_id, handle);
   }
   std::unique_lock<std::mutex> lock(state_->mutex);
-  state_->changed.wait(lock, [this]() {
-    for (const auto & [request_id, goal] : state_->goals) {
-      (void)request_id;
-      if (!goal.cancel_failed) {
-        return false;
-      }
-    }
-    return true;
+  const bool drained = state_->changed.wait_for(lock, kCancelActiveTimeout, [this]() {
+        for (const auto & [request_id, goal] : state_->goals) {
+          (void)request_id;
+          if (!goal.cancel_failed) {
+            return false;
+          }
+        }
+        return true;
   });
+  if (!drained) {
+    std::string request_ids;
+    for (const auto & [request_id, goal] : state_->goals) {
+      (void)goal;
+      if (!request_ids.empty()) {
+        request_ids += ",";
+      }
+      request_ids += request_id;
+    }
+    lock.unlock();
+    throw std::runtime_error("timed out waiting for workflow cancellation: " + request_ids);
+  }
   for (const auto & [request_id, goal] : state_->goals) {
     if (goal.cancel_failed) {
       throw std::runtime_error("failed to dispatch cancel for request " + request_id);

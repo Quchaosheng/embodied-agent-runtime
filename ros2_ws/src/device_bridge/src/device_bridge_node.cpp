@@ -266,7 +266,7 @@ private:
         goal_handle, command.command_id, ack_timeout, true, response, wait_error);
       if (wait_result == WaitResult::kResponse) {
         if (goal_handle->is_canceling()) {
-          stop_and_finish(goal_handle, command.command_id);
+          stop_and_finish(goal_handle, command.command_id, true, 0, "");
           return;
         }
         if (response.result_code == 0) {
@@ -292,7 +292,7 @@ private:
         if (!command_sent) {
           finish_canceled(goal_handle, "command canceled before CAN send");
         } else {
-          stop_and_finish(goal_handle, command.command_id);
+          stop_and_finish(goal_handle, command.command_id, true, 0, "");
         }
         return;
       }
@@ -324,16 +324,19 @@ private:
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, attempt);
       diagnostic_state_.record_ack_timeout(device_bridge::kErrorAckTimeout);
       publish_diagnostics();
-      finish_safe_stop(
-        goal_handle, device_bridge::kErrorAckTimeout,
-        "ACK timeout after one idempotent retry; upstream must keep device safe");
+      stop_and_finish(
+        goal_handle, command.command_id, false, device_bridge::kErrorAckTimeout,
+        "command ACK timeout; attempting device STOP");
       return;
     }
   }
 
   void stop_and_finish(
     const std::shared_ptr<GoalHandle> & goal_handle,
-    const std::uint16_t original_command_id)
+    const std::uint16_t original_command_id,
+    const bool cancellation_requested,
+    const std::uint16_t safe_stop_error_code,
+    const std::string & safe_stop_message)
   {
     using DeviceState = robot_task_interfaces::msg::DeviceState;
     publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, 0);
@@ -363,9 +366,14 @@ private:
     if (wait_result == WaitResult::kResponse && stop_response.result_code == 0 &&
       stop_response.device_mode == DeviceState::STOPPED)
     {
-      finish_canceled(
-        goal_handle, "device STOP acknowledged stop_command_id=" +
-        std::to_string(stop_command_id));
+      const auto stop_message = "device STOP acknowledged stop_command_id=" +
+        std::to_string(stop_command_id);
+      if (cancellation_requested) {
+        finish_canceled(goal_handle, stop_message);
+      } else {
+        finish_safe_stop(
+          goal_handle, safe_stop_error_code, safe_stop_message + "; " + stop_message);
+      }
       return;
     }
     if (wait_result == WaitResult::kTimeout) {

@@ -534,6 +534,25 @@ print(json.dumps({"workflow_goal_count": int(sys.argv[3]),
                   "record_count": records}, sort_keys=True))
 PY
 
+start_virtual ack_timeout drop_ack
+begin_can_window ack_timeout
+task_id="industrial-ack-timeout-$$"
+submit ack_timeout "request-ack-timeout-$$" "$task_id"
+wait_task ack_timeout "$task_id" SAFE_STOP
+finish_can_window ack_timeout 4
+
+stop_pid "$EXECUTOR_PID"
+stop_pid "$BRIDGE_PID"
+recovery_started_ns=$(date +%s%N)
+start_direct bridge-after-ack-timeout "$EVIDENCE/bridge-after-ack-timeout.log" "$BRIDGE" \
+  --ros-args --params-file "$WORKSPACE/src/device_bridge/config/device_bridge.yaml"
+BRIDGE_PID=$LAST_PID
+start_direct executor-after-ack-timeout "$EVIDENCE/executor-after-ack-timeout.log" "$EXECUTOR" \
+  --ros-args --params-file "$WORKSPACE/src/task_executor/config/targets.yaml"
+EXECUTOR_PID=$LAST_PID
+EXECUTOR_LOG="$EVIDENCE/executor-after-ack-timeout.log"
+wait_runtime_ready_since "$recovery_started_ns"
+
 start_virtual drop_stop_ack drop_stop_ack
 begin_can_window drop_stop_ack
 task_id="industrial-safe-stop-$$"
@@ -548,7 +567,7 @@ begin_can_window stats
 "$CLIENT" get-stats > "$EVIDENCE/stats/grpc.json"
 "$HISTORY_REPORT" --db "$DB" --stats > "$EVIDENCE/stats/sqlite.json"
 finish_can_window stats 0
-assert_workflow_goal_quiet_window 5 1000
+assert_workflow_goal_quiet_window 6 1000
 
 require_file() { [[ -s "$1" ]] || fail "missing orchestration evidence: $1"; }
 assert_task() {
@@ -617,6 +636,11 @@ grep -Fq 'Dropping STOP ACK' "$EVIDENCE/drop_stop_ack/virtual.log" ||
 ! grep -Fq 'STOP acknowledged' "$EVIDENCE/drop_stop_ack/virtual.log" ||
   fail "drop_stop_ack unexpectedly received STOP response"
 printf 'drop_stop_ack\tPASS\tSAFE_STOP/204 no STOP response\n' >> "$EVIDENCE/summary.tsv"
+assert_task ack_timeout SAFE_STOP 2 201; assert_event ack_timeout 2 201
+assert_stop_can ack_timeout present
+grep -Fq 'STOP acknowledged' "$EVIDENCE/ack_timeout/virtual.log" ||
+  fail "ACK timeout did not observe STOPPED"
+printf 'ack_timeout\tPASS\tSAFE_STOP/201 STOP acknowledged\n' >> "$EVIDENCE/summary.tsv"
 /usr/bin/python3 - "$EVIDENCE/duplicate/assertions.json" <<'PY'
 import json, pathlib, sys
 assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
@@ -633,11 +657,11 @@ grpc = json.loads(pathlib.Path(sys.argv[1]).read_text())
 sqlite = json.loads(pathlib.Path(sys.argv[2]).read_text())
 fields = ("has_data", "sample_count", "outcome_counts", "p50_ms", "p95_ms", "p99_ms", "max_ms")
 assert all(grpc[field] == sqlite[field] for field in fields), (grpc, sqlite)
-assert grpc["has_data"] is True and grpc["sample_count"] == 5, grpc
-assert grpc["outcome_counts"] == [2, 1, 1, 1], grpc
+assert grpc["has_data"] is True and grpc["sample_count"] == 6, grpc
+assert grpc["outcome_counts"] == [2, 1, 2, 1], grpc
 assert all(isinstance(grpc[field], int) and grpc[field] > 0 for field in fields[3:]), grpc
 PY
-printf 'stats\tPASS\t5 samples [2,1,1,1] percentiles agree\n' >> "$EVIDENCE/summary.tsv"
+printf 'stats\tPASS\t6 samples [2,1,2,1] percentiles agree\n' >> "$EVIDENCE/summary.tsv"
 
 grep -Fq '"kind": "diagnostic"' "$EVIDENCE/action-diagnostics.jsonl" ||
   fail "no diagnostics evidence observed"
@@ -647,6 +671,6 @@ process_is_running "$OBSERVER_PID" || fail "observer exited before final asserti
 /usr/bin/python3 - "$EVIDENCE/stats/workflow-goals.json" <<'PY'
 import json, pathlib, sys
 assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
-    "accepted_workflow_goal_count": 5, "quiet_window_ms": 1000}
+    "accepted_workflow_goal_count": 6, "quiet_window_ms": 1000}
 PY
-record "PASS: six industrial E2E scenarios"
+record "PASS: seven industrial E2E scenarios"

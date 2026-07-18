@@ -205,11 +205,11 @@ TEST(StoreTest, SerializesConcurrentInsertsOnOneStore)
 
   for (std::size_t i = 0; i < thread_count; ++i) {
     threads.emplace_back([&, i]() {
-      ++ready;
-      while (!start.load()) {
-        std::this_thread::yield();
-      }
-      results[i] = store.insert(record("concurrent-" + std::to_string(i), i));
+        ++ready;
+        while (!start.load()) {
+          std::this_thread::yield();
+        }
+        results[i] = store.insert(record("concurrent-" + std::to_string(i), i));
     });
   }
   while (ready.load() != thread_count) {

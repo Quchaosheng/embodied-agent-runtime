@@ -1,5 +1,4 @@
-#ifndef PERCEPTION_TASK_ADAPTER__MARKER_TRIGGER_HPP_
-#define PERCEPTION_TASK_ADAPTER__MARKER_TRIGGER_HPP_
+#pragma once
 
 #include <cstddef>
 #include <optional>
@@ -48,5 +47,3 @@ private:
 };
 
 }  // namespace perception_task_adapter
-
-#endif  // PERCEPTION_TASK_ADAPTER__MARKER_TRIGGER_HPP_

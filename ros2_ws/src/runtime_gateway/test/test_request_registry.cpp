@@ -6,9 +6,11 @@ namespace
 {
 
 runtime_gateway::RequestRecord record(
-  std::string request_id = "request-1", std::string task_id = "task-1")
+  std::string request_id = "request-1", std::string task_id = "task-1",
+  std::string target_id = "dock_a")
 {
-  return {std::move(request_id), std::move(task_id), "single_task", "SUBMITTING", 0, 0, ""};
+  return {std::move(request_id), std::move(task_id), std::move(target_id), "single_task",
+    "SUBMITTING", 0, 0, ""};
 }
 
 TEST(RequestRegistryTest, RejectsEmptyIdentifiers)
@@ -16,6 +18,8 @@ TEST(RequestRegistryTest, RejectsEmptyIdentifiers)
   runtime_gateway::RequestRegistry registry;
   EXPECT_EQ(registry.insert(record("", "task-1")), runtime_gateway::InsertResult::INVALID);
   EXPECT_EQ(registry.insert(record("request-1", "")), runtime_gateway::InsertResult::INVALID);
+  EXPECT_EQ(registry.insert(record("request-1", "task-1", "")),
+      runtime_gateway::InsertResult::INVALID);
 }
 
 TEST(RequestRegistryTest, InsertsAndReturnsFirstRequest)
@@ -42,12 +46,23 @@ TEST(RequestRegistryTest, DistinguishesExactAndConflictingDuplicates)
 TEST(RequestRegistryTest, RejectsDifferentRequestForExistingTaskId)
 {
   runtime_gateway::RequestRegistry registry;
-  ASSERT_EQ(registry.insert(record("request-1", "task-1")), runtime_gateway::InsertResult::INSERTED);
+  ASSERT_EQ(registry.insert(record("request-1", "task-1")),
+      runtime_gateway::InsertResult::INSERTED);
   EXPECT_EQ(
     registry.insert(record("request-2", "task-1")),
     runtime_gateway::InsertResult::CONFLICT);
   ASSERT_TRUE(registry.get_by_task_id("task-1").has_value());
   EXPECT_EQ(registry.get_by_task_id("task-1")->request_id, "request-1");
+}
+
+TEST(RequestRegistryTest, TreatsDifferentTargetAsConflictingRequest)
+{
+  runtime_gateway::RequestRegistry registry;
+  ASSERT_EQ(registry.insert(record()), runtime_gateway::InsertResult::INSERTED);
+  EXPECT_EQ(
+    registry.insert(record("request-1", "task-1", "home")),
+    runtime_gateway::InsertResult::CONFLICT);
+  EXPECT_EQ(registry.size(), 1U);
 }
 
 TEST(RequestRegistryTest, MakesTerminalUpdateVisibleByBothIdentifiers)
