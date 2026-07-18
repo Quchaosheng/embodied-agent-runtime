@@ -72,7 +72,7 @@ selected mode without calling `wsl.exe`.
 Windows CI verifies PowerShell syntax and DryRun/error behavior only. A real
 WSL2 Jazzy run is evidence only when `Check` or `BuildTest` completes on that
 machine. On 2026-07-18, this Windows host completed `Check` and `BuildTest`
-with 11 packages, 301 tests, 0 errors, 0 failures, and 45 skips. This remains
+with 11 packages, 385 tests, 0 errors, 0 failures, and 72 skips. This remains
 software-only evidence and does not prove physical hardware behavior.
 
 ### Linux

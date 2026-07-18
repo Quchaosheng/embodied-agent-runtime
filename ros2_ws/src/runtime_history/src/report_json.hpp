@@ -1,5 +1,4 @@
-#ifndef RUNTIME_HISTORY__REPORT_JSON_HPP_
-#define RUNTIME_HISTORY__REPORT_JSON_HPP_
+#pragma once
 
 #include <string>
 
@@ -34,5 +33,3 @@ inline std::string json_quote(const std::string & value)
 }
 
 }  // namespace runtime_history
-
-#endif  // RUNTIME_HISTORY__REPORT_JSON_HPP_

@@ -1,5 +1,4 @@
-#ifndef RUNTIME_GATEWAY__GATEWAY_SERVICE_HPP_
-#define RUNTIME_GATEWAY__GATEWAY_SERVICE_HPP_
+#pragma once
 
 #include "runtime_gateway/request_registry.hpp"
 
@@ -52,5 +51,3 @@ private:
 };
 
 }  // namespace runtime_gateway
-
-#endif  // RUNTIME_GATEWAY__GATEWAY_SERVICE_HPP_

@@ -1,5 +1,4 @@
-#ifndef RUNTIME_HISTORY__RECORDER_HPP_
-#define RUNTIME_HISTORY__RECORDER_HPP_
+#pragma once
 
 #include "runtime_history/store.hpp"
 
@@ -49,5 +48,3 @@ private:
 };
 
 }  // namespace runtime_history
-
-#endif  // RUNTIME_HISTORY__RECORDER_HPP_

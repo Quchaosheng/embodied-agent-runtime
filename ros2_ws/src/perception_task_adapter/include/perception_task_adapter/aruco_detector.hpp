@@ -1,5 +1,4 @@
-#ifndef PERCEPTION_TASK_ADAPTER__ARUCO_DETECTOR_HPP_
-#define PERCEPTION_TASK_ADAPTER__ARUCO_DETECTOR_HPP_
+#pragma once
 
 #include <array>
 #include <vector>
@@ -27,5 +26,3 @@ private:
 };
 
 }  // namespace perception_task_adapter
-
-#endif  // PERCEPTION_TASK_ADAPTER__ARUCO_DETECTOR_HPP_

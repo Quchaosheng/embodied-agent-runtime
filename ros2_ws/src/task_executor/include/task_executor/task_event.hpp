@@ -1,5 +1,4 @@
-#ifndef TASK_EXECUTOR__TASK_EVENT_HPP_
-#define TASK_EXECUTOR__TASK_EVENT_HPP_
+#pragma once
 
 #include "builtin_interfaces/msg/time.hpp"
 #include "robot_task_interfaces/msg/task_event.hpp"
@@ -21,5 +20,3 @@ robot_task_interfaces::msg::TaskEvent make_task_event(
   const builtin_interfaces::msg::Time & stamp);
 
 }  // namespace task_executor
-
-#endif  // TASK_EXECUTOR__TASK_EVENT_HPP_
