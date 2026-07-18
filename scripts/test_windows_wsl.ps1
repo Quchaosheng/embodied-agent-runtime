@@ -8,6 +8,10 @@ $tool = Join-Path $PSScriptRoot 'windows_wsl.ps1'
 if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
     throw "Missing tool under test: $tool"
 }
+$helper = Join-Path $PSScriptRoot 'windows_wsl_inner.sh'
+if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
+    throw "Missing Linux helper under test: $helper"
+}
 
 $hostExecutable = if ($PSVersionTable.PSEdition -eq 'Desktop') {
     Join-Path $PSHOME 'powershell.exe'
@@ -53,6 +57,7 @@ Assert-Contains $check.Output 'mode=Check'
 Assert-Contains $check.Output 'distribution=Ubuntu-24.04'
 Assert-Contains $check.Output 'required_ros=jazzy'
 Assert-Contains $check.Output 'check_environment=true'
+Assert-Contains $check.Output 'linux_helper=scripts/windows_wsl_inner.sh'
 Assert-Contains $check.Output 'invoke_wsl=false'
 
 $buildTest = Invoke-ToolProcess @('-Mode', 'BuildTest', '-DryRun')
@@ -60,7 +65,7 @@ if ($buildTest.ExitCode -ne 0) {
     throw "BuildTest DryRun failed with exit code $($buildTest.ExitCode):`n$($buildTest.Output)"
 }
 Assert-Contains $buildTest.Output 'mode=BuildTest'
-Assert-Contains $buildTest.Output '.colcon/windows-wsl'
+Assert-Contains $buildTest.Output 'embodied-agent-runtime-wsl'
 Assert-Contains $buildTest.Output 'check_environment=true'
 Assert-Contains $buildTest.Output 'colcon_build_test=true'
 Assert-Contains $buildTest.Output 'invoke_wsl=false'
