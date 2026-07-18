@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <exception>
 #include <limits>
 #include <condition_variable>
@@ -412,6 +413,7 @@ private:
           goal->workflow_id.c_str());
       return rclcpp_action::GoalResponse::REJECT;
     }
+    active_generation_.store(generation_counter_.fetch_add(1) + 1);
     if (!accepting_) {
       active_ = false;
       worker_changed_.notify_all();
@@ -445,27 +447,42 @@ private:
 
   void handle_accepted(const std::shared_ptr<WorkflowGoalHandle> goal_handle)
   {
+    const auto generation = active_generation_.load();
     std::lock_guard<std::mutex> lock(worker_mutex_);
     if (worker_.joinable()) {
       worker_.join();
     }
-    worker_ = std::thread([this, goal_handle]() {run_worker(goal_handle);});
+    worker_ = std::thread([this, goal_handle, generation]() {
+        run_worker(goal_handle, generation);
+      });
     worker_changed_.notify_all();
   }
 
-  void run_worker(const std::shared_ptr<WorkflowGoalHandle> & goal_handle) noexcept
+  void release_active_for_generation(const std::uint64_t generation) noexcept
+  {
+    if (active_generation_.load() == generation) {
+      active_.store(false);
+      worker_changed_.notify_all();
+    }
+  }
+
+  void finish_worker(const std::uint64_t generation) noexcept
+  {
+    if (!terminal_transition_failed_ && active_generation_.load() == generation) {
+      release_active_for_generation(generation);
+    }
+  }
+
+  void run_worker(
+    const std::shared_ptr<WorkflowGoalHandle> & goal_handle,
+    const std::uint64_t generation) noexcept
   {
     struct ActiveGuard
     {
       TaskOrchestratorNode & node;
-      ~ActiveGuard()
-      {
-        if (!node.terminal_transition_failed_) {
-          node.active_ = false;
-          node.worker_changed_.notify_all();
-        }
-      }
-    } guard{*this};
+      const std::uint64_t generation;
+      ~ActiveGuard() {node.finish_worker(generation);}
+    } guard{*this, generation};
 
     try {
       execute(goal_handle);
@@ -681,6 +698,7 @@ private:
           goal_handle->canceled(result);
           break;
       }
+      release_active_for_generation(active_generation_.load());
       return true;
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Workflow terminal transition failed: %s", error.what());
@@ -698,6 +716,7 @@ private:
         fallback->error_code = kErrorInternal;
         fallback->message = "workflow terminal transition fallback";
         goal_handle->abort(fallback);
+        release_active_for_generation(active_generation_.load());
         return true;
       } catch (const std::exception & error) {
         RCLCPP_ERROR(get_logger(), "Workflow fallback abort failed: %s", error.what());
@@ -715,6 +734,8 @@ private:
   std::atomic_bool accepting_{true};
   std::atomic_bool running_{true};
   std::atomic_bool active_{false};
+  std::atomic_uint64_t generation_counter_{0};
+  std::atomic_uint64_t active_generation_{0};
   std::atomic_bool terminal_started_{false};
   std::atomic_bool fallback_attempted_{false};
   std::atomic_bool terminal_transition_failed_{false};
