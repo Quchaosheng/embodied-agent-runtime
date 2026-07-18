@@ -14,6 +14,7 @@ from robot_task_interfaces.action import ExecuteDeviceCommand, ExecuteTask
 
 
 class FakeDeviceBridge(Node):
+
     def __init__(self):
         super().__init__('signal_shutdown_fake_device_bridge')
         self.goal_received = threading.Event()
@@ -48,6 +49,7 @@ class FakeDeviceBridge(Node):
 
 
 class SignalShutdownTest(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
