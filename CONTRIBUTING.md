@@ -1,0 +1,60 @@
+# Contributing
+
+## Development Environment
+
+The primary development host may be Windows. Use Windows for editing, Git, and
+GitHub operations, and use WSL2 Ubuntu 24.04 with ROS 2 Jazzy for Linux runtime
+builds and tests. Native Ubuntu 24.04 is equivalent. The runtime and its Bash
+scripts are not validated as native Windows executables.
+
+Do not share `build`, `install`, or `log` trees between Windows, WSL2, x86_64
+Linux, and ARM64. Remove or isolate those trees when changing environments.
+
+## Build and Test
+
+From an Ubuntu 24.04 or WSL2 Ubuntu 24.04 shell:
+
+```bash
+set +u
+source /opt/ros/jazzy/setup.bash
+set -u
+cd ros2_ws
+rosdep install --from-paths src --ignore-src --rosdistro jazzy -y
+colcon build --cmake-args -DBUILD_TESTING=ON
+colcon test --return-code-on-test-failure
+colcon test-result --test-result-base build --verbose
+```
+
+Run shell syntax checks when changing scripts:
+
+```bash
+find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+```
+
+On an ARM64 target, run `scripts/check_arm64_environment.sh`, then
+`scripts/build_on_arm64.sh` and `scripts/run_arm64_smoke.sh`. The default
+profile is `generic-arm64`. Set `RUNTIME_PLATFORM_PROFILE=x5` only for the
+optional X5 profile; that selection does not install vendor runtimes or prove
+X5 compatibility.
+
+## Change Rules
+
+- Preserve `ExecuteWorkflow` as the external workflow boundary.
+- Keep device commands behind the Task Executor and Device Bridge boundaries.
+- Do not bypass validation, bounded deadlines, cancellation, or diagnostics.
+- Keep perception adapters independent of Device Bridge, SocketCAN, and direct
+  task execution.
+- Add dependencies through package manifests and `rosdep`, and update
+  `THIRD_PARTY_NOTICES.md` when a direct dependency changes.
+- Never commit credentials, private paths, target logs, or generated build
+  trees.
+
+## Pull Requests
+
+Describe the behavior changed, the failure or safety case considered, and the
+commands used for verification. Keep claims within the evidence actually
+collected. Software `vcan0`, generated images, and fake Action servers do not
+prove physical CAN, cameras, actuators, stopping, ARM64/X5, BPU/NPU, or GPIO.
+
+GitHub Actions must pass before merge. Hardware-facing changes also need
+separate target evidence with secrets and site-specific information removed.
