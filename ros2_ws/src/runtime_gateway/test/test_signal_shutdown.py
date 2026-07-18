@@ -18,6 +18,7 @@ from robot_task_interfaces.action import ExecuteWorkflow
 
 
 class FakeOrchestrator(Node):
+
     def __init__(self):
         super().__init__('signal_shutdown_fake_orchestrator')
         self.goal_received = threading.Event()
@@ -72,6 +73,7 @@ def wait_for_listener(port, expected, timeout=3.0):
 
 
 class SignalShutdownTest(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
