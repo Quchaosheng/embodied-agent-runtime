@@ -5,6 +5,37 @@ on:
   pull_request:
 
 jobs:
+  windows-tools:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check PowerShell syntax
+        shell: powershell
+        run: |
+          $failed = $false
+          Get-ChildItem scripts -File -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            foreach ($parseError in $errors) {
+              Write-Error "$($_.Name): $($parseError.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) {
+            exit 1
+          }
+
+      - name: Test Windows WSL tool behavior
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass
+          -File scripts/test_windows_wsl.ps1
+
   build-test:
     runs-on: ubuntu-24.04
     env:
