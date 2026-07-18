@@ -71,9 +71,17 @@ jobs:
               runtime_gateway ai_task_adapter \
             --return-code-on-test-failure
           test_status=$?
-          colcon test-result --test-result-base build --verbose
+          result_file="$(mktemp)"
+          colcon test-result --test-result-base build --verbose \
+            >"$result_file" 2>&1
           result_status=$?
+          cat "$result_file"
           if ((test_status != 0 || result_status != 0)); then
+            annotation="$(tail -c 30000 "$result_file")"
+            annotation="${annotation//'%'/'%25'}"
+            annotation="${annotation//$'\r'/'%0D'}"
+            annotation="${annotation//$'\n'/'%0A'}"
+            printf '::error title=ROS 2 test failures::%s\n' "$annotation"
             exit 1
           fi
 
