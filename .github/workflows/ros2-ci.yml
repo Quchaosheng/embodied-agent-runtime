@@ -45,7 +45,7 @@ jobs:
       - name: Check shell syntax
         run: find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
-      - name: Build ten packages
+      - name: Build eleven packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -54,10 +54,10 @@ jobs:
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
               task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter \
+              runtime_gateway ai_task_adapter perception_task_adapter \
             --cmake-args -DBUILD_TESTING=ON
 
-      - name: Test ten packages
+      - name: Test eleven packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -68,7 +68,7 @@ jobs:
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
               task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter \
+              runtime_gateway ai_task_adapter perception_task_adapter \
             --return-code-on-test-failure
           test_status=$?
           result_file="$(mktemp)"

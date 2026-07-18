@@ -59,7 +59,7 @@ for command_name in colcon cmake c++ python3 rosdep pkg-config ip candump; do
   require_command "$command_name"
 done
 
-for package in ros-jazzy-behaviortree-cpp libgrpc++-dev protobuf-compiler libprotobuf-dev libsqlite3-dev; do
+for package in ros-jazzy-behaviortree-cpp libgrpc++-dev protobuf-compiler libprotobuf-dev libsqlite3-dev libopencv-dev; do
   version=$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true)
   if [[ -n "$version" ]]; then
     record "package.$package=$version"
@@ -68,6 +68,14 @@ for package in ros-jazzy-behaviortree-cpp libgrpc++-dev protobuf-compiler libpro
     issues+=("missing package: $package")
   fi
 done
+opencv_version=$(pkg-config --modversion opencv4 2>/dev/null || true)
+if [[ -n "$opencv_version" ]]; then
+  record "opencv=$opencv_version"
+else
+  record "opencv=MISSING"
+  issues+=("OpenCV 4 pkg-config metadata not found")
+fi
+
 
 record "can_interfaces_begin"
 ip -details link show type can 2>/dev/null | tee -a "$report" || true

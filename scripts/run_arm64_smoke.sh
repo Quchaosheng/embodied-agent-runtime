@@ -10,7 +10,7 @@ export RUNTIME_PLATFORM_PROFILE="$profile"
 packages=(
   robot_task_interfaces runtime_can virtual_can_device device_bridge
   task_executor runtime_monitor runtime_history task_orchestrator
-  runtime_gateway ai_task_adapter
+  runtime_gateway ai_task_adapter perception_task_adapter
 )
 
 case "$profile" in
