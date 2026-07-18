@@ -44,6 +44,36 @@ software-only `vcan0` workflow on Ubuntu 24.04 with ROS 2 Jazzy.
 
 ## Build
 
+### Windows With WSL2
+
+From the repository root in Windows PowerShell, check an existing WSL2
+development environment without changing it:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\windows_wsl.ps1 -Mode Check
+```
+
+After the check reports `compatible=true`, build and test all eleven packages
+inside WSL2:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\windows_wsl.ps1 -Mode BuildTest
+```
+
+The default distribution is `Ubuntu-24.04`; override it with
+`-Distribution <name>`. The script does not install WSL, Ubuntu, ROS, or system
+packages and never invokes `sudo`. Build artifacts stay under
+`.colcon/windows-wsl`. Use `-DryRun` to inspect the selected mode without
+calling `wsl.exe`.
+
+Windows CI verifies PowerShell syntax and DryRun/error behavior only. A real
+WSL2 Jazzy run is evidence only when `Check` or `BuildTest` completes on that
+machine.
+
+### Linux
+
 ```bash
 set +u
 source /opt/ros/jazzy/setup.bash
