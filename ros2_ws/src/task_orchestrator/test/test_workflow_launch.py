@@ -33,6 +33,7 @@ def generate_test_description():
 
 
 class TestWorkflowOrchestrator(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
@@ -436,5 +437,6 @@ class TestWorkflowOrchestrator(unittest.TestCase):
 
 @launch_testing.post_shutdown_test()
 class TestProcessCleanup(unittest.TestCase):
+
     def test_clean_shutdown(self, proc_info, orchestrator):
         launch_testing.asserts.assertExitCodes(proc_info, process=orchestrator)
