@@ -54,8 +54,10 @@ public:
     server_ = rclcpp_action::create_server<ExecuteWorkflow>(
       this, "execute_workflow",
       [this](const rclcpp_action::GoalUUID &, const std::shared_ptr<const ExecuteWorkflow::Goal>) {
-        return accept_ ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
-        rclcpp_action::GoalResponse::REJECT;
+        if (accept_) {
+          return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        }
+        return rclcpp_action::GoalResponse::REJECT;
       },
       [](const std::shared_ptr<ServerGoalHandle>) {
         return rclcpp_action::CancelResponse::ACCEPT;
