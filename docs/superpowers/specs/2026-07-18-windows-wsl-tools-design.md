@@ -23,10 +23,11 @@ specific next action and return a nonzero exit code.
 
 ## Workspace Isolation
 
-WSL builds use `.colcon/windows-wsl/build`, `.colcon/windows-wsl/install`, and
-`.colcon/windows-wsl/log` under the repository. These paths are already covered
-by the ignored `.colcon/` directory and do not overlap the default workspace or
-ARM64 evidence trees.
+WSL builds copy `ros2_ws/src` into the WSL-native
+`$HOME/.cache/embodied-agent-runtime-wsl` tree before building. Its
+`.colcon/windows-wsl/build`, `install`, and `log` directories never overlap the
+Windows source, default workspace, or ARM64 evidence trees. The copy avoids
+ROS IDL generators receiving a Windows-mounted path with non-ASCII components.
 
 ## Verification
 
