@@ -24,9 +24,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\windows_wsl.ps1 -Mode BuildTest
 ```
 
-The tool reports missing prerequisites but does not install them. Its
-`.colcon/windows-wsl` output is separate from the default Linux and ARM64
-workspace trees.
+The tool reports missing prerequisites but does not install them. Build output
+is copied into the WSL-native `$HOME/.cache/embodied-agent-runtime-wsl` tree,
+separate from the Windows source and ARM64 workspace trees.
 
 ## Build and Test
 

@@ -65,12 +65,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 The default distribution is `Ubuntu-24.04`; override it with
 `-Distribution <name>`. The script does not install WSL, Ubuntu, ROS, or system
 packages and never invokes `sudo`. Build artifacts stay under
-`.colcon/windows-wsl`. Use `-DryRun` to inspect the selected mode without
-calling `wsl.exe`.
+the WSL-native `$HOME/.cache/embodied-agent-runtime-wsl` tree, which is
+refreshed from the Windows source on every run. Use `-DryRun` to inspect the
+selected mode without calling `wsl.exe`.
 
 Windows CI verifies PowerShell syntax and DryRun/error behavior only. A real
 WSL2 Jazzy run is evidence only when `Check` or `BuildTest` completes on that
-machine.
+machine. On 2026-07-18, this Windows host completed `Check` and `BuildTest`
+with 11 packages, 301 tests, 0 errors, 0 failures, and 45 skips. This remains
+software-only evidence and does not prove physical hardware behavior.
 
 ### Linux
 
