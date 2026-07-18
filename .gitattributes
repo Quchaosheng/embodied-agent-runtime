@@ -7,8 +7,10 @@
 *.hpp text eol=lf
 *.md text eol=lf
 *.msg text eol=lf
+*.proto text eol=lf
 *.py text eol=lf
 *.sh text eol=lf
+*.srv text eol=lf
 *.xml text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
