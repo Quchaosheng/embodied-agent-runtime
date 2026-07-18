@@ -57,7 +57,8 @@ Expected: `PASS: windows_wsl.ps1 behavior` and exit code 0.
 - [ ] **Step 1: Add a failing test for generated intent**
 
 Require Check DryRun to report `check_environment=true` and BuildTest DryRun to
-report `colcon_build_test=true` plus `.colcon/windows-wsl` isolation.
+report `colcon_build_test=true` plus the WSL-native
+`embodied-agent-runtime-wsl` isolation root.
 
 - [ ] **Step 2: Run the test and verify RED**
 
@@ -72,8 +73,9 @@ installation guidance and return nonzero without modifying the system.
 
 - [ ] **Step 4: Implement isolated build and test**
 
-After the common check, run `rosdep check`, build all eleven packages under
-`.colcon/windows-wsl`, source the isolated install tree, run their tests, and
+After the common check, copy `ros2_ws/src` to the WSL-native
+`$HOME/.cache/embodied-agent-runtime-wsl` tree, run `rosdep check`, build all
+eleven packages there, source the isolated install tree, run their tests, and
 print verbose test results.
 
 - [ ] **Step 5: Run the behavior test and verify GREEN**
