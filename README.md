@@ -1,81 +1,107 @@
-# Robot Runtime
+# Embodied Agent Runtime
 
-A deterministic ROS 2 task runtime connecting a loopback gRPC workflow boundary to fixed BehaviorTree.CPP orchestration, nested ROS Actions, SocketCAN device control, diagnostics, and SQLite task history.
+[![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E?logo=ros)](https://docs.ros.org/en/jazzy/)
+[![Platforms](https://img.shields.io/badge/platform-x86__64%20%7C%20ARM64-4C8BF5)](#platform-status)
+[![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
-## Runtime Chain
+A deterministic ROS 2 task runtime that connects controlled workflow inputs to
+fixed BehaviorTree.CPP orchestration, nested ROS 2 Actions, SocketCAN device
+control, runtime diagnostics, and SQLite task history.
 
-```text
-gRPC -> ExecuteWorkflow/fixed BT -> ExecuteTask -> ExecuteDeviceCommand
--> Device Bridge -> SocketCAN -> device -> TaskEvent -> SQLite
+The software path is implemented and tested. Native ARM boards, physical CAN,
+cameras, motors, and hardware emergency-stop behavior remain hardware
+validation work.
+
+## Runtime Architecture
+
+```mermaid
+flowchart LR
+    G["gRPC Gateway"] --> W["ExecuteWorkflow"]
+    A["Rule-based text adapter"] --> W
+    P["ArUco image / camera adapter"] --> W
+    W --> B["Fixed BehaviorTree.CPP"]
+    B --> T["ExecuteTask"]
+    T --> V["Target validation + deadline"]
+    V --> D["ExecuteDeviceCommand"]
+    D --> R["Device Bridge"]
+    R --> C["SocketCAN"]
+    C --> E["Device or virtual device"]
+    T --> X["TaskEvent"]
+    X --> H["SQLite history"]
+    R -. diagnostics .-> M["Runtime Monitor"]
+    T -. diagnostics .-> M
 ```
 
-The repository contains eleven packages: interfaces, CAN protocol, virtual
-device, Device Bridge, Task Executor, Runtime Monitor, History, Orchestrator,
-Gateway, an optional rule-based AI task adapter, and an optional ArUco
-perception adapter.
+Models and perception adapters cannot directly control a device. They can only
+submit allowlisted workflows through `ExecuteWorkflow`; the executable control
+flow remains fixed and reviewable.
 
-## Optional ArUco Workflow Input
+## Implemented Components
 
-`perception_task_adapter` detects `DICT_4X4_50` markers from an image or USB
-camera and submits only through the existing `ExecuteWorkflow` boundary:
+| Package | Responsibility |
+| --- | --- |
+| `robot_task_interfaces` | ROS 2 Actions, messages, and service contracts |
+| `runtime_can` | Fixed classic-CAN protocol encoding, decoding, and validation |
+| `virtual_can_device` | Software ECU used for normal, fault, delay, and dropped-ACK tests |
+| `device_bridge` | SocketCAN command transport, ACK retry, STOP, cancellation, and diagnostics |
+| `task_executor` | Target allowlist, deadline budgeting, nested Action execution, and `TaskEvent` output |
+| `runtime_monitor` | Aggregated readiness and degraded/error diagnostics |
+| `runtime_history` | SQLite task persistence, lookup, and percentile statistics |
+| `task_orchestrator` | Fixed BehaviorTree.CPP workflows and bounded child cancellation |
+| `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and Action bridge |
+| `ai_task_adapter` | Optional rule-based text-to-workflow adapter; not a real LLM |
+| `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
 
-```text
-image/camera -> ArUco detection -> ExecuteWorkflow -> fixed BT runtime
+## Verified Software Evidence
+
+On 2026-07-18, this Windows host completed the isolated WSL2/Jazzy build and
+test flow with **11 packages, 385 tests, 0 errors, 0 failures, and 72 skips**.
+GitHub Actions also passed the Windows tooling checks and the Ubuntu
+24.04/Jazzy build, test, ARM64-configuration, and conditional `vcan0` workflow.
+This remains software-only evidence.
+
+The industrial `vcan0` E2E script verifies these seven scenarios:
+
+| Scenario | Verified result |
+| --- | --- |
+| `normal` | `COMPLETED/0` |
+| `fault302` | `DEVICE_FAULT/302` |
+| `cancel` | `CANCELED/0`, protocol STOP acknowledged |
+| `drop_stop_ack` | `SAFE_STOP/204`, no STOP response received |
+| `ack_timeout` | `SAFE_STOP/201`, protocol STOP acknowledged |
+| `duplicate` | One Gateway dispatch, one workflow Goal, one task Goal, one history record |
+| `stats` | Six samples, outcome counts `[2,1,2,1]`, matching gRPC/SQLite percentiles |
+
+Run the same software E2E after building:
+
+```bash
+WORKSPACE="$PWD/ros2_ws" SETUP_VCAN=0 bash scripts/run_industrial_e2e.sh
 ```
 
-The default fixed mappings are:
+`vcan0`, the virtual device, generated images, and Fake Action servers are test
+substitutes. They are not physical-hardware evidence.
 
-| Marker ID | Workflow | Target |
-| --- | --- | --- |
-| `10` | `single_task` | `dock_a` |
-| `20` | `ready_then_task` | `home` |
-
-Camera mode requires three consecutive matching frames before submission,
-suppresses duplicate submissions, rearms after five empty frames, and rejects
-frames containing multiple mapped markers. These defaults are configurable,
-but the marker dictionary is deliberately fixed.
-
-## Candidate Baseline
-
-This candidate targets Ubuntu 24.04 with ROS 2 Jazzy on x86_64 Linux and
-generic ARM64 Linux. On 2026-07-18, GitHub Actions verified the eleven-package
-build, tests, generated ArUco image flow, fake Action server integration, and
-software-only `vcan0` workflow on Ubuntu 24.04 with ROS 2 Jazzy.
-
-## Build
+## Quick Start
 
 ### Windows With WSL2
 
-From the repository root in Windows PowerShell, check an existing WSL2
-development environment without changing it:
+From the repository root in Windows PowerShell:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\windows_wsl.ps1 -Mode Check
-```
 
-After the check reports `compatible=true`, build and test all eleven packages
-inside WSL2:
-
-```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\windows_wsl.ps1 -Mode BuildTest
 ```
 
-The default distribution is `Ubuntu-24.04`; override it with
-`-Distribution <name>`. The script does not install WSL, Ubuntu, ROS, or system
-packages and never invokes `sudo`. Build artifacts stay under
-the WSL-native `$HOME/.cache/embodied-agent-runtime-wsl` tree, which is
-refreshed from the Windows source on every run. Use `-DryRun` to inspect the
-selected mode without calling `wsl.exe`.
+The default distribution is `Ubuntu-24.04`. The script checks an existing WSL2
+environment, never invokes `sudo`, and keeps build artifacts in the WSL-native
+`$HOME/.cache/embodied-agent-runtime-wsl` tree. Use `-DryRun` to inspect the
+selected behavior without invoking WSL.
 
-Windows CI verifies PowerShell syntax and DryRun/error behavior only. A real
-WSL2 Jazzy run is evidence only when `Check` or `BuildTest` completes on that
-machine. On 2026-07-18, this Windows host completed `Check` and `BuildTest`
-with 11 packages, 385 tests, 0 errors, 0 failures, and 72 skips. This remains
-software-only evidence and does not prove physical hardware behavior.
-
-### Linux
+### Ubuntu 24.04 / ROS 2 Jazzy
 
 ```bash
 set +u
@@ -88,15 +114,9 @@ colcon test --return-code-on-test-failure
 colcon test-result --test-result-base build --verbose
 ```
 
-On x86_64 Linux, build and test directly with the commands above. On ARM64,
-start with `scripts/check_arm64_environment.sh`, then run
-`scripts/build_on_arm64.sh` and `scripts/run_arm64_smoke.sh`. The default
-platform profile is `generic-arm64`; `rk3568` is a CPU-only generic ARM64
-alias, and `x5` records target intent only. Neither profile adds vendor
-dependencies or compatibility claims. Never reuse an x86_64 build, install,
-or log tree on ARM64.
+### Native ARM64
 
-The ARM scripts default to ROS 2 Jazzy on Ubuntu 24.04:
+Do not reuse x86_64 build, install, or log directories on an ARM board.
 
 ```bash
 RUNTIME_PLATFORM_PROFILE=generic-arm64 ROS_DISTRO=jazzy \
@@ -105,7 +125,7 @@ bash scripts/build_on_arm64.sh
 bash scripts/run_arm64_smoke.sh
 ```
 
-For an RK3568 image based on Ubuntu 22.04, use ROS 2 Humble:
+For an RK3568 image based on Ubuntu 22.04, use the supported Humble pair:
 
 ```bash
 RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
@@ -116,17 +136,84 @@ RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
   bash scripts/run_arm64_smoke.sh
 ```
 
-The scripts accept only `jazzy`/Ubuntu 24.04 and `humble`/Ubuntu 22.04 pairs.
-They still require a real ARM64 target for native evidence.
+The ARM scripts accept only Jazzy/Ubuntu 24.04 and Humble/Ubuntu 22.04 pairs.
 
-32-bit ARM is not supported. BPU/NPU runtimes, cameras, GPIO, and physical CAN
-adapters remain board-specific integration work behind their respective
-adapter boundaries.
+## Optional Workflow Inputs
+
+### Rule-Based Text Input
+
+`ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
+It is a deterministic adapter for exercising the workflow boundary, not a
+large-language-model integration.
+
+### ArUco Input
+
+`perception_task_adapter` detects `DICT_4X4_50` markers from an image or USB
+camera and submits through `ExecuteWorkflow`.
+
+| Marker ID | Workflow | Target |
+| --- | --- | --- |
+| `10` | `single_task` | `dock_a` |
+| `20` | `ready_then_task` | `home` |
+
+Camera mode requires three consecutive matching frames, suppresses duplicate
+submissions, rearms after five empty frames, and rejects frames containing
+multiple mapped markers. Automated evidence currently uses generated images.
+
+## Platform Status
+
+| Environment | Current status | Evidence |
+| --- | --- | --- |
+| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build and 385-test result |
+| Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
+| Generic ARM64 Linux | Prepared, native run pending | Environment, build, and smoke scripts |
+| RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |
+| X5 | Target-intent profile, native run pending | No BPU or board-camera integration yet |
+| 32-bit ARM | Unsupported | The runtime targets 64-bit Linux |
+
+Board-specific BPU/NPU runtimes, cameras, GPIO, and physical CAN adapters stay
+behind the existing input and device boundaries.
+
+## Hardware Demo
+
+> **Status:** pending physical hardware evidence.
+
+After board bring-up, this section will contain a real robot frame linked to a
+GitHub Release, Bilibili, or YouTube video. The recording should show:
+
+1. Native ARM64 environment check, build, and smoke test.
+2. Physical-camera ArUco detection and workflow submission.
+3. Physical CAN command, ACK, retry, and STOP traffic.
+4. The actuator response, including the distinction between software
+   `SAFE_STOP` and the hardware emergency-stop circuit.
+
+A small GIF may be used as a preview; large MP4 files should remain outside the
+Git repository.
+
+
+
+
+
+
+
+
+
+
 
 ## Evidence Boundary
 
-The accepted evidence is a local software chain using generated images and
-SocketCAN `vcan0`. It does not prove a physical USB camera, ARM64 or X5 target
-execution, physical CAN hardware, physical stopping, board-specific BPU/NPU
-or camera compatibility, GPIO behavior, TLS/authentication, high availability,
-or production throughput.
+| Demonstrated | Not yet demonstrated |
+| --- | --- |
+| Fixed workflow orchestration and nested ROS 2 Actions | Dynamic model-generated control flow |
+| Generated ArUco image flow and Fake Action integration | Physical USB or board-camera compatibility |
+| SocketCAN `vcan0`, virtual ECU, retry, cancel, and STOP protocol | Physical CAN wiring, transceiver, or motor behavior |
+| Software `SAFE_STOP` outcomes and persisted task evidence | Hardware emergency stop or measured stopping distance |
+| x86_64 WSL2 and Ubuntu/Jazzy software runs | Native RK3568/X5 execution and vendor accelerators |
+
+The loopback Gateway also does not yet provide TLS, authentication, high
+availability, or measured production-throughput evidence.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). Third-party attribution is in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
