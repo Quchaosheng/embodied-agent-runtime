@@ -560,13 +560,21 @@ TEST_F(GrpcActionBridgeTest, TerminalMemoryRecordYieldsToSqliteRecord)
   orchestrator_->complete("request-stored");
 
   runtime_gateway::TaskRecord reply;
-  for (int attempt = 0; attempt < 100 && reply.target_id().empty(); ++attempt) {
+  bool stored_record_visible = false;
+  for (int attempt = 0; attempt < 100 && !stored_record_visible; ++attempt) {
+    reply.Clear();
     runtime_gateway::GetTaskRequest request;
     request.set_task_id("task-stored");
     grpc::ClientContext context;
     ASSERT_TRUE(stub_->GetTask(&context, request, &reply).ok());
-    std::this_thread::sleep_for(5ms);
+    stored_record_visible =
+      reply.state() == "COMPLETED" && reply.target_id() == "stored_target" &&
+      reply.duration_ms() == 42U && reply.message() == "persisted";
+    if (!stored_record_visible) {
+      std::this_thread::sleep_for(5ms);
+    }
   }
+  ASSERT_TRUE(stored_record_visible);
   EXPECT_EQ(reply.target_id(), "stored_target");
   EXPECT_EQ(reply.duration_ms(), 42U);
   EXPECT_EQ(reply.message(), "persisted");
