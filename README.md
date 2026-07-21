@@ -190,16 +190,6 @@ GitHub Release, Bilibili, or YouTube video. The recording should show:
 A small GIF may be used as a preview; large MP4 files should remain outside the
 Git repository.
 
-
-
-
-
-
-
-
-
-
-
 ## Evidence Boundary
 
 | Demonstrated | Not yet demonstrated |
