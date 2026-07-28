@@ -3,15 +3,16 @@
 [English](README.md) | **简体中文**
 
 [![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E?logo=ros)](https://docs.ros.org/en/jazzy/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros)](https://docs.ros.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
 这是一个确定性的 ROS 2 任务运行时：把受控工作流输入连接到固定
 BehaviorTree.CPP 编排、嵌套 ROS 2 Action、SocketCAN 设备控制、运行时诊断和
 SQLite 任务历史。
 
-软件链路已经实现并通过测试。原生 ARM 板、物理 CAN、摄像头、电机和硬件急停
-仍属于硬件验证工作，不能把软件测试结果扩展成硬件结论。
+软件链路已经实现并通过测试。X5 原生 ARM64 运行、实体 USB 摄像头、ArUco 检测和
+双 CANable 双向 SocketCAN 台架通信也已验证。电机运动和硬件急停回路不在当前证据
+范围内，不能把台架通信或软件 `SAFE_STOP` 写成完整机器人闭环。
 
 ## 运行架构
 
@@ -56,7 +57,13 @@ flowchart LR
 
 2026-07-18，本机 WSL2/Jazzy 隔离构建完成 **11 个包、385 个测试、0 错误、
 0 失败、72 跳过**。GitHub Actions 也通过 Windows 工具检查，以及 Ubuntu
-24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。这些仍是纯软件证据。
+24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。
+
+同样的 11 包、385 测试结果已在 Ubuntu 22.04 / ROS 2 Humble 的 X5 上原生复现。
+2026-07-28，实体 UVC 摄像头通过 `/dev/video0` 连续 30/30 帧识别出
+`DICT_4X4_50` 的 ID 10 标记。两只 CANable2 也被识别为 `can1`、`can2`，并通过
+`cansend`/`candump` 完成双向经典 CAN 帧收发，接口错误计数为 0。这是收发器台架
+证据，不是电机或机器人闭环证据。
 
 工业 `vcan0` E2E 覆盖正常、设备故障、取消、STOP ACK 丢失、普通 ACK 超时、
 重复请求去重和 SQLite 统计七个场景：
@@ -129,7 +136,8 @@ ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
 `perception_task_adapter` 从图像或 USB 相机检测 `DICT_4X4_50` 标记，并通过
 `ExecuteWorkflow` 提交：ID `10` 映射 `single_task/dock_a`，ID `20` 映射
 `ready_then_task/home`。相机模式要求连续三帧一致、抑制重复提交，在五帧空画面后
-重新启用，并拒绝包含多个已映射标记的画面。自动化证据目前使用生成图像。
+重新启用，并拒绝包含多个已映射标记的画面。CI 感知测试使用生成图像，下面单独
+展示 X5 实体摄像头证据。
 
 ## 平台状态
 
@@ -137,27 +145,34 @@ ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
 | --- | --- | --- |
 | Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建和 385 测试 |
 | Ubuntu 24.04 + Jazzy x86_64 | CI 已验证 | 构建、测试、配置检查和条件式 `vcan0` E2E |
-| 通用 ARM64 Linux | 已准备，等待原生运行 | 环境、构建和冒烟脚本 |
+| 通用 ARM64 Linux | X5 已验证，其他板卡已准备 | X5 原生 Humble 构建/测试和可移植脚本 |
 | RK3568 | CPU-only ARM64 配置，等待原生运行 | 不声明厂商 NPU/GPIO/相机能力 |
-| X5 | 目标配置，等待原生运行 | 尚无 BPU 或板载相机集成 |
+| X5 | 原生运行时和实体 I/O 台架已验证 | Humble 构建、385 测试、UVC ArUco 和双 CANable 通信 |
 | 32-bit ARM | 不支持 | 运行时目标为 64-bit Linux |
 
 ## 硬件演示
 
-**状态：等待物理硬件证据。** 板端验证后应录制原生 ARM64 环境检查、构建与冒烟、
-物理相机 ArUco、物理 CAN 命令/ACK/重试/STOP，以及执行器响应。必须明确区分软件
-`SAFE_STOP` 与硬件急停电路。大 MP4 应放在 GitHub Release、Bilibili 或 YouTube，
-仓库只保留小型预览。
+**状态：X5 原生运行、实体 UVC/ArUco 输入和双 USB-CAN 台架链路已验证；不声明
+电机或硬件急停已经验证。**
+
+[![X5 实体摄像头识别 ArUco ID 10](docs/assets/x5-aruco-live-demo.jpg)](docs/assets/x5-aruco-live-demo.mp4)
+
+[6 秒裁切真机演示](docs/assets/x5-aruco-live-demo.mp4)只保留纸张和状态面板，展示
+连续三帧确认以及 `single_task/dock_a` 映射。录制时工作流 Action 服务器保持离线，
+因此没有发送工作流 CAN 帧，也没有运动命令。
+
+双 CANable 台架测试独立使用实体 `can1`/`can2` 完成两个方向的 `cansend`/`candump`。
+它证明 Linux SocketCAN、USB-CAN 和接线可用，不代表已经验证电机行为。
 
 ## 证据边界
 
 | 已证明 | 尚未证明 |
 | --- | --- |
 | 固定工作流和嵌套 ROS 2 Action | 模型动态生成控制流 |
-| 生成 ArUco 图像和 Fake Action 集成 | 物理 USB/板载相机兼容性 |
-| `vcan0`、虚拟 ECU、重试、取消和 STOP | 物理 CAN 布线、收发器或电机行为 |
+| X5 实体 UVC 和稳定 ArUco ID 10 检测 | 相机标定、复杂光照覆盖或模型准确率 |
+| 双适配器物理 SocketCAN 通信和 `vcan0` 协议测试 | 执行器行为或机器人闭环控制 |
 | 软件 `SAFE_STOP` 和持久化任务证据 | 硬件急停或实测停止距离 |
-| x86_64 WSL2 与 Ubuntu/Jazzy | RK3568/X5 原生执行和厂商加速器 |
+| x86_64 Jazzy 和 X5/Humble 原生运行 | RK3568 原生执行和厂商加速器 |
 
 Loopback Gateway 尚未提供 TLS、身份认证、高可用或生产吞吐量证据。
 
