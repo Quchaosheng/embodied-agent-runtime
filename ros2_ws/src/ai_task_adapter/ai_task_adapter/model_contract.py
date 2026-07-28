@@ -79,6 +79,7 @@ def parse_model_plan(
 
 
 class _RejectRedirects(HTTPRedirectHandler):
+
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
         return None
 
