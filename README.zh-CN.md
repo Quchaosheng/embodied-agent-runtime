@@ -19,7 +19,7 @@ SQLite 任务历史。
 ```mermaid
 flowchart LR
     G["gRPC Gateway"] --> W["ExecuteWorkflow"]
-    A["规则式文本适配器"] --> W
+    A["规则式/模型文本适配器"] --> W
     P["ArUco 图像/相机适配器"] --> W
     W --> B["固定 BehaviorTree.CPP"]
     B --> T["ExecuteTask"]
@@ -50,7 +50,7 @@ flowchart LR
 | `runtime_history` | SQLite 任务持久化、查询和百分位统计 |
 | `task_orchestrator` | 固定 BehaviorTree.CPP 工作流和有界子任务取消 |
 | `runtime_gateway` | Loopback gRPC、请求身份、去重和 Action 桥接 |
-| `ai_task_adapter` | 可选规则式文本适配器，不是真实 LLM |
+| `ai_task_adapter` | 确定性规则规划器和可选 OpenAI 兼容模型适配器 |
 | `perception_task_adapter` | 可选 ArUco 图像或 USB 相机触发器 |
 
 ## 已验证的软件证据
@@ -130,8 +130,30 @@ ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
 
 ## 可选工作流输入
 
-`ai_task_adapter` 将受控文本模式映射为白名单工作流，用来验证工作流边界，不是
-大语言模型集成。
+原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配。新增的
+`ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 接口，但默认
+禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
+并通过白名单和时限校验后才能提交 `ExecuteWorkflow`；模型不能直接发送 CAN 或设备
+命令。
+
+使用带密钥的接口时必须使用 HTTPS；密钥只放环境变量，不写入 YAML 或日志：
+
+```bash
+export OPENAI_API_KEY='replace-me'
+ros2 run ai_task_adapter ai_model_adapter_node.py --ros-args \
+  --params-file "$(ros2 pkg prefix ai_task_adapter)/share/ai_task_adapter/config/ai_model_adapter.yaml" \
+  -p request:='去 dock_a。'
+```
+
+使用本地 Ollama 兼容接口时，将 `model_endpoint` 改为
+`http://127.0.0.1:11434/v1/chat/completions`，`model_name` 改为已安装模型，并把
+`api_key_env` 设为空字符串。请求有超时限制、拒绝重定向，响应最大 1 MiB；额外字段、
+输入最多 4096 字符、输出最多 128 tokens。额外字段、越界时长和非白名单目标都会在
+进入 ROS Action 前失败关闭。Goal 响应和 Action 结果同样有超时边界；结果超时会请求
+取消并按失败退出。
+
+CI 使用本地假模型接口验证 HTTP 协议和 5 个契约用例。目前不宣称真实 OpenAI 或
+Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演示视频。
 
 `perception_task_adapter` 从图像或 USB 相机检测 `DICT_4X4_50` 标记，并通过
 `ExecuteWorkflow` 提交：ID `10` 映射 `single_task/dock_a`，ID `20` 映射
@@ -169,6 +191,7 @@ ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
 | 已证明 | 尚未证明 |
 | --- | --- |
 | 固定工作流和嵌套 ROS 2 Action | 模型动态生成控制流 |
+| 本地假接口验证的严格 OpenAI 兼容模型契约 | 真实模型质量、可用性或提示词准确率 |
 | X5 实体 UVC 和稳定 ArUco ID 10 检测 | 相机标定、复杂光照覆盖或模型准确率 |
 | 双适配器物理 SocketCAN 通信和 `vcan0` 协议测试 | 执行器行为或机器人闭环控制 |
 | 软件 `SAFE_STOP` 和持久化任务证据 | 硬件急停或实测停止距离 |

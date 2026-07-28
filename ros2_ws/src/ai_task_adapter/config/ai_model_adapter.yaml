@@ -1,0 +1,18 @@
+ai_model_adapter:
+  ros__parameters:
+    mode: openai_compatible
+    request: Go to dock_a.
+    request_id: model_demo_1
+    task_id: model_task_1
+    model_endpoint: https://api.openai.com/v1/chat/completions
+    model_name: gpt-4.1-mini
+    api_key_env: OPENAI_API_KEY
+    model_timeout_sec: 10.0
+    action_result_timeout_sec: 15.0
+    max_duration_ms: 5000
+    workflow_ids:
+      - single_task
+      - ready_then_task
+    targets:
+      - dock_a
+      - home
