@@ -7,6 +7,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
@@ -34,6 +35,11 @@ install(TARGETS natural_language_planner ai_task_adapter_node
   RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config/ DESTINATION share/${PROJECT_NAME}/config)
+install(PROGRAMS scripts/ai_model_adapter_node.py DESTINATION lib/${PROJECT_NAME})
+install(FILES
+  ai_task_adapter/__init__.py
+  ai_task_adapter/model_contract.py
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -45,6 +51,12 @@ if(BUILD_TESTING)
   ament_add_gtest(test_natural_language_planner test/test_natural_language_planner.cpp)
   target_link_libraries(test_natural_language_planner natural_language_planner)
   ament_target_dependencies(test_natural_language_planner builtin_interfaces)
+
+  add_test(
+    NAME test_model_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_model_contract.py)
+  set_tests_properties(test_model_contract PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 ament_package()
