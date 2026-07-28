@@ -3,7 +3,7 @@
 **English** | [简体中文](README.zh-CN.md)
 
 [![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E?logo=ros)](https://docs.ros.org/en/jazzy/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros)](https://docs.ros.org/)
 [![Platforms](https://img.shields.io/badge/platform-x86__64%20%7C%20ARM64-4C8BF5)](#platform-status)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
@@ -11,9 +11,10 @@ A deterministic ROS 2 task runtime that connects controlled workflow inputs to
 fixed BehaviorTree.CPP orchestration, nested ROS 2 Actions, SocketCAN device
 control, runtime diagnostics, and SQLite task history.
 
-The software path is implemented and tested. Native ARM boards, physical CAN,
-cameras, motors, and hardware emergency-stop behavior remain hardware
-validation work.
+The software path is implemented and tested. Native X5/ARM64 execution, a
+physical USB camera, ArUco detection, and bidirectional SocketCAN bench traffic
+have also been verified. Actuator motion and a hardware emergency-stop circuit
+remain outside the demonstrated scope.
 
 ## Runtime Architecture
 
@@ -61,7 +62,13 @@ On 2026-07-18, this Windows host completed the isolated WSL2/Jazzy build and
 test flow with **11 packages, 385 tests, 0 errors, 0 failures, and 72 skips**.
 GitHub Actions also passed the Windows tooling checks and the Ubuntu
 24.04/Jazzy build, test, ARM64-configuration, and conditional `vcan0` workflow.
-This remains software-only evidence.
+
+The same **11-package, 385-test result** was reproduced natively on an X5
+running Ubuntu 22.04/Humble. On 2026-07-28, `/dev/video0` detected a physical
+`DICT_4X4_50` ID 10 marker in 30/30 sampled frames. Two CANable2 adapters also
+appeared as `can1` and `can2`; `cansend`/`candump` captured one classic-CAN
+frame in each direction with zero interface errors. This is a transceiver
+bench-link result, not actuator or closed-loop robot evidence.
 
 The industrial `vcan0` E2E script verifies these seven scenarios:
 
@@ -160,7 +167,8 @@ camera and submits through `ExecuteWorkflow`.
 
 Camera mode requires three consecutive matching frames, suppresses duplicate
 submissions, rearms after five empty frames, and rejects frames containing
-multiple mapped markers. Automated evidence currently uses generated images.
+multiple mapped markers. CI perception tests use generated images; the physical
+X5/UVC evidence is documented below.
 
 ## Platform Status
 
@@ -168,9 +176,9 @@ multiple mapped markers. Automated evidence currently uses generated images.
 | --- | --- | --- |
 | Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build and 385-test result |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
-| Generic ARM64 Linux | Prepared, native run pending | Environment, build, and smoke scripts |
+| Generic ARM64 Linux | X5 verified; other boards prepared | Native Humble build/test on X5 plus portable scripts |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |
-| X5 | Target-intent profile, native run pending | No BPU or board-camera integration yet |
+| X5 | Native runtime and physical I/O bench verified | Humble build, 385 tests, UVC ArUco detection, and dual-CANable traffic |
 | 32-bit ARM | Unsupported | The runtime targets 64-bit Linux |
 
 Board-specific BPU/NPU runtimes, cameras, GPIO, and physical CAN adapters stay
@@ -178,29 +186,31 @@ behind the existing input and device boundaries.
 
 ## Hardware Demo
 
-> **Status:** pending physical hardware evidence.
+> **Status:** X5 native runtime, physical UVC/ArUco input, and a two-adapter
+> SocketCAN bench link are verified. No actuator or hardware emergency-stop is
+> claimed.
 
-After board bring-up, this section will contain a real robot frame linked to a
-GitHub Release, Bilibili, or YouTube video. The recording should show:
+[![X5 UVC camera detecting a physical ArUco ID 10 marker](docs/assets/x5-aruco-live-demo.jpg)](docs/assets/x5-aruco-live-demo.mp4)
 
-1. Native ARM64 environment check, build, and smoke test.
-2. Physical-camera ArUco detection and workflow submission.
-3. Physical CAN command, ACK, retry, and STOP traffic.
-4. The actuator response, including the distinction between software
-   `SAFE_STOP` and the hardware emergency-stop circuit.
+The [six-second cropped X5 demo](docs/assets/x5-aruco-live-demo.mp4) contains
+only the printed marker and status panel. It shows three-frame confirmation and
+the `single_task`/`dock_a` mapping. The workflow Action server was deliberately
+offline during recording, so the clip also proves that no workflow CAN frame or
+motion command was emitted.
 
-A small GIF may be used as a preview; large MP4 files should remain outside the
-Git repository.
+The separate dual-CANable bench check used `cansend` and `candump` on physical
+`can1`/`can2` interfaces in both directions. It validates Linux SocketCAN and
+wiring, but not motor behavior.
 
 ## Evidence Boundary
 
 | Demonstrated | Not yet demonstrated |
 | --- | --- |
 | Fixed workflow orchestration and nested ROS 2 Actions | Dynamic model-generated control flow |
-| Generated ArUco image flow and Fake Action integration | Physical USB or board-camera compatibility |
-| SocketCAN `vcan0`, virtual ECU, retry, cancel, and STOP protocol | Physical CAN wiring, transceiver, or motor behavior |
+| Physical X5 UVC capture and stable ArUco ID 10 detection | Camera calibration, adverse-lighting coverage, or model accuracy |
+| Physical two-adapter SocketCAN traffic plus `vcan0` protocol tests | Actuator behavior or robot closed-loop control |
 | Software `SAFE_STOP` outcomes and persisted task evidence | Hardware emergency stop or measured stopping distance |
-| x86_64 WSL2 and Ubuntu/Jazzy software runs | Native RK3568/X5 execution and vendor accelerators |
+| x86_64 Jazzy and native X5/Humble software runs | Native RK3568 execution and vendor accelerators |
 
 The loopback Gateway also does not yet provide TLS, authentication, high
 availability, or measured production-throughput evidence.
