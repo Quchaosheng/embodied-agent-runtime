@@ -1,5 +1,7 @@
 # Runtime Monitor Runbook
 
+**English** | [简体中文](README.zh-CN.md)
+
 `runtime_monitor` aggregates the health reported by Device Bridge and Task
 Executor. It publishes a system diagnostic and an aggregate readiness bit. The
 monitoring path is observation-only: it does not send an Action goal, access
