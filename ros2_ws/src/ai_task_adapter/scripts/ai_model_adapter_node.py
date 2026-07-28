@@ -27,6 +27,7 @@ from robot_task_interfaces.action import ExecuteWorkflow  # noqa: E402
 
 
 class AiModelAdapterNode(Node):
+
     def __init__(self) -> None:
         super().__init__('ai_model_adapter')
         self._request = self.declare_parameter('request', 'Go to dock_a.').value
