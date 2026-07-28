@@ -21,7 +21,7 @@ remain outside the demonstrated scope.
 ```mermaid
 flowchart LR
     G["gRPC Gateway"] --> W["ExecuteWorkflow"]
-    A["Rule-based text adapter"] --> W
+    A["Rule or model text adapter"] --> W
     P["ArUco image / camera adapter"] --> W
     W --> B["Fixed BehaviorTree.CPP"]
     B --> T["ExecuteTask"]
@@ -53,7 +53,7 @@ flow remains fixed and reviewable.
 | `runtime_history` | SQLite task persistence, lookup, and percentile statistics |
 | `task_orchestrator` | Fixed BehaviorTree.CPP workflows and bounded child cancellation |
 | `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and Action bridge |
-| `ai_task_adapter` | Optional rule-based text-to-workflow adapter; not a real LLM |
+| `ai_task_adapter` | Deterministic rule planner plus optional OpenAI-compatible model adapter |
 | `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
 
 ## Verified Software Evidence
@@ -149,11 +149,37 @@ The ARM scripts accept only Jazzy/Ubuntu 24.04 and Humble/Ubuntu 22.04 pairs.
 
 ## Optional Workflow Inputs
 
-### Rule-Based Text Input
+### Text Input
 
 `ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
-It is a deterministic adapter for exercising the workflow boundary, not a
-large-language-model integration.
+The existing C++ node remains a deterministic offline adapter. The optional
+`ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions endpoint,
+strictly accepts only `workflow_id`, `target_id`, and `duration_ms`, then submits
+the validated result through `ExecuteWorkflow`. It is disabled by default and
+cannot emit a CAN frame or device command directly.
+
+For a keyed endpoint, set the key only in the environment and use the installed
+configuration. Keyed requests require HTTPS:
+
+```bash
+export OPENAI_API_KEY='replace-me'
+ros2 run ai_task_adapter ai_model_adapter_node.py --ros-args \
+  --params-file "$(ros2 pkg prefix ai_task_adapter)/share/ai_task_adapter/config/ai_model_adapter.yaml" \
+  -p request:='Go to dock_a.'
+```
+
+For a local Ollama-compatible `/v1/chat/completions` endpoint, set
+`model_endpoint` to `http://127.0.0.1:11434/v1/chat/completions`, select an
+installed local model, and set `api_key_env` to an empty string. The endpoint
+has a timeout, redirects are rejected, responses are capped at one MiB, and any
+request is limited to 4096 characters and 128 output tokens. Any extra field or
+non-allowlisted value fails closed before ROS Action submission. Goal responses
+and Action results also have bounded waits; a result timeout requests
+cancellation and exits as a failure.
+
+CI exercises the HTTP protocol with a local fake endpoint and five contract
+cases. A live OpenAI or Ollama inference is not claimed until an actual provider
+is configured and recorded.
 
 ### ArUco Input
 
@@ -207,6 +233,7 @@ wiring, but not motor behavior.
 | Demonstrated | Not yet demonstrated |
 | --- | --- |
 | Fixed workflow orchestration and nested ROS 2 Actions | Dynamic model-generated control flow |
+| Strict OpenAI-compatible model contract against a local fake endpoint | Live-provider quality, availability, or prompt accuracy |
 | Physical X5 UVC capture and stable ArUco ID 10 detection | Camera calibration, adverse-lighting coverage, or model accuracy |
 | Physical two-adapter SocketCAN traffic plus `vcan0` protocol tests | Actuator behavior or robot closed-loop control |
 | Software `SAFE_STOP` outcomes and persisted task evidence | Hardware emergency stop or measured stopping distance |
