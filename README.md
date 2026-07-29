@@ -58,17 +58,24 @@ flow remains fixed and reviewable.
 
 ## Verified Software Evidence
 
-On 2026-07-18, this Windows host completed the isolated WSL2/Jazzy build and
-test flow with **11 packages, 385 tests, 0 errors, 0 failures, and 72 skips**.
+On 2026-07-29, this Windows host completed the isolated WSL2/Jazzy build and
+test flow with **11 packages, 393 tests, 0 errors, 0 failures, and 72 skips**.
 GitHub Actions also passed the Windows tooling checks and the Ubuntu
 24.04/Jazzy build, test, ARM64-configuration, and conditional `vcan0` workflow.
 
-The same **11-package, 385-test result** was reproduced natively on an X5
-running Ubuntu 22.04/Humble. On 2026-07-28, `/dev/video0` detected a physical
-`DICT_4X4_50` ID 10 marker in 30/30 sampled frames. Two CANable2 adapters also
-appeared as `can1` and `can2`; `cansend`/`candump` captured one classic-CAN
-frame in each direction with zero interface errors. This is a transceiver
-bench-link result, not actuator or closed-loop robot evidence.
+The current 11-package tree also built natively on an X5 running Ubuntu
+22.04/Humble. Its sequential ARM smoke passed **311 tests, 0 errors, 0 failures,
+and 72 skips**. Humble smoke excludes only its distro `uncrustify` 0.72 check,
+whose output differs from the canonical Jazzy formatter enforced by CI. The X5
+also rejected the model adapter in its default-disabled mode, then validated a
+local fake endpoint plan as `single_task/dock_a/1000 ms` and stopped at the
+deliberately offline `ExecuteWorkflow` server without touching CAN.
+
+On 2026-07-28, `/dev/video0` detected a physical `DICT_4X4_50` ID 10 marker in
+30/30 sampled frames. Two CANable2 adapters also appeared as `can1` and `can2`;
+`cansend`/`candump` captured one classic-CAN frame in each direction with zero
+interface errors. This is a transceiver bench-link result, not actuator or
+closed-loop robot evidence.
 
 The industrial `vcan0` E2E script verifies these seven scenarios:
 
@@ -146,6 +153,8 @@ RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
 ```
 
 The ARM scripts accept only Jazzy/Ubuntu 24.04 and Humble/Ubuntu 22.04 pairs.
+ARM smoke runs package tests sequentially to avoid ROS discovery and resource
+contention on small boards.
 
 ## Optional Workflow Inputs
 
@@ -200,11 +209,11 @@ X5/UVC evidence is documented below.
 
 | Environment | Current status | Evidence |
 | --- | --- | --- |
-| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build and 385-test result |
+| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build and 393-test result |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
 | Generic ARM64 Linux | X5 verified; other boards prepared | Native Humble build/test on X5 plus portable scripts |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |
-| X5 | Native runtime and physical I/O bench verified | Humble build, 385 tests, UVC ArUco detection, and dual-CANable traffic |
+| X5 | Native runtime and physical I/O bench verified | Humble build, 311-test ARM smoke, bounded fake-model check, UVC ArUco, and dual-CANable traffic |
 | 32-bit ARM | Unsupported | The runtime targets 64-bit Linux |
 
 Board-specific BPU/NPU runtimes, cameras, GPIO, and physical CAN adapters stay

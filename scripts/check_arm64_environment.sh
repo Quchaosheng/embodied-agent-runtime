@@ -72,7 +72,16 @@ for command_name in colcon cmake c++ python3 rosdep pkg-config ip candump; do
   require_command "$command_name"
 done
 
-for package in "ros-$ros_distro-behaviortree-cpp" libgrpc++-dev protobuf-compiler libprotobuf-dev libsqlite3-dev libopencv-dev; do
+for package in \
+  "ros-$ros_distro-behaviortree-cpp" \
+  libgrpc++-dev \
+  libprotobuf-dev \
+  libprotoc-dev \
+  protobuf-compiler \
+  protobuf-compiler-grpc \
+  libsqlite3-dev \
+  libopencv-dev
+do
   version=$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true)
   if [[ -n "$version" ]]; then
     record "package.$package=$version"
