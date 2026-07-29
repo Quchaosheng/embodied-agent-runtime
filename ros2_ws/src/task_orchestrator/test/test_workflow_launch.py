@@ -84,7 +84,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
     def _accept_child(self, request):
         self.child_goal_request_count += 1
         if self.mode in ('shutdown_delayed_goal', 'never_goal_response'):
-            self.shutdown_goal_release.wait(timeout=5.0)
+            self.shutdown_goal_release.wait()
         elif self.mode in ('delayed_goal', 'deadline_delayed_goal'):
             time.sleep(1.2 if self.mode == 'delayed_goal' else 1.5)
         return GoalResponse.ACCEPT
