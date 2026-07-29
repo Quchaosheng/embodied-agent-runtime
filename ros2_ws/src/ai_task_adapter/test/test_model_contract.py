@@ -33,6 +33,23 @@ class _ChatHandler(BaseHTTPRequestHandler):
         return
 
 
+class _ResponsesHandler(_ChatHandler):
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers['Content-Length']))
+        type(self).payload = json.loads(body)
+        content = '{"workflow_id":"single_task","target_id":"dock_a","duration_ms":1000}'
+        response = {'output': [{'type': 'message', 'content': [
+            {'type': 'output_text', 'text': content},
+        ]}]}
+        encoded = json.dumps(response).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
 class ModelContractTest(unittest.TestCase):
 
     def test_build_messages_keeps_user_text_separate(self):
@@ -109,6 +126,24 @@ class ModelContractTest(unittest.TestCase):
                 request_chat_completion(
                     endpoint, 'local-model', '', 'x' * 4097,
                     ['single_task'], ['dock_a'], 5000, 2.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2.0)
+
+    def test_responses_transport_extracts_bounded_output(self):
+        server = HTTPServer(('127.0.0.1', 0), _ResponsesHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f'http://127.0.0.1:{server.server_port}/v1/responses'
+        try:
+            content = request_chat_completion(
+                endpoint, 'local-model', '', 'go to dock_a',
+                ['single_task'], ['dock_a'], 5000, 2.0, 'responses')
+            plan = parse_model_plan(content, ['single_task'], ['dock_a'], 5000)
+            self.assertEqual(plan.duration_ms, 1000)
+            self.assertIn('instructions', _ResponsesHandler.payload)
+            self.assertNotIn('messages', _ResponsesHandler.payload)
         finally:
             server.shutdown()
             server.server_close()
