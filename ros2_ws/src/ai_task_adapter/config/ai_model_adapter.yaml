@@ -1,6 +1,6 @@
 ai_model_adapter:
   ros__parameters:
-    mode: openai_compatible
+    mode: disabled
     api_style: chat_completions
     request: Go to dock_a.
     request_id: model_demo_1
