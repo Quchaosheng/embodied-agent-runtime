@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 import sys
@@ -57,6 +58,7 @@ class AiModelAdapterNode(Node):
             return 2
         if (
             not self._endpoint or not self._model_name or
+            not math.isfinite(self._timeout_sec) or not math.isfinite(self._action_timeout_sec) or
             self._timeout_sec <= 0 or self._action_timeout_sec <= 0
         ):
             self.get_logger().error(
