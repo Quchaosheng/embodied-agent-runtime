@@ -93,6 +93,7 @@ def request_chat_completion(
     targets: Iterable[str],
     max_duration_ms: int,
     timeout_sec: float,
+    api_style: str = 'chat_completions',
 ) -> str:
     parsed_endpoint = urlparse(endpoint)
     if parsed_endpoint.scheme not in {'http', 'https'} or not parsed_endpoint.netloc:
@@ -103,17 +104,32 @@ def request_chat_completion(
         raise ModelTransportError('API keys require an HTTPS model_endpoint')
     if not request or len(request) > 4096:
         raise ModelTransportError('request must contain between 1 and 4096 characters')
+    if api_style not in {'chat_completions', 'responses'}:
+        raise ModelTransportError('api_style must be chat_completions or responses')
 
-    headers = {'Content-Type': 'application/json'}
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Embodied-Agent-Runtime/1.0',
+    }
     if api_key:
         headers['Authorization'] = f'Bearer {api_key}'
-    payload = {
-        'model': model_name,
-        'max_tokens': 128,
-        'temperature': 0,
-        'response_format': {'type': 'json_object'},
-        'messages': build_messages(request, workflows, targets, max_duration_ms),
-    }
+    messages = build_messages(request, workflows, targets, max_duration_ms)
+    if api_style == 'responses':
+        payload = {
+            'model': model_name,
+            'instructions': messages[0]['content'],
+            'input': messages[1]['content'],
+            'max_output_tokens': 128,
+        }
+    else:
+        payload = {
+            'model': model_name,
+            'max_tokens': 128,
+            'temperature': 0,
+            'response_format': {'type': 'json_object'},
+            'messages': messages,
+        }
     http_request = Request(
         endpoint,
         data=json.dumps(payload).encode('utf-8'),
@@ -134,9 +150,40 @@ def request_chat_completion(
 
     try:
         body = json.loads(response_body.decode('utf-8'))
-        content = body['choices'][0]['message']['content']
+        if api_style == 'responses':
+            content = _responses_content(body)
+        else:
+            content = body['choices'][0]['message']['content']
     except (UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
         raise ModelTransportError('model endpoint returned an invalid response') from error
     if not isinstance(content, str):
         raise ModelTransportError('model response content is not text')
     return content
+
+
+def _responses_content(body: object) -> str:
+    if not isinstance(body, dict):
+        raise TypeError
+    output_text = body.get('output_text')
+    if isinstance(output_text, str) and output_text:
+        return output_text
+    output = body.get('output')
+    if not isinstance(output, list):
+        raise KeyError
+    parts = []
+    for item in output:
+        if not isinstance(item, dict) or item.get('type') != 'message':
+            continue
+        content = item.get('content')
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if (
+                isinstance(part, dict) and
+                part.get('type') in {'output_text', 'text'} and
+                isinstance(part.get('text'), str)
+            ):
+                parts.append(part['text'])
+    if not parts:
+        raise KeyError
+    return ''.join(parts)

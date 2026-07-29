@@ -34,6 +34,7 @@ class AiModelAdapterNode(Node):
         self._request_id = self.declare_parameter('request_id', 'model_demo_1').value
         self._task_id = self.declare_parameter('task_id', 'model_task_1').value
         self._mode = self.declare_parameter('mode', 'disabled').value
+        self._api_style = self.declare_parameter('api_style', 'chat_completions').value
         self._endpoint = self.declare_parameter('model_endpoint', '').value
         self._model_name = self.declare_parameter('model_name', '').value
         self._api_key_env = self.declare_parameter('api_key_env', 'OPENAI_API_KEY').value
@@ -144,6 +145,7 @@ class AiModelAdapterNode(Node):
             self._targets,
             self._max_duration_ms,
             self._timeout_sec,
+            self._api_style,
         )
 
 
