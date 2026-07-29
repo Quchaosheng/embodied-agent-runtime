@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -21,11 +22,12 @@ struct RequestRecord
   std::string message;
 };
 
-enum class InsertResult {INSERTED, DUPLICATE, CONFLICT, INVALID};
+enum class InsertResult {INSERTED, DUPLICATE, CONFLICT, INVALID, CAPACITY};
 
 class RequestRegistry
 {
 public:
+  explicit RequestRegistry(std::size_t capacity = 4096);
   InsertResult insert(const RequestRecord & record);
   std::optional<RequestRecord> get_by_request_id(const std::string & request_id) const;
   std::optional<RequestRecord> get_by_task_id(const std::string & task_id) const;
@@ -37,6 +39,7 @@ public:
 
 private:
   mutable std::mutex mutex_;
+  std::size_t capacity_;
   std::unordered_map<std::string, RequestRecord> records_;
 };
 
