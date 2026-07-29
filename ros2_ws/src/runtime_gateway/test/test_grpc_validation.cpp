@@ -47,8 +47,9 @@ protected:
     ASSERT_GT(port, 0);
     address_ = "127.0.0.1:" + std::to_string(port);
     stub_ = runtime_gateway::RobotRuntime::NewStub(
-      grpc::CreateChannel(address_,
-      grpc::InsecureChannelCredentials()));
+      grpc::CreateChannel(
+        address_,
+        grpc::InsecureChannelCredentials()));
   }
 
   void TearDown() override
@@ -144,7 +145,9 @@ TEST_F(GrpcValidationTest, MapsNonemptySqliteStatistics)
 {
   const std::array<std::uint64_t, 5> durations{10, 20, 30, 40, 100};
   for (std::size_t index = 0; index < durations.size(); ++index) {
-    ASSERT_TRUE(store_->insert({
+    ASSERT_TRUE(
+      store_->insert(
+      {
         "stats-" + std::to_string(index), "dock_a", 1,
         static_cast<std::uint8_t>(index % 4), 0, durations[index], "done",
         static_cast<std::int64_t>(index)}));

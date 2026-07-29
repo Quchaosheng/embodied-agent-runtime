@@ -32,28 +32,29 @@ void LoopbackServer::start()
   if (thread_.joinable()) {
     return;
   }
-  thread_ = std::thread([this]() {
-        grpc::ServerBuilder builder;
-        builder.RegisterService(&service_);
-        int selected_port{};
-        builder.AddListeningPort(
-      "127.0.0.1:" + std::to_string(port_), grpc::InsecureServerCredentials(), &selected_port);
-        auto server = builder.BuildAndStart();
-        {
-          const std::lock_guard<std::mutex> lock(mutex_);
-          if (!server) {
-            error_ = "failed to start loopback gRPC server";
-          } else {
-            address_ = "127.0.0.1:" + std::to_string(selected_port);
-            server_ = std::move(server);
-          }
-          ready_ = true;
+  thread_ = std::thread(
+    [this]() {
+      grpc::ServerBuilder builder;
+      builder.RegisterService(&service_);
+      int selected_port{};
+      builder.AddListeningPort(
+        "127.0.0.1:" + std::to_string(port_), grpc::InsecureServerCredentials(), &selected_port);
+      auto server = builder.BuildAndStart();
+      {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        if (!server) {
+          error_ = "failed to start loopback gRPC server";
+        } else {
+          address_ = "127.0.0.1:" + std::to_string(selected_port);
+          server_ = std::move(server);
         }
-        ready_condition_.notify_all();
-        if (server_) {
-          server_->Wait();
-        }
-  });
+        ready_ = true;
+      }
+      ready_condition_.notify_all();
+      if (server_) {
+        server_->Wait();
+      }
+    });
 
   std::unique_lock<std::mutex> lock(mutex_);
   ready_condition_.wait(lock, [this]() {return ready_;});

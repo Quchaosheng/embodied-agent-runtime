@@ -66,14 +66,15 @@ public:
     const std::string & request_id, const std::chrono::milliseconds timeout = 2s)
   {
     std::unique_lock<std::mutex> lock(mutex_);
-    return changed_.wait_for(lock, timeout, [this, &request_id]() {
-               for (const auto & value : canceled_requests_) {
-                 if (value == request_id) {
-                   return true;
-                 }
-               }
-               return false;
-    });
+    return changed_.wait_for(
+      lock, timeout, [this, &request_id]() {
+        for (const auto & value : canceled_requests_) {
+          if (value == request_id) {
+            return true;
+          }
+        }
+        return false;
+      });
   }
 
   std::size_t goal_count() const
@@ -366,9 +367,10 @@ TEST_F(DelayedGrpcActionBridgeTest, TimedOutSubmitCancelsLateAcceptedGoal)
 TEST_F(DelayedGrpcActionBridgeTest, CancelWhileSubmittingCancelsLateAcceptedGoal)
 {
   runtime_gateway::SubmitWorkflowReply submit_reply;
-  auto pending = std::async(std::launch::async, [this, &submit_reply]() {
-        return submit_status("request-pending-cancel", "task-pending-cancel", &submit_reply);
-  });
+  auto pending = std::async(
+    std::launch::async, [this, &submit_reply]() {
+      return submit_status("request-pending-cancel", "task-pending-cancel", &submit_reply);
+    });
   std::this_thread::sleep_for(100ms);
 
   runtime_gateway::CancelWorkflowRequest request;
@@ -392,9 +394,10 @@ TEST_F(DelayedGrpcActionBridgeTest, CancelWhileSubmittingCancelsLateAcceptedGoal
 TEST_F(DelayedGrpcActionBridgeTest, ShutdownOverlappingGoalResponseStillCancelsLateGoal)
 {
   runtime_gateway::SubmitWorkflowReply reply;
-  auto pending = std::async(std::launch::async, [this, &reply]() {
-        return submit_status("request-pending-shutdown", "task-pending-shutdown", &reply);
-  });
+  auto pending = std::async(
+    std::launch::async, [this, &reply]() {
+      return submit_status("request-pending-shutdown", "task-pending-shutdown", &reply);
+    });
   std::this_thread::sleep_for(100ms);
   auto shutdown = std::async(std::launch::async, [this]() {server_->shutdown();});
   (void)pending.get();
@@ -481,10 +484,11 @@ TEST_F(CancelTerminalRaceTest, CancelReturnsLatestTerminalRecordWhenGoalFinishes
   request.set_request_id("request-race");
   runtime_gateway::CancelWorkflowReply reply;
   grpc::Status status;
-  auto cancel = std::async(std::launch::async, [this, &request, &reply, &status]() {
-        grpc::ClientContext context;
-        status = stub_->CancelWorkflow(&context, request, &reply);
-  });
+  auto cancel = std::async(
+    std::launch::async, [this, &request, &reply, &status]() {
+      grpc::ClientContext context;
+      status = stub_->CancelWorkflow(&context, request, &reply);
+    });
   ASSERT_EQ(cancel_entered_.get_future().wait_for(2s), std::future_status::ready);
   orchestrator_->complete("request-race");
   runtime_gateway::GetTaskRequest get_request;
@@ -512,10 +516,11 @@ TEST_F(PostLookupCancelTerminalRaceTest, CancelReturnsTerminalResultWhenGoalFini
   request.set_request_id("request-post-lookup");
   runtime_gateway::CancelWorkflowReply reply;
   grpc::Status status;
-  auto cancel = std::async(std::launch::async, [this, &request, &reply, &status]() {
-        grpc::ClientContext context;
-        status = stub_->CancelWorkflow(&context, request, &reply);
-  });
+  auto cancel = std::async(
+    std::launch::async, [this, &request, &reply, &status]() {
+      grpc::ClientContext context;
+      status = stub_->CancelWorkflow(&context, request, &reply);
+    });
   ASSERT_EQ(cancel_entered_.get_future().wait_for(2s), std::future_status::ready);
   orchestrator_->complete("request-post-lookup");
   runtime_gateway::GetTaskRequest get_request;
@@ -538,9 +543,10 @@ TEST_F(PostLookupCancelTerminalRaceTest, CancelReturnsTerminalResultWhenGoalFini
 TEST_F(SendFailureShutdownTest, SendExceptionErasesPendingAndWakesShutdown)
 {
   runtime_gateway::SubmitWorkflowReply reply;
-  auto submit_call = std::async(std::launch::async, [this, &reply]() {
-        return submit_status("request-send-failure", "task-send-failure", &reply);
-  });
+  auto submit_call = std::async(
+    std::launch::async, [this, &reply]() {
+      return submit_status("request-send-failure", "task-send-failure", &reply);
+    });
   ASSERT_EQ(entered_.get_future().wait_for(2s), std::future_status::ready);
   auto shutdown = std::async(std::launch::async, [this]() {server_->shutdown();});
   std::this_thread::sleep_for(100ms);
