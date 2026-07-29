@@ -55,11 +55,17 @@ flowchart LR
 
 ## 已验证的软件证据
 
-2026-07-18，本机 WSL2/Jazzy 隔离构建完成 **11 个包、385 个测试、0 错误、
+2026-07-29，本机 WSL2/Jazzy 隔离构建完成 **11 个包、393 个测试、0 错误、
 0 失败、72 跳过**。GitHub Actions 也通过 Windows 工具检查，以及 Ubuntu
 24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。
 
-同样的 11 包、385 测试结果已在 Ubuntu 22.04 / ROS 2 Humble 的 X5 上原生复现。
+当前 11 包代码也已在 Ubuntu 22.04 / ROS 2 Humble 的 X5 上原生构建。顺序执行的
+ARM smoke 通过 **311 个测试、0 错误、0 失败、72 跳过**。Humble smoke 只排除
+发行版自带的 `uncrustify` 0.72，因为它与 CI 使用的 Jazzy 标准格式器输出不一致；
+代码风格仍由 Jazzy CI 强制检查。X5 还验证了模型适配器默认禁用会拒绝运行，并从
+本地假接口严格解析出 `single_task/dock_a/1000 ms`；随后在故意离线的
+`ExecuteWorkflow` 处停止，没有触碰 CAN。
+
 2026-07-28，实体 UVC 摄像头通过 `/dev/video0` 连续 30/30 帧识别出
 `DICT_4X4_50` 的 ID 10 标记。两只 CANable2 也被识别为 `can1`、`can2`，并通过
 `cansend`/`candump` 完成双向经典 CAN 帧收发，接口错误计数为 0。这是收发器台架
@@ -127,6 +133,7 @@ RUNTIME_PLATFORM_PROFILE=rk3568 ROS_DISTRO=humble \
 ```
 
 ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
+ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和资源竞争。
 
 ## 可选工作流输入
 
@@ -165,11 +172,11 @@ Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演
 
 | 环境 | 当前状态 | 证据 |
 | --- | --- | --- |
-| Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建和 385 测试 |
+| Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建和 393 测试 |
 | Ubuntu 24.04 + Jazzy x86_64 | CI 已验证 | 构建、测试、配置检查和条件式 `vcan0` E2E |
 | 通用 ARM64 Linux | X5 已验证，其他板卡已准备 | X5 原生 Humble 构建/测试和可移植脚本 |
 | RK3568 | CPU-only ARM64 配置，等待原生运行 | 不声明厂商 NPU/GPIO/相机能力 |
-| X5 | 原生运行时和实体 I/O 台架已验证 | Humble 构建、385 测试、UVC ArUco 和双 CANable 通信 |
+| X5 | 原生运行时和实体 I/O 台架已验证 | Humble 构建、311 项 ARM smoke、受限假模型检查、UVC ArUco 和双 CANable 通信 |
 | 32-bit ARM | 不支持 | 运行时目标为 64-bit Linux |
 
 ## 硬件演示

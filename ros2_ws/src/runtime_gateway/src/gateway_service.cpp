@@ -153,8 +153,8 @@ GatewayService::GatewayService(
   std::function<void()> before_cancel_lookup,
   std::function<void()> before_cancel_dispatch)
 : state_(std::make_shared<State>(
-    node, store, std::move(before_send), std::move(before_cancel_lookup),
-    std::move(before_cancel_dispatch)))
+      node, store, std::move(before_send), std::move(before_cancel_lookup),
+      std::move(before_cancel_dispatch)))
 {}
 
 GatewayService::~GatewayService() = default;
@@ -183,13 +183,15 @@ grpc::Status GatewayService::SubmitWorkflow(
     return {grpc::StatusCode::INVALID_ARGUMENT, "request_id conflicts with an existing request"};
   }
   if (!allowed(request->workflow_id())) {
-    state_->registry.update_terminal(request->request_id(), "REJECTED", 0, 400,
+    state_->registry.update_terminal(
+      request->request_id(), "REJECTED", 0, 400,
       "workflow is not allowlisted");
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
   if (!state_->action_client->wait_for_action_server(0s)) {
-    state_->registry.update_terminal(request->request_id(), "REJECTED", 0, 503,
+    state_->registry.update_terminal(
+      request->request_id(), "REJECTED", 0, 503,
       "orchestrator unavailable");
     return {grpc::StatusCode::UNAVAILABLE, "orchestrator unavailable"};
   }
@@ -197,7 +199,8 @@ grpc::Status GatewayService::SubmitWorkflow(
   {
     const std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->stopping) {
-      state_->registry.update_terminal(request->request_id(), "REJECTED", 0, 503,
+      state_->registry.update_terminal(
+        request->request_id(), "REJECTED", 0, 503,
         "gateway is shutting down");
       return {grpc::StatusCode::UNAVAILABLE, "gateway is shutting down"};
     }
@@ -313,10 +316,11 @@ grpc::Status GatewayService::SubmitWorkflow(
   const auto handle = future.get();
   {
     std::unique_lock<std::mutex> lock(state_->mutex);
-    state_->changed.wait_for(lock, 50ms, [&]() {
+    state_->changed.wait_for(
+      lock, 50ms, [&]() {
         const auto pending = state_->goals.find(request->request_id());
         return pending == state_->goals.end() || !pending->second.pending;
-    });
+      });
   }
   const auto current = state_->registry.get_by_request_id(request->request_id()).value();
   fill_submit(current, reply);
@@ -476,15 +480,16 @@ void GatewayService::cancel_active()
     (void)state_->dispatch_cancel(request_id, handle);
   }
   std::unique_lock<std::mutex> lock(state_->mutex);
-  const bool drained = state_->changed.wait_for(lock, kCancelActiveTimeout, [this]() {
-        for (const auto & [request_id, goal] : state_->goals) {
-          (void)request_id;
-          if (!goal.cancel_failed) {
-            return false;
-          }
+  const bool drained = state_->changed.wait_for(
+    lock, kCancelActiveTimeout, [this]() {
+      for (const auto & [request_id, goal] : state_->goals) {
+        (void)request_id;
+        if (!goal.cancel_failed) {
+          return false;
         }
-        return true;
-  });
+      }
+      return true;
+    });
   if (!drained) {
     std::string request_ids;
     for (const auto & [request_id, goal] : state_->goals) {

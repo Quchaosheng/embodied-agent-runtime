@@ -37,8 +37,19 @@ cd "$workspace"
 : > "$report"
 printf 'platform_profile=%s\n' "$profile" | tee -a "$report"
 set -o pipefail
-colcon test --packages-select "${packages[@]}" --return-code-on-test-failure \
-  2>&1 | tee -a "$report"
+colcon test-result --test-result-base build --delete-yes >/dev/null 2>&1 || true
+test_args=(
+  --executor sequential
+  --packages-select "${packages[@]}"
+  --return-code-on-test-failure
+)
+if [[ "$ros_distro" == "humble" ]]; then
+  printf '%s\n' \
+    'Humble smoke excludes uncrustify; canonical formatting is enforced by Jazzy CI.' \
+    | tee -a "$report"
+  test_args+=(--ctest-args -E uncrustify)
+fi
+colcon test "${test_args[@]}" 2>&1 | tee -a "$report"
 colcon test-result --test-result-base build 2>&1 | tee -a "$report"
 
 printf '\nCAN interfaces:\n' | tee -a "$report"

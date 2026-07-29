@@ -7,7 +7,22 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(Protobuf REQUIRED)
-find_package(gRPC CONFIG REQUIRED)
+find_package(gRPC CONFIG QUIET)
+if(NOT (TARGET gRPC::grpc++ AND TARGET gRPC::grpc_cpp_plugin))
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GRPC REQUIRED IMPORTED_TARGET grpc++)
+
+  if(NOT TARGET gRPC::grpc++)
+    add_library(gRPC::grpc++ ALIAS PkgConfig::GRPC)
+  endif()
+
+  if(NOT TARGET gRPC::grpc_cpp_plugin)
+    find_program(GRPC_CPP_PLUGIN_EXECUTABLE NAMES grpc_cpp_plugin REQUIRED)
+    add_executable(gRPC::grpc_cpp_plugin IMPORTED GLOBAL)
+    set_target_properties(gRPC::grpc_cpp_plugin PROPERTIES
+      IMPORTED_LOCATION "${GRPC_CPP_PLUGIN_EXECUTABLE}")
+  endif()
+endif()
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
