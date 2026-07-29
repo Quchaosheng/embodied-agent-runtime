@@ -180,6 +180,9 @@ grpc::Status GatewayService::SubmitWorkflow(
     return grpc::Status::OK;
   }
   if (inserted != InsertResult::INSERTED) {
+    if (inserted == InsertResult::CAPACITY) {
+      return {grpc::StatusCode::RESOURCE_EXHAUSTED, "request registry capacity reached"};
+    }
     return {grpc::StatusCode::INVALID_ARGUMENT, "request_id conflicts with an existing request"};
   }
   if (!allowed(request->workflow_id())) {
