@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 from threading import Thread
 import unittest
 
@@ -130,6 +131,14 @@ class ModelContractTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2.0)
+
+    def test_rejects_non_finite_transport_timeout(self):
+        for timeout in (0.0, -1.0, math.nan, math.inf):
+            with self.subTest(timeout=timeout):
+                with self.assertRaisesRegex(ModelTransportError, 'positive finite'):
+                    request_chat_completion(
+                        'http://127.0.0.1:1/v1/chat/completions', 'local-model', '',
+                        'go to dock_a', ['single_task'], ['dock_a'], 5000, timeout)
 
     def test_responses_transport_extracts_bounded_output(self):
         server = HTTPServer(('127.0.0.1', 0), _ResponsesHandler)

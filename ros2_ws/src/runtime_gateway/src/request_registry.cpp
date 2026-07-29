@@ -1,7 +1,17 @@
 #include "runtime_gateway/request_registry.hpp"
 
+#include <stdexcept>
+
 namespace runtime_gateway
 {
+
+RequestRegistry::RequestRegistry(const std::size_t capacity)
+: capacity_(capacity)
+{
+  if (capacity_ == 0) {
+    throw std::invalid_argument("request registry capacity must be positive");
+  }
+}
 
 InsertResult RequestRegistry::insert(const RequestRecord & record)
 {
@@ -21,6 +31,9 @@ InsertResult RequestRegistry::insert(const RequestRecord & record)
     if (value.task_id == record.task_id) {
       return InsertResult::CONFLICT;
     }
+  }
+  if (records_.size() >= capacity_) {
+    return InsertResult::CAPACITY;
   }
   records_.emplace(record.request_id, record);
   return InsertResult::INSERTED;
