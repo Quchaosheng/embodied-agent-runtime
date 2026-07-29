@@ -6,10 +6,7 @@
 #include <string>
 #include <thread>
 
-namespace grpc
-{
-class Server;
-}
+#include <grpcpp/server.h>
 
 namespace runtime_gateway
 {

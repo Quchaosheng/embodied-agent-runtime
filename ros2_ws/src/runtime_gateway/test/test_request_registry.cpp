@@ -18,8 +18,9 @@ TEST(RequestRegistryTest, RejectsEmptyIdentifiers)
   runtime_gateway::RequestRegistry registry;
   EXPECT_EQ(registry.insert(record("", "task-1")), runtime_gateway::InsertResult::INVALID);
   EXPECT_EQ(registry.insert(record("request-1", "")), runtime_gateway::InsertResult::INVALID);
-  EXPECT_EQ(registry.insert(record("request-1", "task-1", "")),
-      runtime_gateway::InsertResult::INVALID);
+  EXPECT_EQ(
+    registry.insert(record("request-1", "task-1", "")),
+    runtime_gateway::InsertResult::INVALID);
 }
 
 TEST(RequestRegistryTest, InsertsAndReturnsFirstRequest)
@@ -46,8 +47,9 @@ TEST(RequestRegistryTest, DistinguishesExactAndConflictingDuplicates)
 TEST(RequestRegistryTest, RejectsDifferentRequestForExistingTaskId)
 {
   runtime_gateway::RequestRegistry registry;
-  ASSERT_EQ(registry.insert(record("request-1", "task-1")),
-      runtime_gateway::InsertResult::INSERTED);
+  ASSERT_EQ(
+    registry.insert(record("request-1", "task-1")),
+    runtime_gateway::InsertResult::INSERTED);
   EXPECT_EQ(
     registry.insert(record("request-2", "task-1")),
     runtime_gateway::InsertResult::CONFLICT);

@@ -120,6 +120,7 @@ source "$install/setup.bash"
 set -u
 export PYTHONPATH="/opt/ros/jazzy/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
 colcon --log-base "$log" test \
+  --executor sequential \
   --build-base "$build" \
   --install-base "$install" \
   --packages-select "${runtime_packages[@]}" \
