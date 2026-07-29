@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 WORKSPACE=${WORKSPACE:-${HOME}/robot-runtime-ws}
 EVIDENCE=/tmp/runtime-industrial-evidence
+ros_distro=${ROS_DISTRO:-jazzy}
 ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-127}
 GATEWAY_PORT=${GATEWAY_PORT:-50170}
 OVERALL_TIMEOUT_SECONDS=${OVERALL_TIMEOUT_SECONDS:-120}
@@ -22,6 +23,8 @@ unsafe_exit() {
   unsafe_exit "OVERALL_TIMEOUT_SECONDS must be positive"
 [[ ${SETUP_VCAN:-0} == 0 || ${SETUP_VCAN:-0} == 1 ]] ||
   unsafe_exit "SETUP_VCAN must be 0 or 1"
+[[ "$ros_distro" == jazzy || "$ros_distro" == humble ]] ||
+  unsafe_exit "ROS_DISTRO must be jazzy or humble"
 [[ "$EVIDENCE" == /tmp/runtime-industrial-evidence ]] || unsafe_exit "unexpected evidence path"
 [[ ! -L "$EVIDENCE" ]] || unsafe_exit "$EVIDENCE must not be a symlink"
 
@@ -142,7 +145,7 @@ clean_ros_environment() {
   unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
   export PATH=/usr/sbin:/usr/bin:/bin
   set +u
-  source /opt/ros/jazzy/setup.bash
+  source "/opt/ros/$ros_distro/setup.bash"
   source "$WORKSPACE/install/setup.bash"
   set -u
 }
@@ -346,9 +349,9 @@ while ((SECONDS < deadline)); do
   sleep 0.1
 done
 [[ -s "$EVIDENCE/startup-stats.json" ]] || fail "gateway startup deadline exceeded"
-deadline=$((SECONDS + 8))
+deadline=$((SECONDS + 15))
 while ((SECONDS < deadline)); do
-  timeout 2 ros2 action list > "$EVIDENCE/actions.txt" 2> "$EVIDENCE/actions.stderr" || true
+  timeout 5 ros2 action list > "$EVIDENCE/actions.txt" 2> "$EVIDENCE/actions.stderr" || true
   if grep -Fxq '/execute_workflow' "$EVIDENCE/actions.txt" &&
     grep -Fxq '/execute_task' "$EVIDENCE/actions.txt" &&
     grep -Fxq '/execute_device_command' "$EVIDENCE/actions.txt"; then
