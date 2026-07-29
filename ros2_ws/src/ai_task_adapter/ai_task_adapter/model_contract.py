@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 from typing import Iterable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -104,6 +105,8 @@ def request_chat_completion(
         raise ModelTransportError('API keys require an HTTPS model_endpoint')
     if not request or len(request) > 4096:
         raise ModelTransportError('request must contain between 1 and 4096 characters')
+    if not math.isfinite(timeout_sec) or timeout_sec <= 0:
+        raise ModelTransportError('timeout_sec must be a positive finite value')
     if api_style not in {'chat_completions', 'responses'}:
         raise ModelTransportError('api_style must be chat_completions or responses')
 

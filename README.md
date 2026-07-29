@@ -40,6 +40,11 @@ Models and perception adapters cannot directly control a device. They can only
 submit allowlisted workflows through `ExecuteWorkflow`; the executable control
 flow remains fixed and reviewable.
 
+This is an application-level boundary, not a substitute for ROS 2/DDS access
+control or CAN bus authentication. Production deployment must isolate the ROS
+domain, enable DDS Security where applicable, and treat a matching CAN ACK as a
+protocol response rather than proof of physical actuator motion.
+
 ## Implemented Components
 
 | Package | Responsibility |
@@ -162,7 +167,8 @@ contention on small boards.
 
 `ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
 The existing C++ node remains a deterministic offline adapter. The optional
-`ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions endpoint,
+`ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions or
+Responses endpoint,
 strictly accepts only `workflow_id`, `target_id`, and `duration_ms`, then submits
 the validated result through `ExecuteWorkflow`. It is disabled by default and
 cannot emit a CAN frame or device command directly.
@@ -174,6 +180,7 @@ configuration. Keyed requests require HTTPS:
 export OPENAI_API_KEY='replace-me'
 ros2 run ai_task_adapter ai_model_adapter_node.py --ros-args \
   --params-file "$(ros2 pkg prefix ai_task_adapter)/share/ai_task_adapter/config/ai_model_adapter.yaml" \
+  -p mode:=openai_compatible \
   -p request:='Go to dock_a.'
 ```
 
@@ -186,9 +193,14 @@ non-allowlisted value fails closed before ROS Action submission. Goal responses
 and Action results also have bounded waits; a result timeout requests
 cancellation and exits as a failure.
 
-CI exercises the HTTP protocol with a local fake endpoint and five contract
-cases. A live OpenAI or Ollama inference is not claimed until an actual provider
-is configured and recorded.
+For `/v1/responses`, set `api_style:=responses` and a matching
+`model_endpoint`; its request uses `instructions` and `input`, while the same
+allowlist and timeout checks apply. CI uses local fake endpoints for both API
+styles. A configured live Responses-compatible provider was exercised on X5;
+that proves integration of this bounded path, not model quality, availability,
+or actuator motion.
+
+CI exercises the HTTP protocol and contract cases with local fake endpoints.
 
 ### ArUco Input
 
@@ -242,7 +254,7 @@ wiring, but not motor behavior.
 | Demonstrated | Not yet demonstrated |
 | --- | --- |
 | Fixed workflow orchestration and nested ROS 2 Actions | Dynamic model-generated control flow |
-| Strict OpenAI-compatible model contract against a local fake endpoint | Live-provider quality, availability, or prompt accuracy |
+| Strict OpenAI-compatible contract and one bounded live-provider integration | Live-provider quality, availability, or prompt accuracy |
 | Physical X5 UVC capture and stable ArUco ID 10 detection | Camera calibration, adverse-lighting coverage, or model accuracy |
 | Physical two-adapter SocketCAN traffic plus `vcan0` protocol tests | Actuator behavior or robot closed-loop control |
 | Software `SAFE_STOP` outcomes and persisted task evidence | Hardware emergency stop or measured stopping distance |

@@ -23,6 +23,16 @@ TEST(RequestRegistryTest, RejectsEmptyIdentifiers)
     runtime_gateway::InsertResult::INVALID);
 }
 
+TEST(RequestRegistryTest, RejectsNewRecordsAfterCapacityButKeepsDuplicateLookup)
+{
+  runtime_gateway::RequestRegistry registry(1);
+  const auto first = record();
+  ASSERT_EQ(registry.insert(first), runtime_gateway::InsertResult::INSERTED);
+  EXPECT_EQ(registry.insert(first), runtime_gateway::InsertResult::DUPLICATE);
+  EXPECT_EQ(
+    registry.insert(record("request-2", "task-2")), runtime_gateway::InsertResult::CAPACITY);
+}
+
 TEST(RequestRegistryTest, InsertsAndReturnsFirstRequest)
 {
   runtime_gateway::RequestRegistry registry;

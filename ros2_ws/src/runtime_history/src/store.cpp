@@ -4,7 +4,6 @@
 
 #include <limits>
 #include <stdexcept>
-#include <vector>
 
 namespace runtime_history
 {
@@ -82,11 +81,21 @@ bool same(const TaskRecord & left, const TaskRecord & right)
          left.message == right.message && left.completed_at_ns == right.completed_at_ns;
 }
 
-std::uint64_t nearest_rank(
-  const std::vector<std::uint64_t> & sorted, std::uint64_t percent)
+std::uint64_t nearest_rank_offset(const std::uint64_t count, const std::uint64_t percent)
 {
-  const auto index = (percent * sorted.size() + 99) / 100 - 1;
-  return sorted.at(index);
+  return (percent * count + 99) / 100 - 1;
+}
+
+std::uint64_t duration_at_offset(sqlite3 * db, const std::uint64_t offset)
+{
+  Statement statement(
+    db, "SELECT duration_ms FROM task_runs ORDER BY duration_ms LIMIT 1 OFFSET ?");
+  check(db, sqlite3_bind_int64(
+      statement.get(), 1, static_cast<sqlite3_int64>(offset)));
+  if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db));
+  }
+  return static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
 }
 
 }  // namespace
@@ -198,32 +207,36 @@ RuntimeStats Store::stats() const
 {
   const std::lock_guard<std::mutex> lock(mutex_);
   RuntimeStats result{};
-  std::vector<std::uint64_t> durations;
-  Statement statement(db_, "SELECT duration_ms,outcome FROM task_runs ORDER BY duration_ms");
-  while (true) {
-    const int step_result = sqlite3_step(statement.get());
-    if (step_result == SQLITE_DONE) {
-      break;
-    }
-    if (step_result != SQLITE_ROW) {
-      throw std::runtime_error(sqlite3_errmsg(db_));
-    }
-    durations.push_back(static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0)));
-    const auto outcome = sqlite3_column_int(statement.get(), 1);
-    if (outcome >= 0 && outcome < static_cast<int>(result.outcome_counts.size())) {
-      ++result.outcome_counts[static_cast<std::size_t>(outcome)];
-    }
+  Statement summary(db_, "SELECT COUNT(*),MAX(duration_ms) FROM task_runs");
+  if (sqlite3_step(summary.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
   }
-  if (durations.empty()) {
+  const auto count = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 0));
+  if (count == 0) {
     return result;
   }
 
   result.has_data = true;
-  result.sample_count = durations.size();
-  result.p50_ms = nearest_rank(durations, 50);
-  result.p95_ms = nearest_rank(durations, 95);
-  result.p99_ms = nearest_rank(durations, 99);
-  result.max_ms = durations.back();
+  result.sample_count = count;
+  result.max_ms = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 1));
+  Statement outcomes(db_, "SELECT outcome,COUNT(*) FROM task_runs GROUP BY outcome");
+  while (true) {
+    const auto step = sqlite3_step(outcomes.get());
+    if (step == SQLITE_DONE) {
+      break;
+    }
+    if (step != SQLITE_ROW) {
+      throw std::runtime_error(sqlite3_errmsg(db_));
+    }
+    const auto outcome = sqlite3_column_int(outcomes.get(), 0);
+    if (outcome >= 0 && outcome < static_cast<int>(result.outcome_counts.size())) {
+      result.outcome_counts[static_cast<std::size_t>(outcome)] +=
+        static_cast<std::uint64_t>(sqlite3_column_int64(outcomes.get(), 1));
+    }
+  }
+  result.p50_ms = duration_at_offset(db_, nearest_rank_offset(count, 50));
+  result.p95_ms = duration_at_offset(db_, nearest_rank_offset(count, 95));
+  result.p99_ms = duration_at_offset(db_, nearest_rank_offset(count, 99));
   return result;
 }
 
