@@ -1,9 +1,21 @@
 #include "runtime_gateway/request_registry.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace runtime_gateway
 {
+namespace
+{
+
+bool is_terminal(const RequestRecord & record)
+{
+  return record.state == "COMPLETED" || record.state == "CANCELED" ||
+         record.state == "SAFE_STOP" || record.state == "DEVICE_FAULT" ||
+         record.state == "ABORTED" || record.state == "REJECTED";
+}
+
+}  // namespace
 
 RequestRegistry::RequestRegistry(const std::size_t capacity)
 : capacity_(capacity)
@@ -33,9 +45,19 @@ InsertResult RequestRegistry::insert(const RequestRecord & record)
     }
   }
   if (records_.size() >= capacity_) {
-    return InsertResult::CAPACITY;
+    const auto evictable = std::find_if(
+      insertion_order_.begin(), insertion_order_.end(), [this](const std::string & request_id) {
+        const auto value = records_.find(request_id);
+        return value != records_.end() && is_terminal(value->second);
+      });
+    if (evictable == insertion_order_.end()) {
+      return InsertResult::CAPACITY;
+    }
+    records_.erase(*evictable);
+    insertion_order_.erase(evictable);
   }
   records_.emplace(record.request_id, record);
+  insertion_order_.push_back(record.request_id);
   return InsertResult::INSERTED;
 }
 
@@ -79,6 +101,7 @@ void RequestRegistry::clear()
 {
   const std::lock_guard<std::mutex> lock(mutex_);
   records_.clear();
+  insertion_order_.clear();
 }
 
 std::size_t RequestRegistry::size() const

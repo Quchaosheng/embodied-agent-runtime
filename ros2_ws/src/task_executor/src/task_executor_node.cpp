@@ -114,19 +114,17 @@ public:
 
   ~TaskExecutorNode() override
   {
-    std::vector<std::thread> workers;
+    std::thread worker;
     {
       std::lock_guard<std::mutex> lock(workers_mutex_);
       if (workers_active_ != 0) {
         RCLCPP_FATAL(get_logger(), "Task Executor destroyed before workers drained");
         std::terminate();
       }
-      workers.swap(workers_);
+      worker.swap(worker_);
     }
-    for (auto & worker : workers) {
-      if (worker.joinable()) {
-        worker.join();
-      }
+    if (worker.joinable()) {
+      worker.join();
     }
   }
 
@@ -134,22 +132,20 @@ public:
 
   void wait_for_shutdown()
   {
-    std::vector<std::thread> workers;
+    std::thread worker;
     {
       std::unique_lock<std::mutex> lock(workers_mutex_);
       workers_changed_.wait(lock, [this]() {return workers_active_ == 0 && !active_goal_;});
-      workers.swap(workers_);
+      worker.swap(worker_);
     }
-    for (auto & worker : workers) {
-      if (worker.joinable()) {
-        worker.join();
-      }
+    if (worker.joinable()) {
+      worker.join();
     }
   }
 
   bool wait_for_shutdown_for(const std::chrono::milliseconds timeout)
   {
-    std::vector<std::thread> workers;
+    std::thread worker;
     {
       std::unique_lock<std::mutex> lock(workers_mutex_);
       if (!workers_changed_.wait_for(
@@ -157,12 +153,10 @@ public:
       {
         return false;
       }
-      workers.swap(workers_);
+      worker.swap(worker_);
     }
-    for (auto & worker : workers) {
-      if (worker.joinable()) {
-        worker.join();
-      }
+    if (worker.joinable()) {
+      worker.join();
     }
     return true;
   }
@@ -264,6 +258,7 @@ private:
 
   void handle_accepted(const std::shared_ptr<GoalHandle> goal_handle)
   {
+    join_completed_worker();
     started_at_ = std::chrono::steady_clock::now();
     parent_terminal_ = false;
     terminal_event_published_ = false;
@@ -273,7 +268,19 @@ private:
       });
     std::lock_guard<std::mutex> lock(workers_mutex_);
     ++workers_active_;
-    workers_.emplace_back([this, goal_handle]() {execute(goal_handle);});
+    worker_ = std::thread([this, goal_handle]() {execute(goal_handle);});
+  }
+
+  void join_completed_worker()
+  {
+    std::thread worker;
+    {
+      const std::lock_guard<std::mutex> lock(workers_mutex_);
+      worker.swap(worker_);
+    }
+    if (worker.joinable()) {
+      worker.join();
+    }
   }
 
   void execute(const std::shared_ptr<GoalHandle> & goal_handle)
@@ -289,7 +296,7 @@ private:
         }
         node.workers_changed_.notify_all();
       }
-    } worker_guard{*this};
+    };
     struct ActiveGuard
     {
       std::atomic_bool & active;
@@ -301,7 +308,9 @@ private:
           active = false;
         }
       }
-    } active_guard{active_goal_, parent_terminal_, goal_handle};
+    };
+    WorkerGuard worker_guard{*this};
+    ActiveGuard active_guard{active_goal_, parent_terminal_, goal_handle};
 
     const auto child = std::make_shared<ChildExecutionState>();
 
@@ -932,7 +941,7 @@ private:
   rclcpp_action::Server<ExecuteTask>::SharedPtr action_server_;
   std::mutex workers_mutex_;
   std::condition_variable workers_changed_;
-  std::vector<std::thread> workers_;
+  std::thread worker_;
   std::size_t workers_active_{0};
   task_executor::WorkerHook worker_hook_;
 };
