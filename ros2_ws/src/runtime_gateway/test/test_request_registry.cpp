@@ -33,6 +33,23 @@ TEST(RequestRegistryTest, RejectsNewRecordsAfterCapacityButKeepsDuplicateLookup)
     registry.insert(record("request-2", "task-2")), runtime_gateway::InsertResult::CAPACITY);
 }
 
+TEST(RequestRegistryTest, EvictsOldestTerminalRecordAtCapacity)
+{
+  runtime_gateway::RequestRegistry registry(2);
+  ASSERT_EQ(registry.insert(record("request-1", "task-1")),
+    runtime_gateway::InsertResult::INSERTED);
+  ASSERT_TRUE(registry.update_terminal("request-1", "COMPLETED", 0, 0, "done"));
+  ASSERT_EQ(registry.insert(record("request-2", "task-2")),
+    runtime_gateway::InsertResult::INSERTED);
+
+  EXPECT_EQ(registry.insert(record("request-3", "task-3")),
+    runtime_gateway::InsertResult::INSERTED);
+  EXPECT_FALSE(registry.get_by_request_id("request-1").has_value());
+  EXPECT_TRUE(registry.get_by_request_id("request-2").has_value());
+  EXPECT_TRUE(registry.get_by_request_id("request-3").has_value());
+  EXPECT_EQ(registry.size(), 2U);
+}
+
 TEST(RequestRegistryTest, InsertsAndReturnsFirstRequest)
 {
   runtime_gateway::RequestRegistry registry;

@@ -85,15 +85,13 @@ public:
   ~DeviceBridgeNode() override
   {
     running_ = false;
-    std::vector<std::thread> workers;
+    std::thread worker;
     {
       std::lock_guard<std::mutex> lock(workers_mutex_);
-      workers.swap(workers_);
+      worker.swap(worker_);
     }
-    for (auto & worker : workers) {
-      if (worker.joinable()) {
-        worker.join();
-      }
+    if (worker.joinable()) {
+      worker.join();
     }
   }
 
@@ -156,10 +154,23 @@ private:
 
   void handle_accepted(const std::shared_ptr<GoalHandle> goal_handle)
   {
+    join_completed_worker();
     diagnostic_state_.begin_command(
       static_cast<std::uint16_t>(goal_handle->get_goal()->command_id));
     std::lock_guard<std::mutex> lock(workers_mutex_);
-    workers_.emplace_back([this, goal_handle]() {execute(goal_handle);});
+    worker_ = std::thread([this, goal_handle]() {execute(goal_handle);});
+  }
+
+  void join_completed_worker()
+  {
+    std::thread worker;
+    {
+      const std::lock_guard<std::mutex> lock(workers_mutex_);
+      worker.swap(worker_);
+    }
+    if (worker.joinable()) {
+      worker.join();
+    }
   }
 
   WaitResult receive_response(
@@ -299,15 +310,15 @@ private:
       if (wait_result == WaitResult::kTransportError) {
         diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
         publish_diagnostics();
-        finish_aborted(
-          goal_handle, ExecuteDeviceCommand::Result::SAFE_STOP,
-          device_bridge::kErrorTransport, "CAN receive failed: " + wait_error);
+        stop_and_finish(
+          goal_handle, command.command_id, false, device_bridge::kErrorTransport,
+          "CAN receive failed: " + wait_error + "; attempting device STOP");
         return;
       }
       if (wait_result == WaitResult::kShutdown) {
-        finish_aborted(
-          goal_handle, ExecuteDeviceCommand::Result::SAFE_STOP,
-          device_bridge::kErrorShutdown, wait_error);
+        stop_and_finish(
+          goal_handle, command.command_id, false, device_bridge::kErrorShutdown,
+          wait_error + "; attempting device STOP");
         return;
       }
 
@@ -339,7 +350,6 @@ private:
     const std::string & safe_stop_message)
   {
     using DeviceState = robot_task_interfaces::msg::DeviceState;
-    publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, 0);
     diagnostic_state_.mark_stopping();
 
     const auto stop_command_id = allocate_stop_command_id();
@@ -355,6 +365,7 @@ private:
         "STOP send failed: " + send_error);
       return;
     }
+    publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, 0);
 
     RCLCPP_WARN(
       get_logger(), "STOP sent stop_command_id=%u original_command_id=%u",
@@ -483,7 +494,7 @@ private:
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Server<ExecuteDeviceCommand>::SharedPtr action_server_;
   std::mutex workers_mutex_;
-  std::vector<std::thread> workers_;
+  std::thread worker_;
 };
 
 int main(int argc, char ** argv)

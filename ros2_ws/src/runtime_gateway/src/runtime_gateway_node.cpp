@@ -1,6 +1,7 @@
 #include "runtime_gateway/gateway_service.hpp"
 #include "runtime_gateway/loopback_server.hpp"
 
+#include "runtime_history/defaults.hpp"
 #include "runtime_history/store.hpp"
 
 #include <chrono>
@@ -30,7 +31,8 @@ int main(int argc, char ** argv)
   try {
     auto node = std::make_shared<rclcpp::Node>("runtime_gateway");
     const auto port = node->declare_parameter<int>("port", 50051);
-    const auto database_path = node->declare_parameter<std::string>("database_path", "runtime.db");
+    const auto database_path = node->declare_parameter<std::string>(
+      "database_path", runtime_history::kDefaultDatabasePath);
     if (port < 1 || port > 65535 || database_path.empty()) {
       throw std::invalid_argument("port and database_path must be valid");
     }
