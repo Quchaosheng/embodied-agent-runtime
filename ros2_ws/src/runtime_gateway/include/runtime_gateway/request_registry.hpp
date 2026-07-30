@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -40,6 +41,7 @@ public:
 private:
   mutable std::mutex mutex_;
   std::size_t capacity_;
+  std::deque<std::string> insertion_order_;
   std::unordered_map<std::string, RequestRecord> records_;
 };
 

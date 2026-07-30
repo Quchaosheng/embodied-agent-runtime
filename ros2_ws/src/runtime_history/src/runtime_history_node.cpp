@@ -1,4 +1,5 @@
 #include "runtime_history/recorder.hpp"
+#include "runtime_history/defaults.hpp"
 #include "runtime_history/store.hpp"
 
 #include <atomic>
@@ -18,7 +19,8 @@ class RuntimeHistoryNode : public rclcpp::Node
 public:
   RuntimeHistoryNode()
   : Node("runtime_history"),
-    database_path_(declare_parameter<std::string>("database_path", "runtime_history.sqlite3")),
+    database_path_(declare_parameter<std::string>(
+        "database_path", runtime_history::kDefaultDatabasePath)),
     store_(database_path_),
     recorder_([this](const runtime_history::TaskRecord & record) {return store_.insert(record);})
   {

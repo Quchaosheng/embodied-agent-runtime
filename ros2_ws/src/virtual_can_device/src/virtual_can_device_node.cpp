@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -27,8 +29,14 @@ public:
     device_id_ = declare_parameter<std::string>("device_id", "virtual_ecu_1");
     mode_ = declare_parameter<std::string>("mode", "normal");
     const auto configured_delay_ms = declare_parameter<std::int64_t>("delay_ms", 500);
+    const auto configured_cache_capacity = declare_parameter<std::int64_t>(
+      "replay_cache_capacity", 4096);
     delay_ms_ = static_cast<int>(
       std::clamp<std::int64_t>(configured_delay_ms, 0, 60000));
+    if (configured_cache_capacity < 1 || configured_cache_capacity > 65536) {
+      throw std::invalid_argument("replay_cache_capacity must be in [1, 65536]");
+    }
+    replay_cache_capacity_ = static_cast<std::size_t>(configured_cache_capacity);
     if (!is_supported_mode(mode_)) {
       throw std::invalid_argument("unsupported virtual device mode: " + mode_);
     }
@@ -46,8 +54,8 @@ public:
     running_ = true;
     io_thread_ = std::thread([this]() {receive_loop();});
     RCLCPP_INFO(
-      get_logger(), "Ready on %s mode=%s delay_ms=%d",
-      interface_name_.c_str(), mode_.c_str(), delay_ms_);
+      get_logger(), "Ready on %s mode=%s delay_ms=%d replay_cache_capacity=%zu",
+      interface_name_.c_str(), mode_.c_str(), delay_ms_, replay_cache_capacity_);
   }
 
   ~VirtualCanDeviceNode() override
@@ -117,7 +125,7 @@ private:
 
     if (command.opcode == runtime_can::kStopOpcode) {
       if (mode_ == "drop_stop_ack") {
-        cache_.emplace(command.command_id, CacheEntry{command, std::nullopt});
+        cache_command(command, std::nullopt);
         publish_state(command.command_id, DeviceState::BUSY, 0);
         RCLCPP_WARN(get_logger(), "Dropping STOP ACK command_id=%u", command.command_id);
         return;
@@ -127,7 +135,7 @@ private:
       stop_response.command_id = command.command_id;
       stop_response.result_code = 0;
       stop_response.device_mode = DeviceState::STOPPED;
-      cache_.emplace(command.command_id, CacheEntry{command, stop_response});
+      cache_command(command, stop_response);
       send_response(stop_response);
       publish_state(command.command_id, DeviceState::STOPPED, 0);
       RCLCPP_INFO(
@@ -137,7 +145,7 @@ private:
     }
 
     if (mode_ == "drop_ack" || mode_ == "drop_stop_ack") {
-      cache_.emplace(command.command_id, CacheEntry{command, std::nullopt});
+      cache_command(command, std::nullopt);
       publish_state(command.command_id, DeviceState::BUSY, 0);
       RCLCPP_WARN(get_logger(), "Dropping ACK command_id=%u", command.command_id);
       return;
@@ -156,7 +164,7 @@ private:
       response.device_mode = DeviceState::NORMAL;
     }
 
-    cache_.emplace(command.command_id, CacheEntry{command, response});
+    cache_command(command, response);
     if (mode_ == "delay_ack") {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
     }
@@ -164,6 +172,18 @@ private:
     publish_state(
       command.command_id, response.device_mode,
       response.result_code == 2 ? 1 : 0);
+  }
+
+  void cache_command(
+    const runtime_can::Command & command,
+    const std::optional<runtime_can::Response> & response)
+  {
+    if (cache_.size() >= replay_cache_capacity_) {
+      cache_.erase(cache_order_.front());
+      cache_order_.pop_front();
+    }
+    cache_.emplace(command.command_id, CacheEntry{command, response});
+    cache_order_.push_back(command.command_id);
   }
 
   void send_response(const runtime_can::Response & response)
@@ -194,11 +214,13 @@ private:
   std::string device_id_;
   std::string mode_;
   int delay_ms_{0};
+  std::size_t replay_cache_capacity_{4096};
   std::atomic_bool running_{false};
   std::uint32_t response_count_{0};
   runtime_can::SocketCan socket_;
   rclcpp::Publisher<DeviceState>::SharedPtr state_publisher_;
   std::thread io_thread_;
+  std::deque<std::uint16_t> cache_order_;
   std::unordered_map<std::uint16_t, CacheEntry> cache_;
 };
 
