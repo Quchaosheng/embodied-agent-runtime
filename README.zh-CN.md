@@ -6,9 +6,9 @@
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros)](https://docs.ros.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
-这是一个确定性的 ROS 2 任务运行时：把受控工作流输入连接到固定
-BehaviorTree.CPP 编排、嵌套 ROS 2 Action、SocketCAN 设备控制、运行时诊断和
-SQLite 任务历史。
+这是一个执行路径固定、可审查的 ROS 2 任务运行时。它将受控工作流请求交由
+BehaviorTree.CPP 编排，经由嵌套 ROS 2 Action 和 SocketCAN 设备控制执行任务，
+并记录运行时诊断与 SQLite 任务历史。
 
 软件链路已经实现并通过测试。X5 原生 ARM64 运行、实体 USB 摄像头、ArUco 检测和
 双 CANable 双向 SocketCAN 台架通信也已验证。电机运动和硬件急停回路不在当前证据
