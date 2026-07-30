@@ -7,9 +7,10 @@
 [![Platforms](https://img.shields.io/badge/platform-x86__64%20%7C%20ARM64-4C8BF5)](#platform-status)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
-A deterministic ROS 2 task runtime that connects controlled workflow inputs to
-fixed BehaviorTree.CPP orchestration, nested ROS 2 Actions, SocketCAN device
-control, runtime diagnostics, and SQLite task history.
+A ROS 2 task runtime with a fixed, reviewable execution path. It routes
+controlled workflow requests through BehaviorTree.CPP orchestration, nested
+ROS 2 Actions, SocketCAN device control, runtime diagnostics, and SQLite task
+history.
 
 The software path is implemented and tested. Native X5/ARM64 execution, a
 physical USB camera, ArUco detection, and bidirectional SocketCAN bench traffic
