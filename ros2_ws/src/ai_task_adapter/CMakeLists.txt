@@ -39,6 +39,7 @@ install(PROGRAMS scripts/ai_model_adapter_node.py DESTINATION lib/${PROJECT_NAME
 install(FILES
   ai_task_adapter/__init__.py
   ai_task_adapter/model_contract.py
+  ai_task_adapter/model_runtime.py
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -56,6 +57,12 @@ if(BUILD_TESTING)
     NAME test_model_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_model_contract.py)
   set_tests_properties(test_model_contract PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
+    NAME test_model_runtime
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_model_runtime.py)
+  set_tests_properties(test_model_runtime PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
