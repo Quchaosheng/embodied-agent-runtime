@@ -54,27 +54,48 @@ protocol response rather than proof of physical actuator motion.
 | `runtime_can` | Fixed classic-CAN protocol encoding, decoding, and validation |
 | `virtual_can_device` | Software ECU used for normal, fault, delay, and dropped-ACK tests |
 | `device_bridge` | SocketCAN command transport, ACK retry, STOP, cancellation, and diagnostics |
-| `task_executor` | Target allowlist, deadline budgeting, nested Action execution, and `TaskEvent` output |
+| `task_executor` | Target allowlist, deadline budgeting, `ExecuteDeviceCommand` child Action execution, and terminal `TaskEvent` publication |
 | `runtime_monitor` | Aggregated readiness and degraded/error diagnostics |
 | `runtime_history` | SQLite task persistence, lookup, and percentile statistics |
-| `task_orchestrator` | Fixed BehaviorTree.CPP workflows and bounded child cancellation |
-| `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and Action bridge |
-| `ai_task_adapter` | Deterministic rule planner plus optional OpenAI-compatible model adapter |
+| `task_orchestrator` | Fixed BehaviorTree.CPP workflows and bounded `ExecuteTask` child cancellation |
+| `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and `ExecuteWorkflow` Action bridge |
+| `ai_task_adapter` | Rule-based text adapter plus an optional, default-disabled OpenAI-compatible model adapter |
 | `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
+
+### Action Layers and Task Events
+
+The runtime uses three ROS 2 Action layers with separate responsibilities:
+
+1. `ExecuteWorkflow` accepts an allowlisted workflow request and runs the fixed
+   BehaviorTree.CPP orchestration.
+2. `ExecuteTask` validates the target, applies the task-level deadline budget,
+   and coordinates the device-command child Action.
+3. `ExecuteDeviceCommand` owns SocketCAN command transport, ACK handling,
+   retry, cancellation, and protocol STOP behavior.
+
+`TaskEvent` is a terminal task-result message published by `task_executor`. It
+records the task ID, target, Action terminal status, runtime outcome, error
+code, message, event timestamp, and duration for history and statistics. It is
+not another command channel and does not prove that a physical actuator moved
+or stopped.
 
 ## Verified Software Evidence
 
 On 2026-07-29, this Windows host completed the isolated WSL2/Jazzy build and
-test flow with **11 packages, 393 tests, 0 errors, 0 failures, and 72 skips**.
+test flow for 11 packages. The repository contains **120 GoogleTest cases and
+18 pytest cases**. `colcon test-result` also counts test-runner and
+`ament_lint` records, so its aggregate total must not be presented as the
+number of functional test cases.
+
 GitHub Actions also passed the Windows tooling checks and the Ubuntu
 24.04/Jazzy build, test, ARM64-configuration, and conditional `vcan0` workflow.
 
 The current 11-package tree also built natively on an X5 running Ubuntu
-22.04/Humble. Its sequential ARM smoke passed **311 tests, 0 errors, 0 failures,
-and 72 skips**. Humble smoke excludes only its distro `uncrustify` 0.72 check,
-whose output differs from the canonical Jazzy formatter enforced by CI. The X5
-also rejected the model adapter in its default-disabled mode, then validated a
-local fake endpoint plan as `single_task/dock_a/1000 ms` and stopped at the
+22.04/Humble. Its sequential ARM smoke completed without reported test
+failures. Humble smoke excludes only its distro `uncrustify` 0.72 check, whose
+output differs from the canonical Jazzy formatter enforced by CI. The X5 also
+rejected the model adapter in its default-disabled mode, then validated a local
+fake endpoint plan as `single_task/dock_a/1000 ms` and stopped at the
 deliberately offline `ExecuteWorkflow` server without touching CAN.
 
 On 2026-07-28, `/dev/video0` detected a physical `DICT_4X4_50` ID 10 marker in
@@ -125,6 +146,18 @@ selected behavior without invoking WSL.
 
 ### Ubuntu 24.04 / ROS 2 Jazzy
 
+This path assumes a working Ubuntu 24.04 installation with ROS 2 Jazzy and the
+standard ROS development tools already installed. A fresh machine must first
+install ROS 2 Jazzy, `colcon`, `rosdep`, a C/C++ toolchain, Python 3, Git,
+SQLite development headers, OpenCV/ArUco dependencies, gRPC/Protobuf tooling,
+BehaviorTree.CPP, and SocketCAN user-space tools as required by the package
+manifests. Initialize `rosdep` once on a new system before resolving workspace
+dependencies. Package names can differ between Jazzy and Humble; use the ROS 2
+documentation for the selected distribution rather than mixing distributions.
+
+The commands below are therefore a workspace build flow, not a complete
+zero-to-running bootstrap for a blank Linux installation:
+
 ```bash
 set +u
 source /opt/ros/jazzy/setup.bash
@@ -167,7 +200,7 @@ contention on small boards.
 ### Text Input
 
 `ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
-The existing C++ node remains a deterministic offline adapter. The optional
+The existing C++ node is a rule-based offline adapter. The optional
 `ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions or
 Responses endpoint,
 strictly accepts only `workflow_id`, `target_id`, and `duration_ms`, then submits
@@ -202,15 +235,16 @@ that proves integration of this bounded path, not model quality, availability,
 or actuator motion.
 
 CI exercises the HTTP protocol and contract cases with local fake endpoints.
+The installed configuration keeps the model path in `disabled` mode by default;
+when explicitly enabled, the documented runtime backend is
+`openai_compatible`.
 
-The model path also exposes explicit `openai_compatible`, `mock`, and `replay`
-backends. Accepted decisions can be recorded as normalized JSONL without the raw
-request or API key, then replayed deterministically by request fingerprint and
-output-schema version. Observation TTL, inference deadline, duplicate admission,
-stale output, timeout, service-crash, duplicate-response, and failure-storm hooks
-all fail closed before `ExecuteWorkflow`. Optional metrics report model latency,
-rejection rate, degradation rate, and task success rate. Backend failures never
-silently become mock motion.
+The model boundary is fail-closed only at workflow admission: malformed,
+timed-out, extra-field, or non-allowlisted model output is rejected before a new
+`ExecuteWorkflow` goal is submitted. This does not cancel a previously accepted
+goal, enforce ROS 2/DDS authorization, authenticate CAN traffic, or guarantee a
+physical stop. Those remain responsibilities of the Action cancellation path,
+deployment security, device protocol, and hardware safety system.
 
 ### ArUco Input
 
@@ -231,7 +265,7 @@ X5/UVC evidence is documented below.
 
 | Environment | Current status | Evidence |
 | --- | --- | --- |
-| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build and 393-test result |
+| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build; 120 GoogleTest cases plus 18 pytest cases |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
 | Generic ARM64 Linux | X5 verified; other boards prepared | Native Humble build/test on X5 plus portable scripts |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |
