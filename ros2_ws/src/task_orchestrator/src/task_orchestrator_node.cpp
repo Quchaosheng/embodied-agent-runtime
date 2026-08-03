@@ -676,7 +676,7 @@ private:
         committed_outcome = ExecuteWorkflow::Result::SAFE_STOP;
         committed_error_code = kErrorInternal;
         committed_message = "parent cancel raced with terminal child result";
-        committed_terminal = Terminal::kAbort;
+        committed_terminal = Terminal::kCanceled;
       } else if (terminal_state == Terminal::kSucceed &&
         std::chrono::steady_clock::now() >= active_deadline_)
       {
@@ -684,6 +684,11 @@ private:
         committed_error_code = kErrorDeadline;
         committed_message = "workflow allowed duration exceeded at terminal commit";
         committed_terminal = Terminal::kAbort;
+      }
+      // An accepted ROS 2 action cancellation puts the goal in CANCELING, so
+      // safety failures during that cancellation must use the CANCELED state.
+      if (cancel_accepted_ && committed_terminal == Terminal::kAbort) {
+        committed_terminal = Terminal::kCanceled;
       }
       terminal_reserved_ = true;
     }

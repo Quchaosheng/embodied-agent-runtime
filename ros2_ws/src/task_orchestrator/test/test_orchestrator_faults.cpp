@@ -311,7 +311,7 @@ TEST_F(OrchestratorFaultTest, CancelBeforeTerminalCommitPreventsSuccess)
   gate_changed.notify_all();
 
   const auto result = wait_result(handle);
-  EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::CANCELED);
   ASSERT_NE(result.result, nullptr);
   EXPECT_EQ(result.result->outcome, ExecuteWorkflow::Result::SAFE_STOP);
   EXPECT_EQ(result.result->error_code, 208);
