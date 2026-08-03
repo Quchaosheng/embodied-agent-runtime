@@ -128,6 +128,7 @@ def make_request_context(
 
 
 class ModelBackend(ABC):
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -139,6 +140,7 @@ class ModelBackend(ABC):
 
 
 class OpenAICompatibleBackend(ModelBackend):
+
     def __init__(
         self,
         *,
@@ -201,6 +203,7 @@ class OpenAICompatibleBackend(ModelBackend):
 
 
 class MockBackend(ModelBackend):
+
     def __init__(self, content: str) -> None:
         self._content = content
 
@@ -214,6 +217,7 @@ class MockBackend(ModelBackend):
 
 
 class ReplayBackend(ModelBackend):
+
     def __init__(self, path: str | Path) -> None:
         self._records = read_records(path)
 
@@ -244,6 +248,7 @@ class ReplayBackend(ModelBackend):
 
 
 class FaultInjectingBackend(ModelBackend):
+
     def __init__(self, backend: ModelBackend, mode: str) -> None:
         if mode not in FAULT_MODES:
             raise ValueError(f'unsupported model fault mode: {mode}')
@@ -268,6 +273,7 @@ class FaultInjectingBackend(ModelBackend):
 
 
 class ModelAdmission:
+
     def __init__(
         self,
         *,
@@ -320,6 +326,7 @@ class ModelAdmission:
 
 
 class ModelRecorder:
+
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
 
