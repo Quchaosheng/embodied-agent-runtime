@@ -21,25 +21,23 @@ from model_contract import (  # noqa: E402
 from model_runtime import (  # noqa: E402
     BackendResult,
     FaultInjectingBackend,
+    make_request_context,
+    MockBackend,
     ModelAdmission,
     ModelRecorder,
     ModelRuntimeErrorCode,
     ModelRuntimeMetrics,
-    MockBackend,
     OpenAICompatibleBackend,
     ReplayBackend,
-    make_request_context,
 )
 
 import rclpy  # noqa: E402
 from rclpy.action import ActionClient  # noqa: E402
 from rclpy.node import Node  # noqa: E402
-
 from robot_task_interfaces.action import ExecuteWorkflow  # noqa: E402
 
 
 class AiModelAdapterNode(Node):
-
     def __init__(self) -> None:
         super().__init__('ai_model_adapter')
         self._request = self.declare_parameter('request', 'Go to dock_a.').value
@@ -49,16 +47,24 @@ class AiModelAdapterNode(Node):
         self._api_style = self.declare_parameter('api_style', 'chat_completions').value
         self._endpoint = self.declare_parameter('model_endpoint', '').value
         self._model_name = self.declare_parameter('model_name', '').value
-        self._api_key_env = self.declare_parameter('api_key_env', 'OPENAI_API_KEY').value
-        self._timeout_sec = float(self.declare_parameter('model_timeout_sec', 10.0).value)
+        self._api_key_env = self.declare_parameter(
+            'api_key_env', 'OPENAI_API_KEY'
+        ).value
+        self._timeout_sec = float(
+            self.declare_parameter('model_timeout_sec', 10.0).value
+        )
         self._observation_timestamp_ns = int(
-            self.declare_parameter('observation_timestamp_ns', 0).value)
+            self.declare_parameter('observation_timestamp_ns', 0).value
+        )
         self._observation_ttl_ms = int(
-            self.declare_parameter('observation_ttl_ms', 3000).value)
+            self.declare_parameter('observation_ttl_ms', 3000).value
+        )
         self._inference_deadline_ms = int(
-            self.declare_parameter('inference_deadline_ms', 2500).value)
+            self.declare_parameter('inference_deadline_ms', 2500).value
+        )
         self._output_version = self.declare_parameter(
-            'model_output_version', 'workflow-plan/v1').value
+            'model_output_version', 'workflow-plan/v1'
+        ).value
         self._record_path = self.declare_parameter('model_record_path', '').value
         self._replay_path = self.declare_parameter('model_replay_path', '').value
         self._metrics_path = self.declare_parameter('model_metrics_path', '').value
@@ -69,50 +75,72 @@ class AiModelAdapterNode(Node):
         ).value
         self._admission = ModelAdmission(
             dedup_window_ms=int(
-                self.declare_parameter('model_dedup_window_ms', 5000).value),
+                self.declare_parameter('model_dedup_window_ms', 5000).value
+            ),
             failure_window_ms=int(
-                self.declare_parameter('model_failure_window_ms', 30000).value),
+                self.declare_parameter('model_failure_window_ms', 30000).value
+            ),
             max_failures=int(
-                self.declare_parameter('model_failure_storm_count', 3).value),
+                self.declare_parameter('model_failure_storm_count', 3).value
+            ),
             max_future_skew_ms=int(
-                self.declare_parameter('observation_max_future_skew_ms', 100).value),
+                self.declare_parameter('observation_max_future_skew_ms', 100).value
+            ),
         )
         self._metrics = ModelRuntimeMetrics()
         self._action_timeout_sec = float(
-            self.declare_parameter('action_result_timeout_sec', 15.0).value)
-        self._max_duration_ms = int(self.declare_parameter('max_duration_ms', 5000).value)
-        self._workflows = list(self.declare_parameter(
-            'workflow_ids', ['single_task', 'ready_then_task']).value)
-        self._targets = list(self.declare_parameter('targets', ['dock_a', 'home']).value)
+            self.declare_parameter('action_result_timeout_sec', 15.0).value
+        )
+        self._max_duration_ms = int(
+            self.declare_parameter('max_duration_ms', 5000).value
+        )
+        self._workflows = list(
+            self.declare_parameter(
+                'workflow_ids', ['single_task', 'ready_then_task']
+            ).value
+        )
+        self._targets = list(
+            self.declare_parameter('targets', ['dock_a', 'home']).value
+        )
         self._client = ActionClient(self, ExecuteWorkflow, 'execute_workflow')
 
     def run(self) -> int:
         if self._mode not in {'openai_compatible', 'mock', 'replay'}:
             self.get_logger().error(
                 'mode must be openai_compatible, mock, or replay; '
-                'model calls are disabled by default')
+                'model calls are disabled by default'
+            )
             return 2
         if not self._request or not self._request_id or not self._task_id:
-            self.get_logger().error('request, request_id, and task_id must not be empty')
+            self.get_logger().error(
+                'request, request_id, and task_id must not be empty'
+            )
             return 2
         if (
-            not math.isfinite(self._timeout_sec) or not math.isfinite(self._action_timeout_sec) or
-            self._timeout_sec <= 0 or self._action_timeout_sec <= 0
+            not math.isfinite(self._timeout_sec)
+            or not math.isfinite(self._action_timeout_sec)
+            or self._timeout_sec <= 0
+            or self._action_timeout_sec <= 0
         ):
-            self.get_logger().error(
-                'positive model and action timeouts are required')
+            self.get_logger().error('positive model and action timeouts are required')
             return 2
-        if self._mode == 'openai_compatible' and (not self._endpoint or not self._model_name):
+        if self._mode == 'openai_compatible' and (
+            not self._endpoint or not self._model_name
+        ):
             self.get_logger().error('model_endpoint and model_name are required')
             return 2
         if self._mode == 'replay' and not self._replay_path:
             self.get_logger().error('model_replay_path is required in replay mode')
             return 2
         if self._max_duration_ms <= 0 or not self._workflows or not self._targets:
-            self.get_logger().error('max_duration_ms and non-empty allowlists are required')
+            self.get_logger().error(
+                'max_duration_ms and non-empty allowlists are required'
+            )
             return 2
         if self._observation_ttl_ms <= 0 or self._inference_deadline_ms <= 0:
-            self.get_logger().error('observation TTL and inference deadline must be positive')
+            self.get_logger().error(
+                'observation TTL and inference deadline must be positive'
+            )
             return 2
 
         now_ns = time.monotonic_ns()
@@ -156,7 +184,8 @@ class AiModelAdapterNode(Node):
             return 2
         try:
             plan = parse_model_plan(
-                result.content, self._workflows, self._targets, self._max_duration_ms)
+                result.content, self._workflows, self._targets, self._max_duration_ms
+            )
         except ModelPlanError as error:
             invalid_result = BackendResult(
                 result.backend,
@@ -167,7 +196,12 @@ class AiModelAdapterNode(Node):
                 result.provider_response_id,
             )
             self._record(
-                context, invalid_result, 'rejected', ModelRuntimeErrorCode.INVALID_PLAN, None)
+                context,
+                invalid_result,
+                'rejected',
+                ModelRuntimeErrorCode.INVALID_PLAN,
+                None,
+            )
             self._metrics.note_rejection(ModelRuntimeErrorCode.INVALID_PLAN)
             self.get_logger().error(f'model plan rejected: {error}')
             return 2
@@ -180,7 +214,9 @@ class AiModelAdapterNode(Node):
             f'duration_ms={plan.duration_ms}'
         )
         if not self._client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('ExecuteWorkflow server not available after 5 seconds')
+            self.get_logger().error(
+                'ExecuteWorkflow server not available after 5 seconds'
+            )
             self._metrics.note_task(False)
             return 1
 
@@ -210,9 +246,12 @@ class AiModelAdapterNode(Node):
 
         result_future = goal_handle.get_result_async()
         rclpy.spin_until_future_complete(
-            self, result_future, timeout_sec=self._action_timeout_sec)
+            self, result_future, timeout_sec=self._action_timeout_sec
+        )
         if not result_future.done():
-            self.get_logger().error('ExecuteWorkflow result timed out; requesting cancellation')
+            self.get_logger().error(
+                'ExecuteWorkflow result timed out; requesting cancellation'
+            )
             cancel_future = goal_handle.cancel_goal_async()
             rclpy.spin_until_future_complete(self, cancel_future, timeout_sec=2.0)
             self._metrics.note_task(False)
@@ -232,8 +271,8 @@ class AiModelAdapterNode(Node):
             f'error_code={result.result.error_code} message={result.result.message}'
         )
         completed = (
-            result.status == GoalStatus.STATUS_SUCCEEDED and
-            result.result.outcome == ExecuteWorkflow.Result.COMPLETED
+            result.status == GoalStatus.STATUS_SUCCEEDED
+            and result.result.outcome == ExecuteWorkflow.Result.COMPLETED
         )
         self._metrics.note_task(completed)
         return 0 if completed else 4
@@ -248,7 +287,8 @@ class AiModelAdapterNode(Node):
             api_key = os.environ.get(self._api_key_env, '')
             if not api_key:
                 raise ValueError(
-                    f'required API key environment variable is empty: {self._api_key_env}')
+                    f'required API key environment variable is empty: {self._api_key_env}'
+                )
         return OpenAICompatibleBackend(
             endpoint=self._endpoint,
             model_name=self._model_name,
