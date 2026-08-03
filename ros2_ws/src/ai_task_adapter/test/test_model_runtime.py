@@ -32,6 +32,7 @@ def context(request_id='request-1'):
 
 
 class ModelRuntimeTest(unittest.TestCase):
+
     def test_context_has_bounded_deadline_and_no_raw_request(self):
         value = context()
         self.assertEqual(value.deadline_ns, 1_260_000_000)
