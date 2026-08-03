@@ -203,6 +203,15 @@ or actuator motion.
 
 CI exercises the HTTP protocol and contract cases with local fake endpoints.
 
+The model path also exposes explicit `openai_compatible`, `mock`, and `replay`
+backends. Accepted decisions can be recorded as normalized JSONL without the raw
+request or API key, then replayed deterministically by request fingerprint and
+output-schema version. Observation TTL, inference deadline, duplicate admission,
+stale output, timeout, service-crash, duplicate-response, and failure-storm hooks
+all fail closed before `ExecuteWorkflow`. Optional metrics report model latency,
+rejection rate, degradation rate, and task success rate. Backend failures never
+silently become mock motion.
+
 ### ArUco Input
 
 `perception_task_adapter` detects `DICT_4X4_50` markers from an image or USB
