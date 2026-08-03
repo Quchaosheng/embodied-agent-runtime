@@ -306,7 +306,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         cancel_requests_before = self.child_cancel_request_count
         self._future(late_cancel.cancel_goal_async())
         wrapped = self._future(late_cancel.get_result_async(), timeout=3.0)
-        self.assertEqual(wrapped.status, GoalStatus.STATUS_CANCELED)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(wrapped.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
         self.assertEqual(wrapped.result.error_code, 207)
         self._spin_until(lambda: self.child_cancel_count == cancels_before + 1)
@@ -341,12 +341,13 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         self.assertEqual(self.active_child_count, 0)
 
         self.mode = 'never_goal_response'
+        requests_before = self.child_goal_request_count
         never_response = self._send_ready_goal('single_task', 'never-goal-response')
-        self._spin_until(lambda: self.child_goal_request_count == requests_before + 2)
+        self._spin_until(lambda: self.child_goal_request_count == requests_before + 1)
         cancels_before = self.child_cancel_count
         self._future(never_response.cancel_goal_async())
         wrapped = self._future(never_response.get_result_async(), timeout=3.0)
-        self.assertEqual(wrapped.status, GoalStatus.STATUS_CANCELED)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(wrapped.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
         self.assertEqual(wrapped.result.error_code, 207)
         self.shutdown_goal_release.set()
@@ -366,7 +367,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         self._spin_until(lambda: self.child_goal_count == before + 3)
         self._future(cancel_completed.cancel_goal_async())
         wrapped = self._future(cancel_completed.get_result_async())
-        self.assertEqual(wrapped.status, GoalStatus.STATUS_CANCELED)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(wrapped.result.error_code, 208)
 
         self.mode = 'cancel_safe_stop'
@@ -374,7 +375,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         self._spin_until(lambda: self.child_goal_count == before + 4)
         self._future(cancel_safe_stop.cancel_goal_async())
         wrapped = self._future(cancel_safe_stop.get_result_async())
-        self.assertEqual(wrapped.status, GoalStatus.STATUS_CANCELED)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(wrapped.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
         self.assertEqual(wrapped.result.error_code, 204)
 
@@ -398,7 +399,7 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         self._spin_until(lambda: self.child_goal_count == before + 6)
         self._future(timed_out.cancel_goal_async())
         wrapped = self._future(timed_out.get_result_async(), timeout=3.0)
-        self.assertEqual(wrapped.status, GoalStatus.STATUS_CANCELED)
+        self.assertEqual(wrapped.status, GoalStatus.STATUS_ABORTED)
         self.assertEqual(wrapped.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
         time.sleep(0.3)
 
