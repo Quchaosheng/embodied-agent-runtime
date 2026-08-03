@@ -7,15 +7,14 @@ from ai_task_adapter.model_contract import parse_model_plan
 from ai_task_adapter.model_runtime import (
     BackendResult,
     FaultInjectingBackend,
+    make_request_context,
+    MockBackend,
     ModelAdmission,
     ModelRecorder,
     ModelRuntimeErrorCode,
     ModelRuntimeMetrics,
-    MockBackend,
     ReplayBackend,
-    make_request_context,
 )
-
 
 REQUEST = 'Go to dock_a.'
 RESPONSE = '{"workflow_id":"single_task","target_id":"dock_a","duration_ms":1000}'
@@ -33,7 +32,6 @@ def context(request_id='request-1'):
 
 
 class ModelRuntimeTest(unittest.TestCase):
-
     def test_context_has_bounded_deadline_and_no_raw_request(self):
         value = context()
         self.assertEqual(value.deadline_ns, 1_260_000_000)
@@ -105,7 +103,8 @@ class ModelRuntimeTest(unittest.TestCase):
         for mode, error_code in expected.items():
             with self.subTest(mode=mode):
                 result = FaultInjectingBackend(MockBackend(RESPONSE), mode).invoke(
-                    context(), REQUEST)
+                    context(), REQUEST
+                )
                 self.assertFalse(result.succeeded)
                 self.assertEqual(result.error_code, error_code)
 
@@ -119,7 +118,8 @@ class ModelRuntimeTest(unittest.TestCase):
         request_context = context()
         self.assertEqual(admission.admit(request_context, 1_010_000_000), '')
         self.assertEqual(
-            admission.admit(request_context, 1_011_000_000), 'duplicate_request')
+            admission.admit(request_context, 1_011_000_000), 'duplicate_request'
+        )
         self.assertEqual(
             admission.output_allowed(request_context, 1_270_000_000),
             'model_output_expired',
@@ -133,7 +133,8 @@ class ModelRuntimeTest(unittest.TestCase):
             now_ns=1_000_000_000,
         )
         self.assertEqual(
-            admission.admit(future, 1_000_000_000), 'observation_timestamp_future')
+            admission.admit(future, 1_000_000_000), 'observation_timestamp_future'
+        )
         self.assertFalse(admission.note_backend_failure(3_000_000_000))
         self.assertFalse(admission.note_backend_failure(3_010_000_000))
         self.assertTrue(admission.note_backend_failure(3_020_000_000))
