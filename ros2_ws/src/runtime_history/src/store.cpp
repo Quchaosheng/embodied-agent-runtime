@@ -138,6 +138,8 @@ bool Store::insert(const TaskRecord & record)
 
   try {
     execute(db_, "BEGIN IMMEDIATE");
+    // Idempotence is part of the history contract: repeated terminal events
+    // must not create a second row for the same task completion.
     Statement statement(
       db_,
       "INSERT OR IGNORE INTO task_runs ("

@@ -193,6 +193,8 @@ private:
   BT::NodeStatus onStart() override
   {
     state_->mark("ExecuteTask", 0.25F);
+    // Derive the child budget from the parent's remaining steady-clock time so
+    // a late Action dispatch cannot extend the workflow deadline.
     const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
       state_->deadline - std::chrono::steady_clock::now());
     if (remaining <= 0ns) {
