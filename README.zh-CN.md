@@ -55,9 +55,10 @@ flowchart LR
 
 ## 已验证的软件证据
 
-2026-07-29，本机 WSL2/Jazzy 隔离构建完成 **11 个包、393 个测试、0 错误、
-0 失败、72 跳过**。GitHub Actions 也通过 Windows 工具检查，以及 Ubuntu
-24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。
+2026-07-29，本机 WSL2/Jazzy 隔离构建完成 **11 个包、120 个 GoogleTest 用例和
+18 个 pytest 用例**。`colcon test-result` 的聚合记录还包含测试运行器与
+`ament_lint` 条目，不能把聚合数写成行为用例数。GitHub Actions 也通过 Windows
+工具检查，以及 Ubuntu 24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。
 
 当前 11 包代码也已在 Ubuntu 22.04 / ROS 2 Humble 的 X5 上原生构建。顺序执行的
 ARM smoke 通过 **311 个测试、0 错误、0 失败、72 跳过**。Humble smoke 只排除
@@ -178,7 +179,7 @@ Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演
 
 | 环境 | 当前状态 | 证据 |
 | --- | --- | --- |
-| Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建和 393 测试 |
+| Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建、120 个 GoogleTest 用例和 18 个 pytest 用例 |
 | Ubuntu 24.04 + Jazzy x86_64 | CI 已验证 | 构建、测试、配置检查和条件式 `vcan0` E2E |
 | 通用 ARM64 Linux | X5 已验证，其他板卡已准备 | X5 原生 Humble 构建/测试和可移植脚本 |
 | RK3568 | CPU-only ARM64 配置，等待原生运行 | 不声明厂商 NPU/GPIO/相机能力 |
