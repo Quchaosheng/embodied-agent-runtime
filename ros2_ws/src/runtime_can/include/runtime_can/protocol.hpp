@@ -14,6 +14,7 @@ constexpr std::uint8_t kProtocolVersion = 1;
 constexpr std::uint8_t kPayloadSize = 8;
 constexpr std::uint8_t kStopOpcode = 0xFF;
 constexpr std::uint16_t kApplicationCommandIdMax = 0x7FFF;
+// STOP ACKs use a disjoint command-id range and cannot match an application ACK.
 constexpr std::uint16_t kStopCommandIdMin = 0x8000;
 
 struct RawFrame

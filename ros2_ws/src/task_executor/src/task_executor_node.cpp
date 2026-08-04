@@ -118,6 +118,9 @@ public:
     {
       std::lock_guard<std::mutex> lock(workers_mutex_);
       if (workers_active_ != 0) {
+        // Destruction cannot safely abandon an in-flight Action worker or its
+        // device-cancel path, so fail loudly instead of leaving a live thread
+        // with references to a destroyed ROS node.
         RCLCPP_FATAL(get_logger(), "Task Executor destroyed before workers drained");
         std::terminate();
       }
@@ -365,6 +368,8 @@ private:
       return;
     }
 
+    // Reserve bounded time for the child ACK path and the later STOP recovery;
+    // an ACK timeout must never consume the parent task's whole deadline.
     const auto per_ack_budget = std::max<std::int64_t>(remaining.count() / 3, 1);
     const auto child_ack_timeout_ms = std::min(ack_timeout_ms_, per_ack_budget);
     ExecuteDeviceCommand::Goal device_goal;
@@ -768,6 +773,8 @@ private:
     const std::shared_ptr<GoalHandle> & goal_handle, Transition transition)
   {
     bool expected = false;
+    // Only the first terminal transition may publish the result and TaskEvent;
+    // cancel, deadline, shutdown, and the child callback can race here.
     if (!parent_terminal_.compare_exchange_strong(expected, true)) {
       return false;
     }

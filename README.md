@@ -79,6 +79,12 @@ code, message, event timestamp, and duration for history and statistics. It is
 not another command channel and does not prove that a physical actuator moved
 or stopped.
 
+The cancellation and STOP evidence path is shown in
+[`docs/cancel-stop-sequence.md`](docs/cancel-stop-sequence.md). A software
+cancel is an intent; the runtime only records the device-side STOP response
+after matching the STOP command ID. That protocol evidence still does not
+prove physical motion or stopping distance.
+
 ## Verified Software Evidence
 
 On 2026-07-29, this Windows host completed the isolated WSL2 build and test

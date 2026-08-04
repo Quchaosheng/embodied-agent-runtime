@@ -133,6 +133,8 @@ private:
     }
 
     bool expected = false;
+    // A single active wire transaction keeps response matching unambiguous;
+    // concurrent goals could otherwise consume each other's command ACKs.
     if (!active_goal_.compare_exchange_strong(expected, true)) {
       RCLCPP_WARN(get_logger(), "Rejecting command_id=%u: bridge is busy", goal->command_id);
       return rclcpp_action::GoalResponse::REJECT;
