@@ -169,6 +169,32 @@ colcon test --return-code-on-test-failure
 colcon test-result --test-result-base build --verbose
 ```
 
+### Docker software E2E
+
+From a Linux host with Docker Engine and GNU Make, build and run the software
+E2E from the repository root:
+
+```bash
+git clone https://github.com/Quchaosheng/embodied-agent-runtime.git
+cd embodied-agent-runtime
+make docker-build
+make demo
+```
+
+`make image` is an alias for `make docker-build`. The image is based on
+`ros:jazzy-ros-base`, resolves the checked-in package manifests with `rosdep`,
+and builds `ros2_ws` with `colcon`. `make demo` runs the existing
+`scripts/run_industrial_e2e.sh` inside Docker with host networking and
+`--privileged`; these Linux-only permissions allow the script to create and use
+`vcan0` (`SETUP_VCAN=1`). `make demo-local` is the container-side entry point
+and should not be used as a substitute for the Docker wrapper.
+
+This is a software/virtual-CAN E2E using `vcan0` and the repository's virtual
+CAN device. A passing run is not evidence of an X5 real-device run, a camera,
+physical CAN adapters, a real actuator, or hardware emergency-stop behavior.
+Docker Desktop on Windows or macOS is not a supported host for this vcan demo;
+use a Linux Docker host.
+
 ### Native ARM64
 
 Do not reuse x86_64 build, install, or log directories on an ARM board.
@@ -306,6 +332,10 @@ wiring, but not motor behavior.
 
 The loopback Gateway also does not yet provide TLS, authentication, high
 availability, or measured production-throughput evidence.
+
+## Development Workflow
+
+This project combines direct implementation, upstream component integration, and AI-assisted iteration. Runtime capabilities are evidenced only by source code, tests, CI, or explicitly labeled hardware evidence; plans and generated text are not runtime evidence. Public Git history is kept unchanged.
 
 ## License
 

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 WORKSPACE=${WORKSPACE:-${HOME}/robot-runtime-ws}
 EVIDENCE=/tmp/runtime-industrial-evidence
+ros_distro=${ROS_DISTRO:-jazzy}
 ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-127}
 GATEWAY_PORT=${GATEWAY_PORT:-50170}
 OVERALL_TIMEOUT_SECONDS=${OVERALL_TIMEOUT_SECONDS:-120}
@@ -142,7 +143,7 @@ clean_ros_environment() {
   unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION
   export PATH=/usr/sbin:/usr/bin:/bin
   set +u
-  source /opt/ros/jazzy/setup.bash
+  source "/opt/ros/$ros_distro/setup.bash"
   source "$WORKSPACE/install/setup.bash"
   set -u
 }
