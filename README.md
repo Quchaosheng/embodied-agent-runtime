@@ -333,6 +333,11 @@ wiring, but not motor behavior.
 The loopback Gateway also does not yet provide TLS, authentication, high
 availability, or measured production-throughput evidence.
 
+## Engineering Case Studies
+
+- [Parent and child timeout budget ownership: why 113 could hide 204](docs/case-studies/parent-child-timeout-budget.md)
+- [Why STOP ACKs use a separate command-id namespace](docs/case-studies/stop-ack-command-namespace.md)
+
 ## Development Workflow
 
 This project combines direct implementation, upstream component integration, and AI-assisted iteration. Runtime capabilities are evidenced only by source code, tests, CI, or explicitly labeled hardware evidence; plans and generated text are not runtime evidence. Public Git history is kept unchanged.
