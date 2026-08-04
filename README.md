@@ -3,7 +3,7 @@
 **English** | [简体中文](README.zh-CN.md)
 
 [![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros)](https://docs.ros.org/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20(CI)%20%7C%20Humble%20(X5)-22314E?logo=ros)](https://docs.ros.org/)
 [![Platforms](https://img.shields.io/badge/platform-x86__64%20%7C%20ARM64-4C8BF5)](#platform-status)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
@@ -81,22 +81,26 @@ or stopped.
 
 ## Verified Software Evidence
 
-On 2026-07-29, this Windows host completed the isolated WSL2/Jazzy build and
-test flow for 11 packages. The repository contains **120 GoogleTest cases and
-18 pytest cases**. `colcon test-result` also counts test-runner and
-`ament_lint` records, so its aggregate total must not be presented as the
-number of functional test cases.
+On 2026-07-29, this Windows host completed the isolated WSL2 build and test
+flow in Ubuntu 24.04 with ROS 2 Jazzy for 11 packages. The checked-in test
+sources define **120 GoogleTest cases and 18 pytest cases**. These are
+functional test-case counts, not a pass-count or a `colcon test-result` record
+count. `colcon test-result` also includes test-runner and `ament_lint` records,
+so its aggregate total must not be presented as the number of functional test
+cases.
 
 GitHub Actions also passed the Windows tooling checks and the Ubuntu
 24.04/Jazzy build, test, ARM64-configuration, and conditional `vcan0` workflow.
 
 The current 11-package tree also built natively on an X5 running Ubuntu
 22.04/Humble. Its sequential ARM smoke completed without reported test
-failures. Humble smoke excludes only its distro `uncrustify` 0.72 check, whose
-output differs from the canonical Jazzy formatter enforced by CI. The X5 also
-rejected the model adapter in its default-disabled mode, then validated a local
-fake endpoint plan as `single_task/dock_a/1000 ms` and stopped at the
-deliberately offline `ExecuteWorkflow` server without touching CAN.
+failures; this README does not treat the smoke run's aggregate records as a
+functional test-case count. Humble smoke excludes only its distro
+`uncrustify` 0.72 check, whose output differs from the canonical Jazzy
+formatter enforced by CI. The X5 also rejected the model adapter in its
+default-disabled mode, then validated a local fake endpoint plan as
+`single_task/dock_a/1000 ms` and stopped at the deliberately offline
+`ExecuteWorkflow` server without touching CAN.
 
 On 2026-07-28, `/dev/video0` detected a physical `DICT_4X4_50` ID 10 marker in
 30/30 sampled frames. Two CANable2 adapters also appeared as `can1` and `can2`;
@@ -145,6 +149,11 @@ environment, never invokes `sudo`, and keeps build artifacts in the WSL-native
 selected behavior without invoking WSL.
 
 ### Ubuntu 24.04 / ROS 2 Jazzy
+
+Ubuntu 24.04 with ROS 2 Jazzy is the primary x86_64, WSL2, CI, and Docker
+baseline. The X5 evidence below was collected separately on Ubuntu 22.04 with
+ROS 2 Humble; it is not a claim that the X5 was validated on Jazzy, and the
+two distributions must not be mixed in one environment.
 
 This path assumes a working Ubuntu 24.04 installation with ROS 2 Jazzy and the
 standard ROS development tools already installed. A fresh machine must first
@@ -198,6 +207,9 @@ use a Linux Docker host.
 ### Native ARM64
 
 Do not reuse x86_64 build, install, or log directories on an ARM board.
+The generic ARM64 example below is the Jazzy/Ubuntu 24.04 profile. The RK3568
+example is the Humble/Ubuntu 22.04 profile; the X5 evidence below was also
+collected separately with Humble. These are separate distribution/OS pairs.
 
 ```bash
 RUNTIME_PLATFORM_PROFILE=generic-arm64 ROS_DISTRO=jazzy \
@@ -277,6 +289,9 @@ deployment security, device protocol, and hardware safety system.
 `perception_task_adapter` detects `DICT_4X4_50` markers from an image or USB
 camera and submits through `ExecuteWorkflow`.
 
+This is a marker-based image adapter, not a vision-language model (VLM)
+integration. No VLM capability is claimed.
+
 | Marker ID | Workflow | Target |
 | --- | --- | --- |
 | `10` | `single_task` | `dock_a` |
@@ -291,11 +306,11 @@ X5/UVC evidence is documented below.
 
 | Environment | Current status | Evidence |
 | --- | --- | --- |
-| Windows + WSL2, x86_64 | Software verified | Isolated Jazzy build; 120 GoogleTest cases plus 18 pytest cases |
+| Windows + WSL2, x86_64 | Software verified | Isolated Ubuntu 24.04/Jazzy build; 120 GoogleTest cases plus 18 pytest cases defined in the checked-in test sources |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
-| Generic ARM64 Linux | X5 verified; other boards prepared | Native Humble build/test on X5 plus portable scripts |
+| Generic ARM64 Linux | Profile and scripts prepared; board-specific execution not claimed | `generic-arm64` Jazzy/Ubuntu 24.04 configuration |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |
-| X5 | Native runtime and physical I/O bench verified | Humble build, 311-test ARM smoke, bounded fake-model check, UVC ArUco, and dual-CANable traffic |
+| X5 | Native runtime and physical I/O bench verified | Ubuntu 22.04/Humble build, sequential ARM smoke with no reported test failures, bounded fake-model check, UVC ArUco, and dual-CANable traffic |
 | 32-bit ARM | Unsupported | The runtime targets 64-bit Linux |
 
 Board-specific BPU/NPU runtimes, cameras, GPIO, and physical CAN adapters stay
@@ -328,14 +343,14 @@ wiring, but not motor behavior.
 | Physical X5 UVC capture and stable ArUco ID 10 detection | Camera calibration, adverse-lighting coverage, or model accuracy |
 | Physical two-adapter SocketCAN traffic plus `vcan0` protocol tests | Actuator behavior or robot closed-loop control |
 | Software `SAFE_STOP` outcomes and persisted task evidence | Hardware emergency stop or measured stopping distance |
-| x86_64 Jazzy and native X5/Humble software runs | Native RK3568 execution and vendor accelerators |
+| Separate x86_64 Jazzy and native X5/Humble software runs | Native RK3568 execution and vendor accelerators |
 
 The loopback Gateway also does not yet provide TLS, authentication, high
 availability, or measured production-throughput evidence.
 
 ## Development Workflow
 
-This project combines direct implementation, upstream component integration, and AI-assisted iteration. Runtime capabilities are evidenced only by source code, tests, CI, or explicitly labeled hardware evidence; plans and generated text are not runtime evidence. Public Git history is kept unchanged.
+This project combines direct implementation, upstream component integration, and AI-assisted iteration. "AI-assisted" describes a development aid only; it does not establish authorship, runtime autonomy, VLM capability, or validation by generated text. Runtime capabilities are evidenced only by source code, tests, CI, or explicitly labeled hardware evidence; plans, generated text, and AI assistance alone are not runtime evidence. Jazzy and Humble claims refer to the separate environments listed above. Public Git history is kept unchanged.
 
 ## License
 

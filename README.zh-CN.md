@@ -3,7 +3,7 @@
 [English](README.md) | **简体中文**
 
 [![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20%7C%20Humble-22314E?logo=ros)](https://docs.ros.org/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20(CI)%20%7C%20Humble%20(X5)-22314E?logo=ros)](https://docs.ros.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2EA44F)](LICENSE)
 
 这是一个执行路径固定、可审查的 ROS 2 任务运行时。它将受控工作流请求交由
@@ -55,17 +55,19 @@ flowchart LR
 
 ## 已验证的软件证据
 
-2026-07-29，本机 WSL2/Jazzy 隔离构建完成 **11 个包、120 个 GoogleTest 用例和
-18 个 pytest 用例**。`colcon test-result` 的聚合记录还包含测试运行器与
-`ament_lint` 条目，不能把聚合数写成行为用例数。GitHub Actions 也通过 Windows
-工具检查，以及 Ubuntu 24.04/Jazzy 构建、测试、ARM64 配置和条件式 `vcan0` 工作流。
+2026-07-29，本机在 Ubuntu 24.04 / ROS 2 Jazzy 中完成 WSL2 隔离构建和测试，覆盖
+11 个包。仓库中已提交的测试源码定义了 **120 个 GoogleTest 用例和 18 个 pytest
+用例**；这是行为测试用例数，不是通过数，也不是 `colcon test-result` 的记录数。
+后者还包含测试运行器和 `ament_lint` 条目，不能把聚合数写成行为用例数。GitHub
+Actions 也通过 Windows 工具检查，以及 Ubuntu 24.04/Jazzy 构建、测试、ARM64 配置
+和条件式 `vcan0` 工作流。
 
 当前 11 包代码也已在 Ubuntu 22.04 / ROS 2 Humble 的 X5 上原生构建。顺序执行的
-ARM smoke 通过 **311 个测试、0 错误、0 失败、72 跳过**。Humble smoke 只排除
-发行版自带的 `uncrustify` 0.72，因为它与 CI 使用的 Jazzy 标准格式器输出不一致；
-代码风格仍由 Jazzy CI 强制检查。X5 还验证了模型适配器默认禁用会拒绝运行，并从
-本地假接口严格解析出 `single_task/dock_a/1000 ms`；随后在故意离线的
-`ExecuteWorkflow` 处停止，没有触碰 CAN。
+ARM smoke 未报告测试失败；本文不把该次 smoke 的聚合记录当作行为测试用例数。
+Humble smoke 只排除发行版自带的 `uncrustify` 0.72，因为它与 CI 使用的 Jazzy 标准
+格式器输出不一致；代码风格仍由 Jazzy CI 强制检查。X5 还验证了模型适配器默认禁用
+会拒绝运行，并从本地假接口严格解析出 `single_task/dock_a/1000 ms`；随后在故意
+离线的 `ExecuteWorkflow` 处停止，没有触碰 CAN。
 
 2026-07-28，实体 UVC 摄像头通过 `/dev/video0` 连续 30/30 帧识别出
 `DICT_4X4_50` 的 ID 10 标记。两只 CANable2 也被识别为 `can1`、`can2`，并通过
@@ -100,6 +102,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 ### Ubuntu 24.04 / ROS 2 Jazzy
 
+Ubuntu 24.04 / ROS 2 Jazzy 是 x86_64、WSL2、CI 和 Docker 的主要基线。下文的 X5
+证据是在 Ubuntu 22.04 / ROS 2 Humble 上单独采集的；不表示 X5 已在 Jazzy 上验证，
+两个发行版也不能混用在同一环境中。
+
 ```bash
 set +u
 source /opt/ros/jazzy/setup.bash
@@ -114,6 +120,8 @@ colcon test-result --test-result-base build --verbose
 ### 原生 ARM64
 
 ARM 板上不得复用 x86_64 的 `build`、`install` 或 `log` 目录。
+下面的通用 ARM64 示例使用 Jazzy/Ubuntu 24.04；RK3568 示例使用 Humble/Ubuntu
+22.04；下文的 X5 证据也单独使用 Humble。这些是分开的发行版/操作系统配对。
 
 ```bash
 RUNTIME_PLATFORM_PROFILE=generic-arm64 ROS_DISTRO=jazzy \
@@ -139,8 +147,8 @@ ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和�
 ## 可选工作流输入
 
 原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配。新增的
-`ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 接口，但默认
-禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
+`ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 或 Responses
+接口，但默认禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
 并通过白名单和时限校验后才能提交 `ExecuteWorkflow`；模型不能直接发送 CAN 或设备
 命令。
 
@@ -150,6 +158,7 @@ ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和�
 export OPENAI_API_KEY='replace-me'
 ros2 run ai_task_adapter ai_model_adapter_node.py --ros-args \
   --params-file "$(ros2 pkg prefix ai_task_adapter)/share/ai_task_adapter/config/ai_model_adapter.yaml" \
+  -p mode:=openai_compatible \
   -p request:='去 dock_a。'
 ```
 
@@ -160,8 +169,16 @@ ros2 run ai_task_adapter ai_model_adapter_node.py --ros-args \
 进入 ROS Action 前失败关闭。Goal 响应和 Action 结果同样有超时边界；结果超时会请求
 取消并按失败退出。
 
-CI 使用本地假模型接口验证 HTTP 协议和 5 个契约用例。目前不宣称真实 OpenAI 或
-Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演示视频。
+对于 `/v1/responses`，设置 `api_style:=responses` 和对应的 `model_endpoint`；请求会使用
+`instructions` 和 `input`，同样执行白名单和超时校验。CI 对两种 API 风格都使用本地假
+接口。X5 曾运行配置好的 Responses 兼容服务；这只证明有界适配路径的集成，不证明模型
+质量、可用性或执行器运动。
+
+CI 使用本地假模型接口验证 HTTP 协议和契约用例。安装配置默认保持 `disabled`；显式
+启用时，本文档的运行 backend 是 `openai_compatible`。模型准入边界只在工作流接纳前
+失败关闭：格式错误、超时、额外字段或非白名单输出会在提交新的 `ExecuteWorkflow`
+goal 前被拒绝。这不会取消已经接纳的 goal，也不提供 ROS 2/DDS 授权、CAN 鉴权或物理
+急停保证；这些分别属于 Action 取消路径、部署安全、设备协议和硬件安全系统。
 
 `perception_task_adapter` 从图像或 USB 相机检测 `DICT_4X4_50` 标记，并通过
 `ExecuteWorkflow` 提交：ID `10` 映射 `single_task/dock_a`，ID `20` 映射
@@ -169,21 +186,17 @@ Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演
 重新启用，并拒绝包含多个已映射标记的画面。CI 感知测试使用生成图像，下面单独
 展示 X5 实体摄像头证据。
 
-模型路径同时提供显式的 `openai_compatible`、`mock` 和 `replay` backend。通过校验的
-决策可按请求指纹和输出版本写入不含原始请求、API Key 的规范化 JSONL，并做确定性
-回放。Observation TTL、推理 deadline、重复请求、过期输出、超时、服务崩溃、重复
-响应和失败风暴都在 `ExecuteWorkflow` 前失败关闭；可选指标文件记录模型延迟、拒绝率、
-降级率和任务成功率。后端失败不会暗中变成 mock 运动。
+这是基于标记的图像适配器，不是视觉语言模型（VLM）集成；本文不声称具备 VLM 能力。
 
 ## 平台状态
 
 | 环境 | 当前状态 | 证据 |
 | --- | --- | --- |
-| Windows + WSL2 x86_64 | 软件已验证 | 隔离 Jazzy 构建、120 个 GoogleTest 用例和 18 个 pytest 用例 |
+| Windows + WSL2 x86_64 | 软件已验证 | Ubuntu 24.04/Jazzy 隔离构建；已提交测试源码定义 120 个 GoogleTest 用例和 18 个 pytest 用例 |
 | Ubuntu 24.04 + Jazzy x86_64 | CI 已验证 | 构建、测试、配置检查和条件式 `vcan0` E2E |
-| 通用 ARM64 Linux | X5 已验证，其他板卡已准备 | X5 原生 Humble 构建/测试和可移植脚本 |
+| 通用 ARM64 Linux | 配置和脚本已准备，不声称板卡已验证 | `generic-arm64` Jazzy/Ubuntu 24.04 配置 |
 | RK3568 | CPU-only ARM64 配置，等待原生运行 | 不声明厂商 NPU/GPIO/相机能力 |
-| X5 | 原生运行时和实体 I/O 台架已验证 | Humble 构建、311 项 ARM smoke、受限假模型检查、UVC ArUco 和双 CANable 通信 |
+| X5 | 原生运行时和实体 I/O 台架已验证 | Ubuntu 22.04/Humble 构建、未报告测试失败的顺序 ARM smoke、受限假模型检查、UVC ArUco 和双 CANable 通信 |
 | 32-bit ARM | 不支持 | 运行时目标为 64-bit Linux |
 
 ## 硬件演示
@@ -197,7 +210,7 @@ Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演
 连续三帧确认以及 `single_task/dock_a` 映射。录制时工作流 Action 服务器保持离线，
 因此没有发送工作流 CAN 帧，也没有运动命令。
 
-双 CANable 台架测试独立使用实体 `can1`/`can2` 完成两个方向的 `cansend`/`candump`。
+双 CANable 台架测试另行使用实体 `can1`/`can2` 完成两个方向的 `cansend`/`candump`。
 它证明 Linux SocketCAN、USB-CAN 和接线可用，不代表已经验证电机行为。
 
 ## 证据边界
@@ -209,9 +222,16 @@ Ollama 的推理质量；只有配置真实服务并完成录制后才补 AI 演
 | X5 实体 UVC 和稳定 ArUco ID 10 检测 | 相机标定、复杂光照覆盖或模型准确率 |
 | 双适配器物理 SocketCAN 通信和 `vcan0` 协议测试 | 执行器行为或机器人闭环控制 |
 | 软件 `SAFE_STOP` 和持久化任务证据 | 硬件急停或实测停止距离 |
-| x86_64 Jazzy 和 X5/Humble 原生运行 | RK3568 原生执行和厂商加速器 |
+| 分开的 x86_64 Jazzy 和 X5/Humble 原生运行 | RK3568 原生执行和厂商加速器 |
 
 Loopback Gateway 尚未提供 TLS、身份认证、高可用或生产吞吐量证据。
+
+## 开发流程
+
+本项目包含直接实现、上游组件集成和 AI 辅助迭代。“AI 辅助”只描述开发辅助，
+不用于认定作者身份、运行时自主性或 VLM 能力，也不是验证方法。运行时能力仅由
+源代码、测试、CI 或明确标注的硬件证据支持；计划、生成文本和 AI 辅助本身不是运行时
+证据。Jazzy 和 Humble 的表述对应上文列出的分开环境。公共 Git 历史保持不变。
 
 ## 许可证
 
