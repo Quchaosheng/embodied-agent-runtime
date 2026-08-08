@@ -18,6 +18,8 @@ public:
   std::size_t size() const;
 
 private:
+  static bool has_non_whitespace(std::string_view value);
+
   std::unordered_set<std::string> targets_;
 };
 
