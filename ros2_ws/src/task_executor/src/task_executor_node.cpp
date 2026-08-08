@@ -55,6 +55,8 @@ public:
       "cancel_timeout_ms", 1000);
     const auto configured_validation_delay = declare_parameter<std::int64_t>(
       "validation_delay_ms", 200);
+    const auto configured_event_history_depth = declare_parameter<std::int64_t>(
+      "task_event_history_depth", 128);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
 
     if (targets.size() != target_arguments.size() || targets.empty()) {
@@ -71,6 +73,9 @@ public:
     if (diagnostic_period_ms_ <= 0 || diagnostic_period_ms_ > 60000) {
       throw std::invalid_argument("diagnostic_period_ms must be in [1, 60000]");
     }
+    if (configured_event_history_depth <= 0 || configured_event_history_depth > 1000) {
+      throw std::invalid_argument("task_event_history_depth must be in [1, 1000]");
+    }
 
     for (std::size_t index = 0; index < targets.size(); ++index) {
       if (target_arguments[index] < std::numeric_limits<std::int32_t>::min() ||
@@ -85,6 +90,7 @@ public:
     device_opcode_ = static_cast<std::uint8_t>(configured_opcode);
     ack_timeout_ms_ = configured_ack_timeout;
     cancel_timeout_ms_ = configured_cancel_timeout;
+    task_event_history_depth_ = static_cast<std::size_t>(configured_event_history_depth);
     validation_delay_ms_ = static_cast<int>(
       std::clamp<std::int64_t>(configured_validation_delay, 1, 60000));
     validator_ = std::make_unique<task_executor::TargetValidator>(targets);
@@ -94,7 +100,8 @@ public:
     diagnostics_publisher_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
       "/diagnostics", rclcpp::QoS(10).reliable());
     task_event_publisher_ = create_publisher<robot_task_interfaces::msg::TaskEvent>(
-      "/runtime/task_events", rclcpp::QoS(32).reliable());
+      "/runtime/task_events",
+      rclcpp::QoS(rclcpp::KeepLast(task_event_history_depth_)).reliable().transient_local());
     diagnostics_timer_ = create_wall_timer(
       std::chrono::milliseconds(diagnostic_period_ms_),
       [this]() {publish_diagnostics();});
@@ -109,8 +116,9 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Orchestrating Task Executor ready targets=%zu ack_timeout_ms=%ld diagnostic_period_ms=%ld",
-      validator_->size(), ack_timeout_ms_, diagnostic_period_ms_);
+      "Orchestrating Task Executor ready targets=%zu ack_timeout_ms=%ld "
+      "diagnostic_period_ms=%ld task_event_history_depth=%zu",
+      validator_->size(), ack_timeout_ms_, diagnostic_period_ms_, task_event_history_depth_);
   }
 
   ~TaskExecutorNode() override
@@ -939,6 +947,7 @@ private:
   std::int64_t ack_timeout_ms_{500};
   std::int64_t cancel_timeout_ms_{1000};
   std::int64_t diagnostic_period_ms_{1000};
+  std::size_t task_event_history_depth_{128};
   std::uint8_t device_opcode_{1};
   std::uint16_t next_command_id_{1};
   std::unique_ptr<task_executor::TargetValidator> validator_;
