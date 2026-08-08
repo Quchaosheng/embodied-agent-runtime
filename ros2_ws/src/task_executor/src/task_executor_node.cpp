@@ -8,6 +8,7 @@
 #include "robot_task_interfaces/action/execute_task.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -203,6 +204,13 @@ private:
            (duration.sec > 0 || duration.nanosec > 0);
   }
 
+  static bool has_non_whitespace(const std::string_view value)
+  {
+    return std::any_of(value.begin(), value.end(), [](const unsigned char character) {
+      return std::isspace(character) == 0;
+    });
+  }
+
   static std::chrono::steady_clock::duration to_steady_duration(
     const builtin_interfaces::msg::Duration & duration)
   {
@@ -219,7 +227,7 @@ private:
       RCLCPP_WARN(get_logger(), "Rejecting goal: EXECUTOR_SHUTTING_DOWN");
       return rclcpp_action::GoalResponse::REJECT;
     }
-    if (goal->task_id.empty()) {
+    if (!has_non_whitespace(goal->task_id)) {
       RCLCPP_WARN(get_logger(), "Rejecting goal: EMPTY_TASK_ID");
       return rclcpp_action::GoalResponse::REJECT;
     }
@@ -227,7 +235,7 @@ private:
       RCLCPP_WARN(get_logger(), "Rejecting task_id=%s: INVALID_DURATION", goal->task_id.c_str());
       return rclcpp_action::GoalResponse::REJECT;
     }
-    if (!validator_->is_known(goal->target_id)) {
+    if (!has_non_whitespace(goal->target_id) || !validator_->is_known(goal->target_id)) {
       RCLCPP_WARN(
         get_logger(), "Rejecting task_id=%s target_id=%s: INVALID_TARGET",
         goal->task_id.c_str(), goal->target_id.c_str());
