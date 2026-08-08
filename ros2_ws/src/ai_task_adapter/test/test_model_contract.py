@@ -106,6 +106,22 @@ class ModelContractTest(unittest.TestCase):
                 5000,
             )
 
+    def test_rejects_empty_allowlists(self):
+        with self.assertRaisesRegex(ModelPlanError, 'must not be empty'):
+            parse_model_plan(
+                '{"workflow_id":"single_task","target_id":"dock_a","duration_ms":1000}',
+                [],
+                ['dock_a'],
+                5000,
+            )
+        with self.assertRaisesRegex(ModelPlanError, 'must not be empty'):
+            parse_model_plan(
+                '{"workflow_id":"single_task","target_id":"dock_a","duration_ms":1000}',
+                ['single_task'],
+                [],
+                5000,
+            )
+
     def test_openai_compatible_transport_supports_local_endpoint_without_key(self):
         server = HTTPServer(('127.0.0.1', 0), _ChatHandler)
         thread = Thread(target=server.serve_forever, daemon=True)

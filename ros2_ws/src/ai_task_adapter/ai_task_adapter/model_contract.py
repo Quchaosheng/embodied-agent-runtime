@@ -56,6 +56,8 @@ def parse_model_plan(
 ) -> ModelWorkflowPlan:
     workflow_set = set(workflows)
     target_set = set(targets)
+    if not workflow_set or not target_set:
+        raise ModelPlanError('workflow and target allowlists must not be empty')
     try:
         payload = json.loads(content)
     except json.JSONDecodeError as error:
