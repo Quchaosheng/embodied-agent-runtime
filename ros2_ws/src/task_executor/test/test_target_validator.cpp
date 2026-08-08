@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 TEST(TargetValidatorTest, AcceptsConfiguredTargets)
 {
   const task_executor::TargetValidator validator({"dock_a", "home"});
@@ -23,4 +27,23 @@ TEST(TargetValidatorTest, RemovesEmptyAndDuplicateConfigurationEntries)
   const task_executor::TargetValidator validator({"dock_a", "", "dock_a"});
 
   EXPECT_EQ(validator.size(), 1U);
+}
+
+TEST(TargetValidatorTest, RejectsConfigurationWithNoUsableTargets)
+{
+  const std::vector<std::string> no_entries{};
+  const std::vector<std::string> one_empty{""};
+  const std::vector<std::string> only_empty{"", ""};
+
+  EXPECT_THROW(task_executor::TargetValidator(no_entries), std::invalid_argument);
+  EXPECT_THROW(task_executor::TargetValidator(one_empty), std::invalid_argument);
+  EXPECT_THROW(task_executor::TargetValidator(only_empty), std::invalid_argument);
+}
+
+TEST(TargetValidatorTest, AcceptsSingleTargetAfterErasingEmptyEntries)
+{
+  const task_executor::TargetValidator validator({"", "dock_a"});
+
+  EXPECT_EQ(validator.size(), 1U);
+  EXPECT_TRUE(validator.is_known("dock_a"));
 }
