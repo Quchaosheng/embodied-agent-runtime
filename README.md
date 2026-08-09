@@ -1,6 +1,6 @@
-# Embodied Agent Runtime
+﻿# Embodied Agent Runtime
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [绠€浣撲腑鏂嘳(README.zh-CN.md)
 
 [![ROS 2 CI](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/Quchaosheng/embodied-agent-runtime/actions/workflows/ros2-ci.yml)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20(CI)%20%7C%20Humble%20(X5)-22314E?logo=ros)](https://docs.ros.org/)
@@ -356,7 +356,7 @@ availability, or measured production-throughput evidence.
 
 ## Development Workflow
 
-This project combines direct implementation, upstream component integration, and AI-assisted iteration. "AI-assisted" describes a development aid only; it does not establish authorship, runtime autonomy, VLM capability, or validation by generated text. Runtime capabilities are evidenced only by source code, tests, CI, or explicitly labeled hardware evidence; plans, generated text, and AI assistance alone are not runtime evidence. Jazzy and Humble claims refer to the separate environments listed above. Public Git history is kept unchanged.
+
 
 ## License
 
