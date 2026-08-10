@@ -354,10 +354,6 @@ wiring, but not motor behavior.
 The loopback Gateway also does not yet provide TLS, authentication, high
 availability, or measured production-throughput evidence.
 
-## Development Workflow
-
-
-
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE). Third-party attribution is in
