@@ -215,7 +215,7 @@ private:
   static bool has_non_whitespace(const std::string_view value)
   {
     return std::any_of(value.begin(), value.end(), [](const unsigned char character) {
-      return std::isspace(character) == 0;
+               return std::isspace(character) == 0;
     });
   }
 
