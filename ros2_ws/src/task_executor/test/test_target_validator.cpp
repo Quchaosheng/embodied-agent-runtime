@@ -36,10 +36,10 @@ TEST(TargetValidatorTest, RejectsConfigurationWithNoUsableTargets)
   const std::vector<std::string> only_empty{"", ""};
   const std::vector<std::string> only_whitespace{"  ", "\t"};
 
-  EXPECT_THROW(task_executor::TargetValidator(no_entries), std::invalid_argument);
-  EXPECT_THROW(task_executor::TargetValidator(one_empty), std::invalid_argument);
-  EXPECT_THROW(task_executor::TargetValidator(only_empty), std::invalid_argument);
-  EXPECT_THROW(task_executor::TargetValidator(only_whitespace), std::invalid_argument);
+  EXPECT_THROW((task_executor::TargetValidator{no_entries}), std::invalid_argument);
+  EXPECT_THROW((task_executor::TargetValidator{one_empty}), std::invalid_argument);
+  EXPECT_THROW((task_executor::TargetValidator{only_empty}), std::invalid_argument);
+  EXPECT_THROW((task_executor::TargetValidator{only_whitespace}), std::invalid_argument);
 }
 
 TEST(TargetValidatorTest, AcceptsSingleTargetAfterErasingEmptyEntries)
