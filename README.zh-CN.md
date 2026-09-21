@@ -53,6 +53,24 @@ flowchart LR
 | `ai_task_adapter` | 确定性规则规划器和可选 OpenAI 兼容模型适配器 |
 | `perception_task_adapter` | 可选 ArUco 图像或 USB 相机触发器 |
 
+### Action 分层与 TaskEvent
+
+运行时使用三层职责分离的 ROS 2 Action：
+
+1. `ExecuteWorkflow` 接收白名单工作流请求，并运行固定的 BehaviorTree.CPP 编排。
+2. `ExecuteTask` 校验目标、施加任务级截止时间预算，并协调设备命令子 Action。
+3. `ExecuteDeviceCommand` 负责 SocketCAN 命令传输、ACK 处理、重试、取消和协议
+   STOP 行为。
+
+`TaskEvent` 是 `task_executor` 发布的终态任务结果消息，记录任务 ID、目标、Action
+终态、运行结果、错误码、消息、事件时间戳和时长，供历史与统计使用。它不是另一条
+命令通道，也不证明物理执行器已经运动或停止。
+
+取消与 STOP 的证据路径见
+[`docs/cancel-stop-sequence.md`](docs/cancel-stop-sequence.md)。软件取消是一种意图，
+运行时只有在匹配到 STOP 命令 ID 之后才记录设备侧 STOP 响应；该协议证据同样不
+证明物理运动或停止距离。
+
 ## 已验证的软件证据
 
 2026-07-29，本机在 Ubuntu 24.04 / ROS 2 Jazzy 中完成 WSL2 隔离构建和测试，覆盖
@@ -118,6 +136,27 @@ colcon test --return-code-on-test-failure
 colcon test-result --test-result-base build --verbose
 ```
 
+### Docker 软件 E2E
+
+在装有 Docker Engine 和 GNU Make 的 Linux 主机上，于仓库根目录构建并运行软件 E2E：
+
+```bash
+git clone https://github.com/Quchaosheng/embodied-agent-runtime.git
+cd embodied-agent-runtime
+make docker-build
+make demo
+```
+
+`make image` 是 `make docker-build` 的别名。镜像基于 `ros:jazzy-ros-base`，按仓库中
+已提交的 package manifest 执行 `rosdep`，并用 `colcon` 构建 `ros2_ws`。`make demo`
+在 Docker 内以 host 网络和 `--privileged` 运行 `scripts/run_industrial_e2e.sh`；这些
+仅限 Linux 的权限用于创建并使用 `vcan0`（`SETUP_VCAN=1`）。`make demo-local` 是容器内
+入口，不应替代 Docker 外层调用。
+
+这是使用 `vcan0` 和仓库虚拟 CAN 设备的软件/虚拟 CAN E2E。通过运行不等于 X5 实机运行、
+相机、物理 CAN 适配器、真实执行器或硬件急停行为。Windows 或 macOS 上的 Docker Desktop
+不是该 vcan 演示的受支持宿主，请使用 Linux Docker 主机。
+
 ### 原生 ARM64
 
 ARM 板上不得复用 x86_64 的 `build`、`install` 或 `log` 目录。
@@ -146,6 +185,8 @@ ARM 脚本只接受 Jazzy/Ubuntu 24.04 和 Humble/Ubuntu 22.04 配对。
 ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和资源竞争。
 
 ## 可选工作流输入
+
+### 文本输入
 
 原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配。新增的
 `ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 或 Responses
@@ -181,6 +222,8 @@ CI 使用本地假模型接口验证 HTTP 协议和契约用例。安装配置�
 goal 前被拒绝。这不会取消已经接纳的 goal，也不提供 ROS 2/DDS 授权、CAN 鉴权或物理
 急停保证；这些分别属于 Action 取消路径、部署安全、设备协议和硬件安全系统。
 
+### ArUco 输入
+
 `perception_task_adapter` 从图像或 USB 相机检测 `DICT_4X4_50` 标记，并通过
 `ExecuteWorkflow` 提交：ID `10` 映射 `single_task/dock_a`，ID `20` 映射
 `ready_then_task/home`。相机模式要求连续三帧一致、抑制重复提交，在五帧空画面后
@@ -188,6 +231,11 @@ goal 前被拒绝。这不会取消已经接纳的 goal，也不提供 ROS 2/DDS
 展示 X5 实体摄像头证据。
 
 这是基于标记的图像适配器，不是视觉语言模型（VLM）集成；本文不声称具备 VLM 能力。
+
+| 标记 ID | 工作流 | 目标 |
+| --- | --- | --- |
+| `10` | `single_task` | `dock_a` |
+| `20` | `ready_then_task` | `home` |
 
 ## 平台状态
 

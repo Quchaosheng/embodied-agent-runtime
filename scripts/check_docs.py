@@ -39,6 +39,18 @@ assert "(README.md)" in DOCUMENTS[1].read_text(encoding="utf-8")
 assert "(README.zh-CN.md)" in DOCUMENTS[2].read_text(encoding="utf-8")
 assert "(README.md)" in DOCUMENTS[3].read_text(encoding="utf-8")
 
+chinese_readme = DOCUMENTS[1].read_text(encoding="utf-8")
+for required in (
+    "### Action 分层与 TaskEvent",
+    "ExecuteDeviceCommand",
+    "docs/cancel-stop-sequence.md",
+    "### Docker 软件 E2E",
+    "make docker-build",
+    "### ArUco 输入",
+    "DICT_4X4_50",
+):
+    assert required in chinese_readme, f"Chinese README is missing {required}"
+
 tracked = subprocess.check_output(
     ["git", "ls-files", "-z"], cwd=ROOT
 ).decode("utf-8").split("\0")
