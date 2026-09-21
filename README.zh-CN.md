@@ -56,8 +56,9 @@ flowchart LR
 ## 已验证的软件证据
 
 2026-07-29，本机在 Ubuntu 24.04 / ROS 2 Jazzy 中完成 WSL2 隔离构建和测试，覆盖
-11 个包。仓库中已提交的测试源码定义了 **120 个 GoogleTest 用例和 18 个 pytest
-用例**；这是行为测试用例数，不是通过数，也不是 `colcon test-result` 的记录数。
+11 个包。仓库中已提交的测试源码当前定义了 **123 个 GoogleTest 用例和 27 个 pytest
+用例**（2026-07-29 当次记录的代码树为 119 和 18）；这是行为测试用例数，不是通过数，
+也不是 `colcon test-result` 的记录数。
 后者还包含测试运行器和 `ament_lint` 条目，不能把聚合数写成行为用例数。GitHub
 Actions 也通过 Windows 工具检查，以及 Ubuntu 24.04/Jazzy 构建、测试、ARM64 配置
 和条件式 `vcan0` 工作流。
@@ -192,7 +193,7 @@ goal 前被拒绝。这不会取消已经接纳的 goal，也不提供 ROS 2/DDS
 
 | 环境 | 当前状态 | 证据 |
 | --- | --- | --- |
-| Windows + WSL2 x86_64 | 软件已验证 | Ubuntu 24.04/Jazzy 隔离构建；已提交测试源码定义 120 个 GoogleTest 用例和 18 个 pytest 用例 |
+| Windows + WSL2 x86_64 | 软件已验证 | Ubuntu 24.04/Jazzy 隔离构建；已提交测试源码定义 123 个 GoogleTest 用例和 27 个 pytest 用例 |
 | Ubuntu 24.04 + Jazzy x86_64 | CI 已验证 | 构建、测试、配置检查和条件式 `vcan0` E2E |
 | 通用 ARM64 Linux | 配置和脚本已准备，不声称板卡已验证 | `generic-arm64` Jazzy/Ubuntu 24.04 配置 |
 | RK3568 | CPU-only ARM64 配置，等待原生运行 | 不声明厂商 NPU/GPIO/相机能力 |
