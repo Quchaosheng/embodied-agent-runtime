@@ -192,7 +192,7 @@ TEST(RequestRegistryTest, SerializesConcurrentIdenticalAndConflictingInserts)
   }
 
   const auto count = [](const std::vector<runtime_gateway::InsertResult> & results,
-      const runtime_gateway::InsertResult value) {
+    const runtime_gateway::InsertResult value) {
       return std::count(results.begin(), results.end(), value);
     };
   EXPECT_EQ(count(identical, runtime_gateway::InsertResult::INSERTED), 1);
