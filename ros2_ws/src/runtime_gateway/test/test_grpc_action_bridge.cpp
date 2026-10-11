@@ -204,16 +204,29 @@ protected:
 
   grpc::Status submit_status(
     const std::string & request_id, const std::string & task_id,
-    runtime_gateway::SubmitWorkflowReply * reply)
+    runtime_gateway::SubmitWorkflowReply * reply, std::uint64_t timeout_ms = 3000)
   {
     runtime_gateway::SubmitWorkflowRequest request;
     request.set_request_id(request_id);
     request.set_workflow_id("single_task");
     request.set_task_id(task_id);
     request.set_target_id("dock_a");
-    request.set_timeout_ms(3000);
+    request.set_timeout_ms(timeout_ms);
     grpc::ClientContext context;
     return stub_->SubmitWorkflow(&context, request, reply);
+  }
+
+  // The result callback persists the durable terminal state asynchronously.
+  bool wait_for_durable(const std::string & request_id, const std::string & state)
+  {
+    for (int attempt = 0; attempt < 200; ++attempt) {
+      const auto record = store_->get_idempotency(request_id);
+      if (record && record->state == state) {
+        return true;
+      }
+      std::this_thread::sleep_for(5ms);
+    }
+    return false;
   }
 
   virtual std::chrono::milliseconds goal_delay() const {return 0ms;}
@@ -596,6 +609,50 @@ TEST_F(GrpcActionBridgeTest, ShutdownClearsRegistryAfterTerminalCallback)
   orchestrator_->finish("request-shutdown", ExecuteWorkflow::Result::CANCELED);
   shutdown.get();
   EXPECT_EQ(service_->active_request_count(), 0U);
+}
+
+TEST_F(GrpcActionBridgeTest, ChangedTimeoutUnderSameRequestIdConflictsWithoutRedispatch)
+{
+  ASSERT_TRUE(submit("request-timeout", "task-timeout").accepted());
+  ASSERT_TRUE(orchestrator_->wait_for_goals(1));
+  orchestrator_->complete("request-timeout");
+  ASSERT_TRUE(wait_for_durable("request-timeout", "COMPLETED"));
+
+  runtime_gateway::SubmitWorkflowReply reply;
+  // Same request_id and payload, different valid timeout -> conflict, no goal.
+  const auto status = submit_status("request-timeout", "task-timeout", &reply, 6000);
+  EXPECT_FALSE(status.ok());
+  EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+  EXPECT_EQ(orchestrator_->goal_count(), 1U);
+}
+
+TEST_F(GrpcActionBridgeTest, TerminalRetryAfterRestartReplaysStoredResultWithoutRedispatch)
+{
+  ASSERT_TRUE(submit("request-restart", "task-restart").accepted());
+  ASSERT_TRUE(orchestrator_->wait_for_goals(1));
+  orchestrator_->complete("request-restart");
+  ASSERT_TRUE(wait_for_durable("request-restart", "COMPLETED"));
+  const auto completed = orchestrator_->goal_count();
+
+  // Restart the gateway against the same SQLite file: the in-memory registry
+  // is gone, but the durable ledger must still suppress the dispatch.
+  server_->shutdown();
+  service_.reset();
+  server_.reset();
+  stub_.reset();
+  service_ = std::make_unique<runtime_gateway::GatewayService>(
+    *gateway_node_, *store_, before_send(), before_cancel_lookup(), before_cancel_dispatch());
+  server_ = std::make_unique<runtime_gateway::LoopbackServer>(*service_, 0);
+  server_->start();
+  stub_ = runtime_gateway::RobotRuntime::NewStub(
+    grpc::CreateChannel(server_->address(), grpc::InsecureChannelCredentials()));
+
+  runtime_gateway::SubmitWorkflowReply reply;
+  const auto status = submit_status("request-restart", "task-restart", &reply);
+  ASSERT_TRUE(status.ok()) << status.error_message();
+  EXPECT_FALSE(reply.accepted());
+  EXPECT_EQ(reply.state(), "COMPLETED");
+  EXPECT_EQ(orchestrator_->goal_count(), completed);
 }
 
 }  // namespace
