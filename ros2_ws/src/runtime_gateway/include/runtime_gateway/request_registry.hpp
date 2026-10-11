@@ -17,11 +17,17 @@ struct RequestRecord
   std::string task_id;
   std::string target_id;
   std::string workflow_id;
+  std::uint64_t timeout_ms;
   std::string state;
   std::uint8_t outcome;
   std::uint16_t error_code;
   std::string message;
 };
+
+// Semantic identity of an execution request: the fields that change what the
+// device is asked to do. Transport-only fields (state, outcome, error_code,
+// message) are excluded so a retry after a terminal result still matches.
+std::string fingerprint(const RequestRecord & record);
 
 enum class InsertResult {INSERTED, DUPLICATE, CONFLICT, INVALID, CAPACITY};
 
