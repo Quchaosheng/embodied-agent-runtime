@@ -173,7 +173,7 @@ grpc::Status GatewayService::SubmitWorkflow(
   }
   const RequestRecord initial{
     request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
-    "SUBMITTING", 0, 0, ""};
+    request->timeout_ms(), "SUBMITTING", 0, 0, ""};
   const auto inserted = state_->registry.insert(initial);
   if (inserted == InsertResult::DUPLICATE) {
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);

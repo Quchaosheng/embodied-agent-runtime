@@ -17,6 +17,23 @@ bool is_terminal(const RequestRecord & record)
 
 }  // namespace
 
+std::string fingerprint(const RequestRecord & record)
+{
+  // Length-prefixed fields so no field value can be confused with a separator.
+  std::string result;
+  const auto append = [&result](const std::string & value) {
+      result += std::to_string(value.size());
+      result += ':';
+      result += value;
+    };
+  append(record.request_id);
+  append(record.task_id);
+  append(record.target_id);
+  append(record.workflow_id);
+  append(std::to_string(record.timeout_ms));
+  return result;
+}
+
 RequestRegistry::RequestRegistry(const std::size_t capacity)
 : capacity_(capacity)
 {
@@ -33,9 +50,7 @@ InsertResult RequestRegistry::insert(const RequestRecord & record)
   const std::lock_guard<std::mutex> lock(mutex_);
   const auto existing = records_.find(record.request_id);
   if (existing != records_.end()) {
-    return existing->second.task_id == record.task_id &&
-           existing->second.target_id == record.target_id &&
-           existing->second.workflow_id == record.workflow_id ?
+    return fingerprint(existing->second) == fingerprint(record) ?
            InsertResult::DUPLICATE : InsertResult::CONFLICT;
   }
   for (const auto & [request_id, value] : records_) {
