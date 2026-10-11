@@ -21,6 +21,19 @@ constexpr char kSchema[] =
   "message TEXT NOT NULL,"
   "completed_at_ns INTEGER NOT NULL)";
 
+// Durable idempotency ledger. state is one of ADMITTED, DISPATCHING, COMPLETED,
+// CANCELED, SAFE_STOP, DEVICE_FAULT, ABORTED, REJECTED, CANCEL_FAILED,
+// TIMED_OUT or UNCERTAIN. updated_at_ns drives bounded retention.
+constexpr char kIdempotencySchema[] =
+  "CREATE TABLE IF NOT EXISTS request_idempotency ("
+  "request_id TEXT PRIMARY KEY,"
+  "fingerprint TEXT NOT NULL,"
+  "state TEXT NOT NULL,"
+  "outcome INTEGER NOT NULL,"
+  "error_code INTEGER NOT NULL,"
+  "message TEXT NOT NULL,"
+  "updated_at_ns INTEGER NOT NULL)";
+
 class Statement
 {
 public:
@@ -117,6 +130,7 @@ Store::Store(const std::string & path)
       throw std::runtime_error("SQLite database does not support WAL mode");
     }
     execute(db_, kSchema);
+    execute(db_, kIdempotencySchema);
   } catch (...) {
     sqlite3_close(db_);
     db_ = nullptr;
@@ -203,6 +217,96 @@ std::optional<TaskRecord> Store::get_unlocked(const std::string & task_id) const
     static_cast<std::uint16_t>(sqlite3_column_int(value, 4)),
     static_cast<std::uint64_t>(sqlite3_column_int64(value, 5)), text(6),
     sqlite3_column_int64(value, 7)};
+}
+
+bool Store::put_idempotency(const IdempotencyRecord & record)
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (record.request_id.empty() || record.fingerprint.empty()) {
+    return false;
+  }
+  try {
+    Statement statement(
+      db_,
+      "INSERT INTO request_idempotency ("
+      "request_id,fingerprint,state,outcome,error_code,message,updated_at_ns) "
+      "VALUES (?,?,?,?,?,?,?) "
+      "ON CONFLICT(request_id) DO UPDATE SET "
+      "fingerprint=excluded.fingerprint,state=excluded.state,outcome=excluded.outcome,"
+      "error_code=excluded.error_code,message=excluded.message,"
+      "updated_at_ns=excluded.updated_at_ns "
+      // A stored fingerprint is immutable: a changed payload must conflict
+      // forever, not silently overwrite the admitted identity.
+      "WHERE request_idempotency.fingerprint=excluded.fingerprint");
+    auto * value = statement.get();
+    bind_text(db_, value, 1, record.request_id);
+    bind_text(db_, value, 2, record.fingerprint);
+    bind_text(db_, value, 3, record.state);
+    check(db_, sqlite3_bind_int(value, 4, record.outcome));
+    check(db_, sqlite3_bind_int(value, 5, record.error_code));
+    bind_text(db_, value, 6, record.message);
+    check(db_, sqlite3_bind_int64(value, 7, record.updated_at_ns));
+    return sqlite3_step(value) == SQLITE_DONE;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::optional<IdempotencyRecord> Store::get_idempotency(const std::string & request_id) const
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  Statement statement(
+    db_,
+    "SELECT request_id,fingerprint,state,outcome,error_code,message,updated_at_ns "
+    "FROM request_idempotency WHERE request_id=?");
+  auto * value = statement.get();
+  bind_text(db_, value, 1, request_id);
+  const int result = sqlite3_step(value);
+  if (result == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (result != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const auto text = [value](int column) {
+      const auto * field = sqlite3_column_text(value, column);
+      return field == nullptr ? std::string{} :
+             std::string(reinterpret_cast<const char *>(field));
+    };
+  return IdempotencyRecord{
+    text(0), text(1), text(2), static_cast<std::uint8_t>(sqlite3_column_int(value, 3)),
+    static_cast<std::uint16_t>(sqlite3_column_int(value, 4)), text(5),
+    sqlite3_column_int64(value, 6)};
+}
+
+std::size_t Store::prune_idempotency(
+  const std::int64_t older_than_ns, const std::size_t keep_at_least)
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  try {
+    execute(db_, "BEGIN IMMEDIATE");
+    Statement statement(
+      db_,
+      // Only unexpired rows are protected by the keep floor; expired rows must
+      // stay reclaimable or a bounded ledger could never shrink.
+      "DELETE FROM request_idempotency WHERE updated_at_ns < ? AND request_id NOT IN ("
+      "SELECT request_id FROM request_idempotency WHERE updated_at_ns >= ? "
+      "ORDER BY updated_at_ns DESC LIMIT ?)");
+    check(db_, sqlite3_bind_int64(statement.get(), 1, older_than_ns));
+    check(db_, sqlite3_bind_int64(statement.get(), 2, older_than_ns));
+    check(db_, sqlite3_bind_int64(
+        statement.get(), 3, static_cast<sqlite3_int64>(keep_at_least)));
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+      execute(db_, "ROLLBACK");
+      return 0;
+    }
+    const auto removed = static_cast<std::size_t>(sqlite3_changes(db_));
+    execute(db_, "COMMIT");
+    return removed;
+  } catch (...) {
+    sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+    return 0;
+  }
 }
 
 RuntimeStats Store::stats() const

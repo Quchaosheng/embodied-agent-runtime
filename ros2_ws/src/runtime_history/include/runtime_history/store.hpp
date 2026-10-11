@@ -34,6 +34,20 @@ struct RuntimeStats
   std::uint64_t max_ms;
 };
 
+// Durable idempotency record for one admitted gateway request. `fingerprint`
+// is the semantic identity of the execution payload, so a retry with a changed
+// payload conflicts even after a restart or eviction.
+struct IdempotencyRecord
+{
+  std::string request_id;
+  std::string fingerprint;
+  std::string state;
+  std::uint8_t outcome;
+  std::uint16_t error_code;
+  std::string message;
+  std::int64_t updated_at_ns;
+};
+
 class Store
 {
 public:
@@ -46,6 +60,12 @@ public:
   bool insert(const TaskRecord & record);
   std::optional<TaskRecord> get(const std::string & task_id) const;
   RuntimeStats stats() const;
+
+  // Idempotency rows survive restart. ADMITTED is written before dispatch so a
+  // crash mid-dispatch is recoverable as uncertain instead of a silent re-run.
+  bool put_idempotency(const IdempotencyRecord & record);
+  std::optional<IdempotencyRecord> get_idempotency(const std::string & request_id) const;
+  std::size_t prune_idempotency(std::int64_t older_than_ns, std::size_t keep_at_least);
 
 private:
   std::optional<TaskRecord> get_unlocked(const std::string & task_id) const;
