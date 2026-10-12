@@ -1,5 +1,9 @@
 string task_id
 string target_id
+# Which workflow this task belongs to. Both are empty when the caller is not a
+# workflow, so a direct ExecuteTask caller keeps working unchanged.
+string request_id
+string workflow_id
 builtin_interfaces/Duration allowed_duration
 ---
 uint8 COMPLETED=0

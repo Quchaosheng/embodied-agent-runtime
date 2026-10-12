@@ -75,9 +75,12 @@ The runtime uses three ROS 2 Action layers with separate responsibilities:
 
 `TaskEvent` is a terminal task-result message published by `task_executor`. It
 records the task ID, target, Action terminal status, runtime outcome, error
-code, message, event timestamp, and duration for history and statistics. It is
-not another command channel and does not prove that a physical actuator moved
-or stopped.
+code, message, event timestamp, and duration for history and statistics. It also
+carries the correlation identity of the task: `request_id`, `workflow_id`, and
+the ROS 2 `goal_id` of the accepted `ExecuteTask` goal, all empty when the caller
+supplied none. Those fields are identifiers, not execution evidence, and the
+event is not another command channel: it does not prove that a physical actuator
+moved or stopped.
 
 The cancellation and STOP evidence path is shown in
 [`docs/cancel-stop-sequence.md`](docs/cancel-stop-sequence.md). A software
