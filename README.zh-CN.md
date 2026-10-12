@@ -63,8 +63,10 @@ flowchart LR
    STOP 行为。
 
 `TaskEvent` 是 `task_executor` 发布的终态任务结果消息，记录任务 ID、目标、Action
-终态、运行结果、错误码、消息、事件时间戳和时长，供历史与统计使用。它不是另一条
-命令通道，也不证明物理执行器已经运动或停止。
+终态、运行结果、错误码、消息、事件时间戳和时长，供历史与统计使用。它还携带任务的
+关联标识：`request_id`、`workflow_id`，以及被接受的 `ExecuteTask` goal 的 ROS 2
+`goal_id`；调用方未提供时为空。这些字段是标识符而非执行证据，该消息也不是另一条
+命令通道，不证明物理执行器已经运动或停止。
 
 取消与 STOP 的证据路径见
 [`docs/cancel-stop-sequence.md`](docs/cancel-stop-sequence.md)。软件取消是一种意图，

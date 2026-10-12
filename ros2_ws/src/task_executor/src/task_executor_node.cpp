@@ -228,7 +228,7 @@ private:
   }
 
   rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID &,
+    const rclcpp_action::GoalUUID & goal_id,
     std::shared_ptr<const ExecuteTask::Goal> goal)
   {
     if (!running_) {
@@ -262,6 +262,9 @@ private:
       return rclcpp_action::GoalResponse::REJECT;
     }
 
+    // Bound to the accepted goal, which is the one the terminal event belongs
+    // to; reassigning it per execution keeps that true without a second field.
+    goal_id_ = rclcpp_action::to_string(goal_id);
     RCLCPP_INFO(
       get_logger(), "Accepting task_id=%s target_id=%s",
       goal->task_id.c_str(), goal->target_id.c_str());
@@ -919,7 +922,8 @@ private:
         std::chrono::steady_clock::now() - started_at_).count();
       const auto goal = goal_handle->get_goal();
       task_event_publisher_->publish(task_executor::make_task_event(
-          goal->task_id, goal->target_id, action_status, result.outcome, result.error_code,
+          goal->task_id, goal->target_id, goal->request_id, goal->workflow_id, goal_id_,
+          action_status, result.outcome, result.error_code,
           static_cast<std::uint64_t>(duration_ms), result.message, now()));
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Failed to publish terminal task event: %s", error.what());
@@ -943,6 +947,7 @@ private:
     }
   }
 
+  std::string goal_id_;
   int validation_delay_ms_{200};
   std::int64_t ack_timeout_ms_{500};
   std::int64_t cancel_timeout_ms_{1000};
