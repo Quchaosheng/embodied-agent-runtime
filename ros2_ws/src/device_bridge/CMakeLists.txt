@@ -13,6 +13,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
 find_package(runtime_can REQUIRED)
+find_package(runtime_history REQUIRED)
 
 add_library(device_bridge_policy
   src/command_policy.cpp)
@@ -34,7 +35,8 @@ target_compile_features(device_bridge_node PUBLIC cxx_std_17)
 target_link_libraries(device_bridge_node
   device_bridge_diagnostics
   device_bridge_policy
-  runtime_can::runtime_can)
+  runtime_can::runtime_can
+  runtime_history::runtime_history_stage_events)
 ament_target_dependencies(device_bridge_node
   builtin_interfaces
   diagnostic_msgs
