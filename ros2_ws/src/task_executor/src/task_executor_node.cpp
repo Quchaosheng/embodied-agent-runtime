@@ -2,6 +2,7 @@
 #include "task_executor/task_event.hpp"
 #include "task_executor/target_validator.hpp"
 #include "task_executor_node.hpp"
+#include "runtime_history/stage_event_log.hpp"
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
@@ -58,6 +59,8 @@ public:
     const auto configured_event_history_depth = declare_parameter<std::int64_t>(
       "task_event_history_depth", 128);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
+    stage_log_ = std::make_unique<runtime_history::StageEventLog>(
+      declare_parameter<std::string>("stage_event_log_path", ""));
 
     if (targets.size() != target_arguments.size() || targets.empty()) {
       throw std::invalid_argument("targets and target_arguments must be non-empty and aligned");
@@ -284,6 +287,7 @@ private:
     started_at_ = std::chrono::steady_clock::now();
     parent_terminal_ = false;
     terminal_event_published_ = false;
+    emit_stage(goal_handle->get_goal(), "action_receive");
     update_diagnostics(
       [this, &goal_handle]() {
         diagnostic_state_.begin_task(goal_handle->get_goal()->task_id);
@@ -354,6 +358,7 @@ private:
     const auto deadline = std::chrono::steady_clock::now() +
       to_steady_duration(goal->allowed_duration);
     const int validation_step_ms = std::max(validation_delay_ms_ / 5, 1);
+    emit_stage(goal, "action_execute_start");
 
     for (int step = 1; step <= 5; ++step) {
       if (!running_ || !rclcpp::ok()) {
@@ -398,6 +403,18 @@ private:
     device_goal.ack_timeout.sec = static_cast<std::int32_t>(child_ack_timeout_ms / 1000);
     device_goal.ack_timeout.nanosec = static_cast<std::uint32_t>(
       (child_ack_timeout_ms % 1000) * 1000000);
+    // The bridge cannot see ExecuteTask, so the trace crosses on the wire here.
+    device_goal.trace_id = goal->task_id;
+
+    // The action layer's own work ends where it hands the command to the
+    // device; the diagnoser orders action_execute_end before can_receive.
+    emit_stage(goal, "action_execute_end");
+    emit_stage(
+      goal, "can_receive", 0,
+      "{\"command_id\":" + std::to_string(device_goal.command_id) +
+      ",\"opcode\":" + std::to_string(device_goal.opcode) +
+      ",\"ack_timeout_ms\":" + std::to_string(child_ack_timeout_ms) +
+      ",\"target_id\":" + runtime_history::json_quote(goal->target_id) + "}");
 
     publish_feedback(goal_handle, ExecuteTask::Feedback::RUNNING, 0.25F);
     RCLCPP_INFO(
@@ -685,6 +702,28 @@ private:
       kErrorUnexpectedChildResult, "unexpected Device Bridge result");
   }
 
+  void emit_stage(
+    const std::shared_ptr<const ExecuteTask::Goal> & goal,
+    const std::string & stage,
+    const std::uint64_t duration_ns = 0,
+    const std::string & extra_json = "{}")
+  {
+    if (stage_log_ == nullptr || !stage_log_->enabled()) {
+      return;
+    }
+    runtime_history::StageEvent event;
+    // task_id is the trace identity: it is what the caller, the history store
+    // and the TaskEvent all key on, so evidence joins on the same value.
+    event.trace_id = goal->task_id;
+    event.source_node = "task_executor";
+    event.stage = stage;
+    event.event_name = stage;
+    event.event_type = "action";
+    event.duration_ns = duration_ns;
+    event.extra_json = extra_json;
+    stage_log_->emit(event);
+  }
+
   void publish_feedback(
     const std::shared_ptr<GoalHandle> & goal_handle,
     const std::uint8_t state,
@@ -956,6 +995,7 @@ private:
   std::uint8_t device_opcode_{1};
   std::uint16_t next_command_id_{1};
   std::unique_ptr<task_executor::TargetValidator> validator_;
+  std::unique_ptr<runtime_history::StageEventLog> stage_log_;
   std::unordered_map<std::string, std::int32_t> target_arguments_;
   std::atomic_bool running_{true};
   std::atomic_bool active_goal_{false};

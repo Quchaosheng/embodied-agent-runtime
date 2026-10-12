@@ -1,5 +1,6 @@
 #include "device_bridge/command_policy.hpp"
 #include "device_bridge/diagnostic_state.hpp"
+#include "runtime_history/stage_event_log.hpp"
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
@@ -39,6 +40,8 @@ public:
     const auto configured_stop_timeout = declare_parameter<std::int64_t>(
       "stop_timeout_ms", 500);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
+    stage_log_ = std::make_unique<runtime_history::StageEventLog>(
+      declare_parameter<std::string>("stage_event_log_path", ""));
     if (configured_max_timeout <= 0 || configured_stop_timeout <= 0 ||
       configured_stop_timeout > 60000)
     {
@@ -228,6 +231,25 @@ private:
     return WaitResult::kShutdown;
   }
 
+  // Trace identity arrives in the goal because this node cannot see ExecuteTask.
+  void emit_stage(
+    const std::shared_ptr<const ExecuteDeviceCommand::Goal> & goal,
+    const std::string & stage,
+    const std::string & extra_json = "{}")
+  {
+    if (stage_log_ == nullptr || !stage_log_->enabled() || goal->trace_id.empty()) {
+      return;
+    }
+    runtime_history::StageEvent event;
+    event.trace_id = goal->trace_id;
+    event.source_node = "device_bridge";
+    event.stage = stage;
+    event.event_name = stage;
+    event.event_type = "can_bridge";
+    event.extra_json = extra_json;
+    stage_log_->emit(event);
+  }
+
   void execute(const std::shared_ptr<GoalHandle> & goal_handle)
   {
     struct ActiveGuard
@@ -261,7 +283,14 @@ private:
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::SENDING, attempt);
       diagnostic_state_.mark_sending();
       std::string send_error;
-      if (!socket_.send(runtime_can::encode_command(command), send_error)) {
+      // retry_count distinguishes attempts of one command inside the trace.
+      const std::string attempt_extra =
+        "{\"command_id\":" + std::to_string(command.command_id) +
+        ",\"retry_count\":" + std::to_string(attempt) + "}";
+      emit_stage(goal, "can_encode_start", attempt_extra);
+      const auto frame = runtime_can::encode_command(command);
+      emit_stage(goal, "can_encode_end", attempt_extra);
+      if (!socket_.send(frame, send_error)) {
         diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
         publish_diagnostics();
         finish_aborted(
@@ -272,6 +301,8 @@ private:
       command_sent = true;
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::WAITING_ACK, attempt);
       diagnostic_state_.mark_waiting_ack();
+      emit_stage(goal, "can_frame_sent", attempt_extra);
+      emit_stage(goal, "can_ack_wait_start", attempt_extra);
 
       runtime_can::Response response;
       std::string wait_error;
@@ -285,6 +316,7 @@ private:
         if (response.result_code == 0) {
           diagnostic_state_.record_success();
           publish_diagnostics();
+          emit_stage(goal, "can_ack_received", attempt_extra);
           auto result = std::make_shared<ExecuteDeviceCommand::Result>();
           result->outcome = ExecuteDeviceCommand::Result::COMPLETED;
           result->error_code = 0;
@@ -337,6 +369,7 @@ private:
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, attempt);
       diagnostic_state_.record_ack_timeout(device_bridge::kErrorAckTimeout);
       publish_diagnostics();
+      emit_stage(goal, "can_retry_exhausted", attempt_extra);
       stop_and_finish(
         goal_handle, command.command_id, false, device_bridge::kErrorAckTimeout,
         "command ACK timeout; attempting device STOP");
@@ -491,6 +524,7 @@ private:
   std::atomic_bool running_{true};
   std::atomic_bool active_goal_{false};
   runtime_can::SocketCan socket_;
+  std::unique_ptr<runtime_history::StageEventLog> stage_log_;
   device_bridge::DeviceDiagnosticState diagnostic_state_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;

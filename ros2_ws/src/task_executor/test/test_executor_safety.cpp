@@ -11,6 +11,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
 #include <functional>
 #include <future>
 #include <iterator>
@@ -19,6 +21,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
@@ -175,7 +178,8 @@ protected:
   void start(
     FakeDeviceBridge::Behavior behavior,
     task_executor::WorkerHook hook = {},
-    const std::int64_t cancel_timeout_ms = 100)
+    const std::int64_t cancel_timeout_ms = 100,
+    const std::string & stage_event_log_path = "")
   {
     static std::atomic_int next_id{1};
     name_space_ = "/executor_safety_" + std::to_string(next_id++);
@@ -185,7 +189,8 @@ protected:
     options.parameter_overrides({
         rclcpp::Parameter("validation_delay_ms", 5),
         rclcpp::Parameter("ack_timeout_ms", 50),
-        rclcpp::Parameter("cancel_timeout_ms", cancel_timeout_ms)});
+        rclcpp::Parameter("cancel_timeout_ms", cancel_timeout_ms),
+        rclcpp::Parameter("stage_event_log_path", stage_event_log_path)});
     executor_node_ = task_executor::make_task_executor_node(options, std::move(hook));
     client_node_ = std::make_shared<rclcpp::Node>("test_client", name_space_);
     task_client_ = rclcpp_action::create_client<ExecuteTask>(client_node_, "execute_task");
@@ -308,8 +313,67 @@ TEST_F(ExecutorSafetyTest, LateAcceptedGoalIsCanceledOnceBeforeParentTerminal)
   EXPECT_EQ(events.front().outcome, ExecuteTask::Result::SAFE_STOP);
 }
 
-TEST_F(ExecutorSafetyTest, LateRejectedGoalHasOneExplicitParentTerminal)
+// The offline diagnoser groups stage windows by (trace_id, sequence_id) and
+// requires the ordered stage chain; a silent break here would only surface as a
+// useless capture much later.
+TEST_F(ExecutorSafetyTest, EmitsOrderedStageEvidenceForOneTrace)
 {
+  const std::string path = "/tmp/executor_stage_events_" +
+    std::to_string(::getpid()) + ".jsonl";
+  std::remove(path.c_str());
+
+  start({0ms, true, true}, {}, 100, path);
+  const auto goal_handle = send_task("stage-evidence", 1000);
+  ASSERT_NE(goal_handle, nullptr);
+  const auto result = wait_result(goal_handle);
+  ASSERT_NE(result.result, nullptr);
+  EXPECT_EQ(result.result->outcome, ExecuteTask::Result::COMPLETED);
+
+  std::ifstream input(path);
+  ASSERT_TRUE(input.is_open()) << "stage event log was not created";
+  std::vector<std::string> lines;
+  for (std::string line; std::getline(input, line); ) {
+    if (!line.empty()) {
+      lines.push_back(line);
+    }
+  }
+  std::remove(path.c_str());
+  ASSERT_FALSE(lines.empty());
+
+  // Every line must carry the trace identity and a single sequence_id; the
+  // diagnoser rejects a trace whose events disagree on either.
+  std::string sequence_id;
+  std::vector<std::string> stages;
+  for (const auto & line : lines) {
+    EXPECT_NE(line.find("\"trace_id\":\"stage-evidence\""), std::string::npos) << line;
+    EXPECT_NE(line.find("\"clock_id\":\"monotonic\""), std::string::npos) << line;
+    EXPECT_EQ(line.find("\"host_id\":\"unknown\""), std::string::npos) << line;
+    const auto key = std::string("\"sequence_id\":");
+    const auto begin = line.find(key);
+    ASSERT_NE(begin, std::string::npos) << line;
+    const auto value_begin = begin + key.size();
+    const auto value_end = line.find(',', value_begin);
+    const auto value = line.substr(value_begin, value_end - value_begin);
+    if (sequence_id.empty()) {
+      sequence_id = value;
+    }
+    EXPECT_EQ(value, sequence_id) << line;
+    for (const char * stage : {
+        "action_receive", "action_execute_start", "action_execute_end", "can_receive"})
+    {
+      if (line.find(std::string("\"stage\":\"") + stage + "\"") != std::string::npos) {
+        stages.emplace_back(stage);
+      }
+    }
+  }
+  // Order matters: the diagnoser rebuilds windows from adjacent events, and its
+  // w1 topology contract requires action_execute_end before can_receive.
+  const std::vector<std::string> expected{
+    "action_receive", "action_execute_start", "action_execute_end", "can_receive"};
+  EXPECT_EQ(stages, expected);
+}
+
+TEST_F(ExecutorSafetyTest, LateRejectedGoalHasOneExplicitParentTerminal) {
   start({250ms, false, false});
   const auto goal_handle = send_task("late-rejected", 100);
   ASSERT_NE(goal_handle, nullptr);
