@@ -237,6 +237,102 @@ TEST(StoreTest, ThrowsWhenTaskRunsSchemaIsMissing)
   EXPECT_THROW(store.stats(), std::runtime_error);
 }
 
+runtime_history::IdempotencyRecord idempotency(
+  std::string request_id = "request-1", std::string fingerprint = "fp-1",
+  std::string state = "COMPLETED", std::int64_t updated_at_ns = 1000)
+{
+  return {std::move(request_id), std::move(fingerprint), std::move(state), 0, 0, "done",
+    updated_at_ns};
+}
+
+TEST(StoreTest, PersistsIdempotencyAcrossRestart)
+{
+  TemporaryDatabase database;
+  {
+    runtime_history::Store store(database.path());
+    ASSERT_TRUE(store.put_idempotency(idempotency()));
+  }
+
+  // A new Store instance models a process restart on the same database file.
+  runtime_history::Store reopened(database.path());
+  const auto actual = reopened.get_idempotency("request-1");
+
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->fingerprint, "fp-1");
+  EXPECT_EQ(actual->state, "COMPLETED");
+  EXPECT_EQ(actual->message, "done");
+  EXPECT_EQ(actual->updated_at_ns, 1000);
+  EXPECT_FALSE(reopened.get_idempotency("missing").has_value());
+}
+
+TEST(StoreTest, UpdatesSameFingerprintAndRejectsChangedFingerprint)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  ASSERT_TRUE(store.put_idempotency(idempotency("request-1", "fp-1", "ADMITTED")));
+
+  ASSERT_TRUE(store.put_idempotency(idempotency("request-1", "fp-1", "COMPLETED")));
+  EXPECT_EQ(store.get_idempotency("request-1")->state, "COMPLETED");
+
+  // The admitted identity is immutable: a changed payload cannot overwrite it.
+  EXPECT_TRUE(store.put_idempotency(idempotency("request-1", "fp-2", "COMPLETED")));
+  EXPECT_EQ(store.get_idempotency("request-1")->fingerprint, "fp-1");
+  EXPECT_EQ(
+    query_text(
+      database.path(),
+      "SELECT count(*) FROM request_idempotency WHERE request_id='request-1'"), "1");
+}
+
+TEST(StoreTest, RejectsIdempotencyWithoutIdentity)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+
+  EXPECT_FALSE(store.put_idempotency(idempotency("", "fp-1")));
+  EXPECT_FALSE(store.put_idempotency(idempotency("request-1", "")));
+}
+
+TEST(StoreTest, PrunesExpiredIdempotencyButKeepsRecentEntries)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_TRUE(store.put_idempotency(idempotency(
+        "request-" + std::to_string(i), "fp", "COMPLETED", 100 * (i + 1))));
+  }
+
+  // Horizon 250 expires request-0 (100) and request-1 (200) only.
+  EXPECT_EQ(store.prune_idempotency(250, 0), 2U);
+  EXPECT_FALSE(store.get_idempotency("request-0").has_value());
+  EXPECT_TRUE(store.get_idempotency("request-2").has_value());
+
+  // The keep floor protects unexpired rows, not expired ones: a horizon above
+  // every timestamp reclaims the rest even with a floor of two.
+  EXPECT_EQ(store.prune_idempotency(10000, 2), 3U);
+  EXPECT_FALSE(store.get_idempotency("request-4").has_value());
+
+  // A fresh row inside the horizon survives any prune.
+  ASSERT_TRUE(store.put_idempotency(idempotency("fresh", "fp", "COMPLETED", 20000)));
+  EXPECT_EQ(store.prune_idempotency(10000, 0), 0U);
+  EXPECT_TRUE(store.get_idempotency("fresh").has_value());
+}
+
+TEST(StoreTest, ThrowsWhenIdempotencySchemaIsMissing)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  sqlite3 * db{};
+  ASSERT_EQ(sqlite3_open(database.path().c_str(), &db), SQLITE_OK);
+  ASSERT_EQ(
+    sqlite3_exec(db, "DROP TABLE request_idempotency", nullptr, nullptr, nullptr), SQLITE_OK);
+  sqlite3_close(db);
+
+  EXPECT_THROW(store.get_idempotency("request-1"), std::runtime_error);
+  // Storage failure is reported, not silently treated as "never seen".
+  EXPECT_FALSE(store.put_idempotency(idempotency()));
+  EXPECT_EQ(store.prune_idempotency(10000, 0), 0U);
+}
+
 TEST(StoreTest, RejectsDatabaseThatCannotUseWal)
 {
   EXPECT_THROW(runtime_history::Store(":memory:"), std::runtime_error);

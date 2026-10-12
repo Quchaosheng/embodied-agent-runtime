@@ -330,14 +330,20 @@ register_process observer $! /usr/bin/python3 "$EVIDENCE/observer.log"
 OBSERVER_PID=$LAST_PID
 
 DB="$EVIDENCE/runtime.sqlite3"
+# Stage evidence for offline cross-layer diagnosis. Both nodes append to one
+# file, so a single capture spans the whole task path.
+STAGE_EVENTS="$EVIDENCE/stage_events.jsonl"
+: > "$STAGE_EVENTS"
 start_virtual normal normal
 start_direct monitor "$EVIDENCE/monitor.log" "$MONITOR" --ros-args \
   --params-file "$WORKSPACE/src/runtime_monitor/config/runtime_monitor.yaml"
 start_direct bridge "$EVIDENCE/bridge.log" "$BRIDGE" --ros-args \
-  --params-file "$WORKSPACE/src/device_bridge/config/device_bridge.yaml"
+  --params-file "$WORKSPACE/src/device_bridge/config/device_bridge.yaml" \
+  -p stage_event_log_path:="$STAGE_EVENTS"
 BRIDGE_PID=$LAST_PID
 start_direct executor "$EVIDENCE/executor.log" "$EXECUTOR" --ros-args \
-  --params-file "$WORKSPACE/src/task_executor/config/targets.yaml"
+  --params-file "$WORKSPACE/src/task_executor/config/targets.yaml" \
+  -p stage_event_log_path:="$STAGE_EVENTS"
 EXECUTOR_PID=$LAST_PID
 start_direct history "$EVIDENCE/history.log" "$HISTORY" --ros-args -p database_path:="$DB"
 start_direct orchestrator "$EVIDENCE/orchestrator.log" "$ORCHESTRATOR"
@@ -493,10 +499,12 @@ stop_pid "$EXECUTOR_PID"
 stop_pid "$BRIDGE_PID"
 recovery_started_ns=$(date +%s%N)
 start_direct bridge-recovered "$EVIDENCE/bridge-recovered.log" "$BRIDGE" --ros-args \
-  --params-file "$WORKSPACE/src/device_bridge/config/device_bridge.yaml"
+  --params-file "$WORKSPACE/src/device_bridge/config/device_bridge.yaml" \
+  -p stage_event_log_path:="$STAGE_EVENTS"
 BRIDGE_PID=$LAST_PID
 start_direct executor-recovered "$EVIDENCE/executor-recovered.log" "$EXECUTOR" --ros-args \
-  --params-file "$WORKSPACE/src/task_executor/config/targets.yaml"
+  --params-file "$WORKSPACE/src/task_executor/config/targets.yaml" \
+  -p stage_event_log_path:="$STAGE_EVENTS"
 EXECUTOR_PID=$LAST_PID
 EXECUTOR_LOG="$EVIDENCE/executor-recovered.log"
 wait_runtime_ready_since "$recovery_started_ns"
