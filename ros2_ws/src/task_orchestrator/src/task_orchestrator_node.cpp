@@ -41,6 +41,8 @@ struct WorkflowState
   {
     child_goal.task_id = workflow_goal.task_id;
     child_goal.target_id = workflow_goal.target_id;
+    child_goal.request_id = workflow_goal.request_id;
+    child_goal.workflow_id = workflow_goal.workflow_id;
   }
 
   void mark(std::string node, const float value)
