@@ -1,5 +1,7 @@
 #include "runtime_gateway/gateway_service.hpp"
 
+#include "runtime_gateway/durable_idempotency.hpp"
+
 #include "runtime_history/store.hpp"
 
 #include "robot_task_interfaces/action/execute_workflow.hpp"
@@ -68,6 +70,27 @@ void fill_submit(const RequestRecord & record, SubmitWorkflowReply * reply)
   reply->set_message(record.message);
 }
 
+std::int64_t now_ns()
+{
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// Fills a reply from the durable ledger alone, for retries the in-memory
+// registry can no longer hold (restart or eviction at capacity).
+void fill_durable(
+  const IdempotencyOutcome & known, const SubmitWorkflowRequest & request,
+  SubmitWorkflowReply * reply)
+{
+  reply->set_accepted(false);
+  reply->set_request_id(request.request_id());
+  reply->set_task_id(request.task_id());
+  reply->set_state(known.state);
+  reply->set_outcome(known.outcome);
+  reply->set_error_code(known.error_code);
+  reply->set_message(known.message);
+}
+
 std::string state_for_outcome(const std::uint8_t outcome)
 {
   switch (outcome) {
@@ -86,6 +109,8 @@ struct GatewayService::State
   struct PendingGoal
   {
     GoalHandle::SharedPtr handle;
+    // Retained so the terminal result can be attributed to the admitted payload.
+    RequestRecord payload;
     bool pending{true};
     bool cancel_requested{false};
     bool cancel_dispatched{false};
@@ -98,6 +123,7 @@ struct GatewayService::State
     std::function<void()> before_cancel_lookup_value,
     std::function<void()> before_cancel_dispatch_value)
   : store(value),
+    durable(store),
     action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
     before_send(std::move(before_send_value)),
     before_cancel_lookup(std::move(before_cancel_lookup_value)),
@@ -133,7 +159,23 @@ struct GatewayService::State
     return true;
   }
 
+  // Records a terminal rejection in both the cache and the durable ledger, so
+  // a rejected request is not admitted again after a restart.
+  void reject(
+    const RequestRecord & payload, const std::string & state, const std::uint16_t error_code,
+    const std::string & message)
+  {
+    registry.update_terminal(
+      payload.request_id, state, 0, error_code, message);
+    if (!durable.complete(payload, state, 0, error_code, message, now_ns())) {
+      RCLCPP_ERROR(
+        logger, "failed to persist durable %s request_id=%s", state.c_str(),
+        payload.request_id.c_str());
+    }
+  }
+
   runtime_history::Store & store;
+  DurableIdempotency durable;
   RequestRegistry registry;
   rclcpp_action::Client<ExecuteWorkflow>::SharedPtr action_client;
   std::function<void()> before_send;
@@ -174,40 +216,77 @@ grpc::Status GatewayService::SubmitWorkflow(
   const RequestRecord initial{
     request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
     request->timeout_ms(), "SUBMITTING", 0, 0, ""};
+
+  // Live duplicates are handled by the in-memory registry so an in-flight
+  // retry still reports its real state instead of an unknown one.
   const auto inserted = state_->registry.insert(initial);
   if (inserted == InsertResult::DUPLICATE) {
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
-  if (inserted != InsertResult::INSERTED) {
-    if (inserted == InsertResult::CAPACITY) {
-      return {grpc::StatusCode::RESOURCE_EXHAUSTED, "request registry capacity reached"};
-    }
+  if (inserted == InsertResult::CONFLICT) {
     return {grpc::StatusCode::INVALID_ARGUMENT, "request_id conflicts with an existing request"};
   }
-  if (!allowed(request->workflow_id())) {
+  if (inserted == InsertResult::CAPACITY) {
+    // The in-memory cache is full, but the durable ledger can still replay a
+    // known request; an unknown one is refused rather than risked.
+    const auto known = state_->durable.lookup(request->request_id());
+    if (known) {
+      fill_durable(*known, *request, reply);
+      return grpc::Status::OK;
+    }
+    return {grpc::StatusCode::RESOURCE_EXHAUSTED, "request registry capacity reached"};
+  }
+
+  // The registry is bounded and forgets on restart, so only the durable ledger
+  // can stop a replay from reaching the device.
+  const auto admission = state_->durable.admit(initial, now_ns());
+  if (admission.decision == IdempotencyDecision::UNAVAILABLE) {
     state_->registry.update_terminal(
-      request->request_id(), "REJECTED", 0, 400,
-      "workflow is not allowlisted");
+      request->request_id(), "REJECTED", 0, 503, admission.message);
+    return {grpc::StatusCode::UNAVAILABLE, admission.message};
+  }
+  if (admission.decision == IdempotencyDecision::CONFLICT) {
+    state_->registry.update_terminal(
+      request->request_id(), "REJECTED", 0, 409,
+      "request_id conflicts with a durable request");
+    return {grpc::StatusCode::INVALID_ARGUMENT, "request_id conflicts with a durable request"};
+  }
+  if (admission.decision == IdempotencyDecision::UNCERTAIN) {
+    // A crash between admission and dispatch leaves the outcome unknown: never
+    // guess that a redispatch is safe.
+    state_->registry.update_terminal(
+      request->request_id(), "UNCERTAIN", 0,
+      admission.error_code == 0 ? 409 : admission.error_code,
+      admission.message.empty() ? "prior dispatch outcome unknown" : admission.message);
+    fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
+    return grpc::Status::OK;
+  }
+  if (admission.decision == IdempotencyDecision::REPLAY) {
+    state_->registry.update_terminal(
+      request->request_id(), admission.state, admission.outcome, admission.error_code,
+      admission.message);
+    fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
+    return grpc::Status::OK;
+  }
+
+  if (!allowed(request->workflow_id())) {
+    state_->reject(initial, "REJECTED", 400, "workflow is not allowlisted");
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
   if (!state_->action_client->wait_for_action_server(0s)) {
-    state_->registry.update_terminal(
-      request->request_id(), "REJECTED", 0, 503,
-      "orchestrator unavailable");
+    state_->reject(initial, "REJECTED", 503, "orchestrator unavailable");
     return {grpc::StatusCode::UNAVAILABLE, "orchestrator unavailable"};
   }
 
   {
     const std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->stopping) {
-      state_->registry.update_terminal(
-        request->request_id(), "REJECTED", 0, 503,
-        "gateway is shutting down");
+      state_->reject(initial, "REJECTED", 503, "gateway is shutting down");
       return {grpc::StatusCode::UNAVAILABLE, "gateway is shutting down"};
     }
-    state_->goals.emplace(request->request_id(), State::PendingGoal{});
+    state_->goals.emplace(request->request_id(), State::PendingGoal{nullptr, initial});
   }
 
   ExecuteWorkflow::Goal goal;
@@ -268,11 +347,25 @@ grpc::Status GatewayService::SubmitWorkflow(
           error_code = result.result->error_code;
           message = result.result->message;
         }
+        RequestRecord payload;
         {
           const std::lock_guard<std::mutex> lock(state->mutex);
           state->registry.update_terminal(
             request_id, state_for_outcome(outcome), outcome, error_code, message);
+          // Capture the admitted payload before the goal is erased.
+          const auto goal = state->goals.find(request_id);
+          if (goal != state->goals.end()) {
+            payload = goal->second.payload;
+          }
           state->goals.erase(request_id);
+        }
+        // Durable terminal result: the next retry replays it without dispatch.
+        const auto terminal = payload.request_id.empty() ? false : state->durable.complete(
+          payload, state_for_outcome(outcome), outcome, error_code, message, now_ns());
+        if (!terminal) {
+          RCLCPP_ERROR(
+            state->logger, "failed to persist durable terminal result request_id=%s",
+            request_id.c_str());
         }
         state->changed.notify_all();
       }
@@ -293,6 +386,8 @@ grpc::Status GatewayService::SubmitWorkflow(
       state_->goals.erase(request->request_id());
       state_->registry.update_terminal(request->request_id(), "REJECTED", 0, 503, error.what());
     }
+    // The goal never reached the orchestrator, so this rejection is final.
+    state_->durable.complete(initial, "REJECTED", 0, 503, error.what(), now_ns());
     state_->changed.notify_all();
     return {grpc::StatusCode::UNAVAILABLE, error.what()};
   }
