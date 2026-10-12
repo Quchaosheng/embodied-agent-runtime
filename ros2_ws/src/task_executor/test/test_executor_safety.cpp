@@ -360,6 +360,10 @@ TEST_P(WorkerExceptionTest, ExceptionBecomesOneSafeStopAndExecutorStaysAlive)
   const auto next_events = wait_one_event_after_quiet("worker-survived");
   ASSERT_EQ(next_events.size(), 1U);
   EXPECT_EQ(next_events.front().action_status, TaskEvent::SUCCEEDED);
+  // The event must name the goal it belongs to, or a product-side consumer
+  // cannot bind the terminal result to the execution it started.
+  EXPECT_EQ(next_events.front().goal_id, rclcpp_action::to_string(next_goal->get_goal_id()));
+  EXPECT_EQ(next_events.front().request_id, "");
 }
 
 INSTANTIATE_TEST_SUITE_P(

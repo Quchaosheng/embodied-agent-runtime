@@ -281,6 +281,8 @@ node.create_subscription(
     TaskEvent, "/runtime/task_events",
     lambda event: emit("task_event", {
         "task_id": event.task_id, "target_id": event.target_id,
+        "request_id": event.request_id, "workflow_id": event.workflow_id,
+        "goal_id": event.goal_id, "stamp": {"sec": event.stamp.sec, "nanosec": event.stamp.nanosec},
         "action_status": scalar(event.action_status), "outcome": scalar(event.outcome),
         "error_code": int(event.error_code), "duration_ms": int(event.duration_ms),
         "message": event.message}),
