@@ -66,6 +66,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_report_json runtime_history_store)
   ament_add_gtest(test_stage_event_log test/test_stage_event_log.cpp)
   target_link_libraries(test_stage_event_log runtime_history_stage_events)
+  ament_add_gtest(test_can_stage_names test/test_can_stage_names.cpp)
+  target_link_libraries(test_can_stage_names runtime_history_stage_events)
 endif()
 
 ament_export_targets(export_runtime_history HAS_LIBRARY_TARGET)
