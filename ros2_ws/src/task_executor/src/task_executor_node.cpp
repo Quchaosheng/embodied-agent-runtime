@@ -1,5 +1,6 @@
 #include "task_executor/diagnostic_state.hpp"
 #include "task_executor/task_event.hpp"
+#include "task_executor/task_event_capture.hpp"
 #include "task_executor/target_validator.hpp"
 #include "task_executor_node.hpp"
 #include "runtime_history/stage_event_log.hpp"
@@ -61,6 +62,8 @@ public:
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
     stage_log_ = std::make_unique<runtime_history::StageEventLog>(
       declare_parameter<std::string>("stage_event_log_path", ""));
+    task_event_capture_ = std::make_unique<task_executor::TaskEventCapture>(
+      declare_parameter<std::string>("task_event_capture_path", ""));
 
     if (targets.size() != target_arguments.size() || targets.empty()) {
       throw std::invalid_argument("targets and target_arguments must be non-empty and aligned");
@@ -960,10 +963,17 @@ private:
       const auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started_at_).count();
       const auto goal = goal_handle->get_goal();
-      task_event_publisher_->publish(task_executor::make_task_event(
-          goal->task_id, goal->target_id, goal->request_id, goal->workflow_id, goal_id_,
-          action_status, result.outcome, result.error_code,
-          static_cast<std::uint64_t>(duration_ms), result.message, now()));
+      const auto event = task_executor::make_task_event(
+        goal->task_id, goal->target_id, goal->request_id, goal->workflow_id, goal_id_,
+        action_status, result.outcome, result.error_code,
+        static_cast<std::uint64_t>(duration_ms), result.message, now());
+      task_event_publisher_->publish(event);
+      // Capture is best-effort and must not affect the terminal outcome.
+      if (task_event_capture_ && task_event_capture_->enabled() &&
+        !task_event_capture_->append(event))
+      {
+        RCLCPP_ERROR(get_logger(), "Failed to append the task event capture");
+      }
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Failed to publish terminal task event: %s", error.what());
     } catch (...) {
@@ -996,6 +1006,7 @@ private:
   std::uint16_t next_command_id_{1};
   std::unique_ptr<task_executor::TargetValidator> validator_;
   std::unique_ptr<runtime_history::StageEventLog> stage_log_;
+  std::unique_ptr<task_executor::TaskEventCapture> task_event_capture_;
   std::unordered_map<std::string, std::int32_t> target_arguments_;
   std::atomic_bool running_{true};
   std::atomic_bool active_goal_{false};

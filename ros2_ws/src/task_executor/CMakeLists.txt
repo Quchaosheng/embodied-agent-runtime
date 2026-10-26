@@ -32,9 +32,17 @@ target_include_directories(task_event PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(task_event robot_task_interfaces)
 
+add_library(task_event_capture src/task_event_capture.cpp)
+target_compile_features(task_event_capture PUBLIC cxx_std_17)
+target_include_directories(task_event_capture PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(task_event_capture robot_task_interfaces)
+
 add_library(task_executor_node_lib src/task_executor_node.cpp)
 target_include_directories(task_executor_node_lib PRIVATE src)
 target_link_libraries(task_executor_node_lib target_validator task_executor_diagnostics task_event
+  task_event_capture
   runtime_history::runtime_history_stage_events)
 ament_target_dependencies(task_executor_node_lib
   rclcpp
@@ -46,7 +54,8 @@ target_include_directories(task_executor_node PRIVATE src)
 target_link_libraries(task_executor_node task_executor_node_lib)
 ament_target_dependencies(task_executor_node rclcpp)
 
-install(TARGETS target_validator task_executor_diagnostics task_event task_executor_node
+install(TARGETS target_validator task_executor_diagnostics task_event task_event_capture
+  task_executor_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME})
@@ -72,6 +81,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_task_event test/test_task_event.cpp)
   target_link_libraries(test_task_event task_event)
   ament_target_dependencies(test_task_event robot_task_interfaces)
+
+  ament_add_gtest(test_task_event_capture test/test_task_event_capture.cpp)
+  target_link_libraries(test_task_event_capture task_event_capture)
+  ament_target_dependencies(test_task_event_capture robot_task_interfaces)
 
   ament_add_gtest(test_executor_safety test/test_executor_safety.cpp)
   target_include_directories(test_executor_safety PRIVATE src)
