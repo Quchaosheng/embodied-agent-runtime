@@ -1,5 +1,6 @@
 #include "device_bridge/command_policy.hpp"
 #include "device_bridge/diagnostic_state.hpp"
+#include "runtime_history/can_stage_names.hpp"
 #include "runtime_history/stage_event_log.hpp"
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
@@ -287,9 +288,9 @@ private:
       const std::string attempt_extra =
         "{\"command_id\":" + std::to_string(command.command_id) +
         ",\"retry_count\":" + std::to_string(attempt) + "}";
-      emit_stage(goal, "can_encode_start", attempt_extra);
+      emit_stage(goal, runtime_history::can_stage::kEncodeStart, attempt_extra);
       const auto frame = runtime_can::encode_command(command);
-      emit_stage(goal, "can_encode_end", attempt_extra);
+      emit_stage(goal, runtime_history::can_stage::kEncodeEnd, attempt_extra);
       if (!socket_.send(frame, send_error)) {
         diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
         publish_diagnostics();
@@ -301,8 +302,8 @@ private:
       command_sent = true;
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::WAITING_ACK, attempt);
       diagnostic_state_.mark_waiting_ack();
-      emit_stage(goal, "can_frame_sent", attempt_extra);
-      emit_stage(goal, "can_ack_wait_start", attempt_extra);
+      emit_stage(goal, runtime_history::can_stage::kFrameSent, attempt_extra);
+      emit_stage(goal, runtime_history::can_stage::kAckWaitStart, attempt_extra);
 
       runtime_can::Response response;
       std::string wait_error;
@@ -316,7 +317,7 @@ private:
         if (response.result_code == 0) {
           diagnostic_state_.record_success();
           publish_diagnostics();
-          emit_stage(goal, "can_ack_received", attempt_extra);
+          emit_stage(goal, runtime_history::can_stage::kAckReceived, attempt_extra);
           auto result = std::make_shared<ExecuteDeviceCommand::Result>();
           result->outcome = ExecuteDeviceCommand::Result::COMPLETED;
           result->error_code = 0;
@@ -356,7 +357,18 @@ private:
         return;
       }
 
+      // An ACK timeout is evidence in its own right: without it the expiry of one
+      // attempt is only a gap between two timestamps, which is indistinguishable
+      // from a stalled process or a truncated log.
+      emit_stage(goal, runtime_history::can_stage::kAckTimeout, attempt_extra);
+
       if (attempt < kMaxRetries) {
+        {
+          const std::string retry_extra =
+            "{\"command_id\":" + std::to_string(command.command_id) +
+            ",\"retry_count\":" + std::to_string(attempt + 1) + "}";
+          emit_stage(goal, runtime_history::can_stage::kRetryScheduled, retry_extra);
+        }
         publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::RETRYING, attempt + 1);
         diagnostic_state_.record_retry();
         publish_diagnostics();
@@ -369,7 +381,7 @@ private:
       publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, attempt);
       diagnostic_state_.record_ack_timeout(device_bridge::kErrorAckTimeout);
       publish_diagnostics();
-      emit_stage(goal, "can_retry_exhausted", attempt_extra);
+      emit_stage(goal, runtime_history::can_stage::kRetryExhausted, attempt_extra);
       stop_and_finish(
         goal_handle, command.command_id, false, device_bridge::kErrorAckTimeout,
         "command ACK timeout; attempting device STOP");
