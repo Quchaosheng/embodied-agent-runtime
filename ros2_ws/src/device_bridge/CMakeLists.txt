@@ -22,6 +22,9 @@ target_include_directories(device_bridge_policy PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(device_bridge_policy builtin_interfaces)
+# The application/STOP ID partition is owned by runtime_can; include it so the
+# policy reads the same constants the encoder uses.
+target_link_libraries(device_bridge_policy runtime_can::runtime_can)
 
 add_library(device_bridge_diagnostics src/diagnostic_state.cpp)
 target_compile_features(device_bridge_diagnostics PUBLIC cxx_std_17)
@@ -71,7 +74,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   ament_add_gtest(test_command_policy test/test_command_policy.cpp)
-  target_link_libraries(test_command_policy device_bridge_policy)
+  target_link_libraries(test_command_policy device_bridge_policy runtime_can::runtime_can)
   ament_target_dependencies(test_command_policy builtin_interfaces)
 
   ament_add_gtest(test_diagnostic_state test/test_diagnostic_state.cpp)

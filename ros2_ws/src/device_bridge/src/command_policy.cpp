@@ -2,9 +2,17 @@
 
 #include <limits>
 
+#include "runtime_can/protocol.hpp"
+
 namespace device_bridge
 {
 
+bool application_command_id_in_range(const std::uint32_t command_id)
+{
+  // The partition is owned by runtime_can, not restated here: STOP starts at
+  // kStopCommandIdMin, so an application ID must stop one below it.
+  return command_id != 0 && command_id <= runtime_can::kApplicationCommandIdMax;
+}
 bool duration_to_milliseconds(
   const builtin_interfaces::msg::Duration & duration,
   const std::int64_t max_milliseconds,
