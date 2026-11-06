@@ -41,6 +41,11 @@ public:
   bool update_terminal(
     const std::string & request_id, const std::string & state, std::uint8_t outcome,
     std::uint16_t error_code, const std::string & message);
+  // Undoes a reservation that never became an execution. Used when a later
+  // admission step rejects the request: leaving it registered would make this
+  // payload the identity that future retries of the same request_id compare
+  // against, blocking the authoritative one.
+  bool erase(const std::string & request_id);
   void clear();
   std::size_t size() const;
 
