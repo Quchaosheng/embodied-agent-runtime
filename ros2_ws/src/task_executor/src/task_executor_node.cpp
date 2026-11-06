@@ -496,6 +496,7 @@ private:
     }
 
     DeviceGoalHandle::SharedPtr child_goal_handle;
+    bool response_received = false;
     if (!running_ || !rclcpp::ok()) {
       stop_cause = StopCause::kShutdown;
     }
@@ -513,12 +514,25 @@ private:
       child->changed.wait_until(
         lock, late_response_deadline, [&]() {return child->goal_response_received;});
       child_goal_handle = child->handle;
+      // A handle that is still null here may mean "rejected" or "no response
+      // yet"; the second case must not be reported as an accepted outcome.
+      response_received = child->goal_response_received;
     }
     if (!child_goal_handle) {
+      // Nothing was accepted by the bridge, so there is no device work to
+      // settle. An unknown acceptance is still an unconfirmed cancel: the
+      // request may already be queued and the late response callback can still
+      // accept it, so report the gap instead of claiming a clean cancel.
+      const bool acceptance_unknown =
+        stop_cause != StopCause::kNone && !response_received;
       if (stop_cause == StopCause::kShutdown) {
         finish_aborted(
           goal_handle, ExecuteTask::Result::SAFE_STOP,
           kErrorBridgeUnavailable, "executor shutdown before Device Bridge accepted command");
+      } else if (acceptance_unknown) {
+        finish_aborted(
+          goal_handle, ExecuteTask::Result::SAFE_STOP, kErrorCancelUnconfirmed,
+          "device command acceptance was not confirmed before the parent terminal");
       } else if (stop_cause == StopCause::kUserCancel) {
         finish_canceled(goal_handle, "task canceled before Device Bridge accepted command");
       } else if (stop_cause == StopCause::kDeadline) {
