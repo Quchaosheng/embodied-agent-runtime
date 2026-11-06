@@ -92,7 +92,7 @@ prove physical motion or stopping distance.
 
 On 2026-07-29, this Windows host completed the isolated WSL2 build and test
 flow in Ubuntu 24.04 with ROS 2 Jazzy for 11 packages. The checked-in test
-sources currently define **155 GoogleTest cases and 30 pytest cases** (the
+sources currently define **155 GoogleTest cases and 33 pytest cases** (the
 tree recorded on 2026-07-29 defined 119 and 18). These are functional
 test-case counts, not a pass-count or a `colcon test-result` record
 count. `colcon test-result` also includes test-runner and `ament_lint` records,
@@ -316,7 +316,7 @@ X5/UVC evidence is documented below.
 
 | Environment | Current status | Evidence |
 | --- | --- | --- |
-| Windows + WSL2, x86_64 | Software verified | Isolated Ubuntu 24.04/Jazzy build; 155 GoogleTest cases plus 30 pytest cases defined in the checked-in test sources |
+| Windows + WSL2, x86_64 | Software verified | Isolated Ubuntu 24.04/Jazzy build; 155 GoogleTest cases plus 33 pytest cases defined in the checked-in test sources |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
 | Generic ARM64 Linux | Profile and scripts prepared; board-specific execution not claimed | `generic-arm64` Jazzy/Ubuntu 24.04 configuration |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |

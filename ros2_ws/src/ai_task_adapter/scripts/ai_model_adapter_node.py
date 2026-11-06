@@ -87,6 +87,11 @@ class AiModelAdapterNode(Node):
             max_future_skew_ms=int(
                 self.declare_parameter('observation_max_future_skew_ms', 100).value
             ),
+            # Without a path the failure window is per process, i.e. per
+            # invocation for this tool, so the storm threshold never triggers.
+            failure_state_path=(
+                self.declare_parameter('model_failure_state_path', '').value or None
+            ),
         )
         self._metrics = ModelRuntimeMetrics()
         self._action_timeout_sec = float(

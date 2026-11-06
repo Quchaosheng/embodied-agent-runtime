@@ -281,6 +281,7 @@ class ModelAdmission:
         failure_window_ms: int,
         max_failures: int,
         max_future_skew_ms: int,
+        failure_state_path: str | None = None,
     ) -> None:
         if (
             dedup_window_ms <= 0
@@ -295,6 +296,14 @@ class ModelAdmission:
         self._max_future_skew_ns = int(max_future_skew_ms) * 1_000_000
         self._admitted_until_ns: dict[str, int] = {}
         self._failures_ns: deque[int] = deque()
+        # The adapter runs once per invocation, so in-process history alone can
+        # never reach a storm threshold. Persist the timestamps when a path is
+        # given; an unwritable file degrades to in-process counting rather than
+        # blocking the tool.
+        self._failure_state_path = (
+            Path(failure_state_path) if failure_state_path else None
+        )
+        self._load_failures()
 
     def admit(self, context: ModelRequestContext, now_ns: int) -> str:
         self._admitted_until_ns = {
@@ -322,7 +331,28 @@ class ModelAdmission:
         while self._failures_ns and self._failures_ns[0] <= cutoff_ns:
             self._failures_ns.popleft()
         self._failures_ns.append(now_ns)
+        self._save_failures()
         return len(self._failures_ns) >= self._max_failures
+
+    def _load_failures(self) -> None:
+        if self._failure_state_path is None:
+            return
+        try:
+            values = json.loads(self._failure_state_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return
+        if isinstance(values, list):
+            self._failures_ns = deque(int(value) for value in values if isinstance(value, int))
+
+    def _save_failures(self) -> None:
+        if self._failure_state_path is None:
+            return
+        try:
+            self._failure_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._failure_state_path.write_text(
+                json.dumps(list(self._failures_ns)) + '\n', encoding='utf-8')
+        except OSError:
+            self._failure_state_path = None
 
 
 class ModelRecorder:
