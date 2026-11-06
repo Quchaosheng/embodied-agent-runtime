@@ -38,6 +38,9 @@ public:
     grpc::ServerContext *, const GetTaskRequest *, TaskRecord *) override;
   grpc::Status GetStats(
     grpc::ServerContext *, const GetStatsRequest *, RuntimeStats *) override;
+  grpc::Status ResolveUncertain(
+    grpc::ServerContext *, const ResolveUncertainRequest *,
+    ResolveUncertainReply *) override;
 
   void stop_accepting();
   void cancel_active();

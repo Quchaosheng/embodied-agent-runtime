@@ -7,6 +7,9 @@ service RobotRuntime {
   rpc CancelWorkflow(CancelWorkflowRequest) returns (CancelWorkflowReply);
   rpc GetTask(GetTaskRequest) returns (TaskRecord);
   rpc GetStats(GetStatsRequest) returns (RuntimeStats);
+  // Explicit operator decision for a request whose dispatch outcome is
+  // unknown. Never redispatches a device command.
+  rpc ResolveUncertain(ResolveUncertainRequest) returns (ResolveUncertainReply);
 }
 
 message SubmitWorkflowRequest {
@@ -55,6 +58,20 @@ message TaskRecord {
   uint64 duration_ms = 8;
   string message = 9;
   int64 completed_at_ns = 10;
+}
+
+message ResolveUncertainRequest {
+  string request_id = 1;
+  // Terminal state to record: ABORTED, SAFE_STOP, DEVICE_FAULT, CANCELED,
+  // COMPLETED or REJECTED. Nothing is dispatched as a result.
+  string state = 2;
+  string message = 3;
+}
+
+message ResolveUncertainReply {
+  bool resolved = 1;
+  string state = 2;
+  string message = 3;
 }
 
 message GetStatsRequest {}

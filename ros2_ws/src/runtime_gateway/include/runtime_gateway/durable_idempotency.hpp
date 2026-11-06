@@ -56,6 +56,12 @@ public:
   bool resolve_uncertain(
     const RequestRecord & record, const std::string & state, std::uint8_t outcome,
     std::uint16_t error_code, const std::string & message, std::int64_t now_ns);
+  // Same decision, addressed by the stored identity. Used by the resolve RPC,
+  // which has the persisted fingerprint rather than a full RequestRecord.
+  bool resolve_uncertain(
+    const std::string & request_id, const std::string & fingerprint,
+    const std::string & state, std::uint8_t outcome, const std::string & message,
+    std::int64_t now_ns);
   std::optional<IdempotencyOutcome> lookup(const std::string & request_id) const;
   // Drops rows older than the retry horizon, keeping at least keep_at_least so
   // the ledger is bounded without forgetting the most recent requests.

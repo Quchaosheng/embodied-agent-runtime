@@ -191,6 +191,68 @@ TEST_F(GrpcValidationTest, ConflictingReservationDoesNotBlockTheAuthoritativeRet
   EXPECT_EQ(replay.state(), "COMPLETED");
 }
 
+// The resolve RPC is the only supported way to clear an unknown outcome after
+// a restart; it must never dispatch anything.
+TEST_F(GrpcValidationTest, ResolvesAnUncertainRequestWithoutDispatching)
+{
+  {
+    runtime_gateway::DurableIdempotency ledger(*store_);
+    runtime_gateway::RequestRecord admitted{
+      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+    ASSERT_EQ(
+      ledger.admit(admitted, 1).decision,
+      runtime_gateway::IdempotencyDecision::PROCEED);
+  }
+
+  runtime_gateway::ResolveUncertainRequest request;
+  request.set_request_id("request-1");
+  request.set_state("ABORTED");
+  request.set_message("operator confirmed the robot did not move");
+  runtime_gateway::ResolveUncertainReply reply;
+  grpc::ClientContext context;
+  ASSERT_TRUE(stub_->ResolveUncertain(&context, request, &reply).ok());
+  EXPECT_TRUE(reply.resolved());
+  EXPECT_EQ(reply.state(), "ABORTED");
+
+  // The row is terminal now, and a retry replays instead of re-dispatching.
+  const auto stored = store_->get_idempotency("request-1");
+  ASSERT_TRUE(stored.has_value());
+  EXPECT_EQ(stored->state, "ABORTED");
+  EXPECT_EQ(service_->active_request_count(), 0U);
+}
+
+TEST_F(GrpcValidationTest, ResolveRejectsANonTerminalStateAndUnknownId)
+{
+  {
+    runtime_gateway::DurableIdempotency ledger(*store_);
+    runtime_gateway::RequestRecord admitted{
+      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+    ASSERT_EQ(
+      ledger.admit(admitted, 1).decision,
+      runtime_gateway::IdempotencyDecision::PROCEED);
+  }
+
+  runtime_gateway::ResolveUncertainRequest non_terminal;
+  non_terminal.set_request_id("request-1");
+  non_terminal.set_state("RUNNING");
+  runtime_gateway::ResolveUncertainReply non_terminal_reply;
+  grpc::ClientContext non_terminal_context;
+  EXPECT_EQ(
+    stub_->ResolveUncertain(&non_terminal_context, non_terminal, &non_terminal_reply)
+    .error_code(),
+    grpc::StatusCode::INVALID_ARGUMENT);
+  EXPECT_EQ(store_->get_idempotency("request-1")->state, "ADMITTED");
+
+  runtime_gateway::ResolveUncertainRequest unknown;
+  unknown.set_request_id("never-seen");
+  unknown.set_state("ABORTED");
+  runtime_gateway::ResolveUncertainReply unknown_reply;
+  grpc::ClientContext unknown_context;
+  ASSERT_TRUE(stub_->ResolveUncertain(&unknown_context, unknown, &unknown_reply).ok());
+  EXPECT_FALSE(unknown_reply.resolved());
+  EXPECT_EQ(unknown_reply.state(), "NOT_FOUND");
+}
+
 TEST_F(GrpcValidationTest, ReportsUnavailableWhenOrchestratorIsMissing)
 {
   const auto request = valid_request();
