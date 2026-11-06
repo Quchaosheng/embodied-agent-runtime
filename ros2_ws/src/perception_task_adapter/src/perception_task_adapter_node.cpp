@@ -186,20 +186,30 @@ PerceptionTaskAdapterNode::~PerceptionTaskAdapterNode() = default;
 
 bool PerceptionTaskAdapterNode::process_frame(const cv::Mat & frame, bool immediate)
 {
-  std::vector<DetectedMarker> detections;
-  try {
-    detections = impl_->detector.detect(frame);
-  } catch (const cv::Exception & error) {
-    RCLCPP_ERROR(get_logger(), "ArUco detection failed: %s", error.what());
+  // While a workflow runs the trigger discards every observation anyway, so
+  // detecting here only burns CPU. The frame is still consumed by the caller,
+  // and the trigger state is still reset through observe() below.
+  bool workflow_active = false;
+  {
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    impl_->stop_locked(2);
-    return false;
+    workflow_active = impl_->active;
   }
 
   std::vector<int> visible_ids;
-  visible_ids.reserve(detections.size());
-  for (const auto & detection : detections) {
-    visible_ids.push_back(detection.marker_id);
+  if (!workflow_active) {
+    std::vector<DetectedMarker> detections;
+    try {
+      detections = impl_->detector.detect(frame);
+    } catch (const cv::Exception & error) {
+      RCLCPP_ERROR(get_logger(), "ArUco detection failed: %s", error.what());
+      std::lock_guard<std::mutex> lock(impl_->mutex);
+      impl_->stop_locked(2);
+      return false;
+    }
+    visible_ids.reserve(detections.size());
+    for (const auto & detection : detections) {
+      visible_ids.push_back(detection.marker_id);
+    }
   }
 
   std::optional<TriggerEvent> event;
