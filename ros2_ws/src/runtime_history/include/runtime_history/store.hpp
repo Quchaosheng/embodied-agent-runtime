@@ -66,6 +66,9 @@ public:
   bool put_idempotency(const IdempotencyRecord & record);
   std::optional<IdempotencyRecord> get_idempotency(const std::string & request_id) const;
   std::size_t prune_idempotency(std::int64_t older_than_ns, std::size_t keep_at_least);
+  // Number of unexpired ledger rows; the admission path uses it to enforce a
+  // real bound instead of only limiting what retention keeps.
+  std::size_t count_idempotency(std::int64_t not_older_than_ns) const;
 
 private:
   std::optional<TaskRecord> get_unlocked(const std::string & task_id) const;
