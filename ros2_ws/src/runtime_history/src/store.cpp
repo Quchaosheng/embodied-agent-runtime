@@ -269,7 +269,13 @@ bool Store::put_idempotency(const IdempotencyRecord & record)
     check(db_, sqlite3_bind_int(value, 5, record.error_code));
     bind_text(db_, value, 6, record.message);
     check(db_, sqlite3_bind_int64(value, 7, record.updated_at_ns));
-    return sqlite3_step(value) == SQLITE_DONE;
+    if (sqlite3_step(value) != SQLITE_DONE) {
+      return false;
+    }
+    // The upsert carries a fingerprint guard, so a changed payload updates no
+    // row at all. Reporting success there would tell a caller an uncertain
+    // request was resolved while the stored row is untouched.
+    return sqlite3_changes(db_) > 0;
   } catch (...) {
     return false;
   }
@@ -303,22 +309,33 @@ std::optional<IdempotencyRecord> Store::get_idempotency(const std::string & requ
 }
 
 std::size_t Store::prune_idempotency(
-  const std::int64_t older_than_ns, const std::size_t keep_at_least)
+  const std::int64_t older_than_ns, const std::size_t keep_at_least,
+  const std::vector<std::string> & reclaimable_states)
 {
   const std::lock_guard<std::mutex> lock(mutex_);
   try {
     execute(db_, "BEGIN IMMEDIATE");
-    Statement statement(
-      db_,
-      // Only unexpired rows are protected by the keep floor; expired rows must
-      // stay reclaimable or a bounded ledger could never shrink.
-      "DELETE FROM request_idempotency WHERE updated_at_ns < ? AND request_id NOT IN ("
+    // Only unexpired rows are protected by the keep floor; expired rows must
+    // stay reclaimable or a bounded ledger could never shrink. Unresolved
+    // states are excluded from the delete set entirely.
+    std::string placeholders;
+    for (std::size_t index = 0; index < reclaimable_states.size(); ++index) {
+      placeholders += index == 0 ? "?" : ",?";
+    }
+    const std::string sql =
+      "DELETE FROM request_idempotency WHERE updated_at_ns < ? AND state IN (" +
+      placeholders + ") AND request_id NOT IN ("
       "SELECT request_id FROM request_idempotency WHERE updated_at_ns >= ? "
-      "ORDER BY updated_at_ns DESC LIMIT ?)");
+      "ORDER BY updated_at_ns DESC LIMIT ?)";
+    Statement statement(db_, sql.c_str());
     check(db_, sqlite3_bind_int64(statement.get(), 1, older_than_ns));
-    check(db_, sqlite3_bind_int64(statement.get(), 2, older_than_ns));
+    int parameter = 2;
+    for (const auto & state : reclaimable_states) {
+      bind_text(db_, statement.get(), parameter++, state);
+    }
+    check(db_, sqlite3_bind_int64(statement.get(), parameter++, older_than_ns));
     check(db_, sqlite3_bind_int64(
-        statement.get(), 3, static_cast<sqlite3_int64>(keep_at_least)));
+        statement.get(), parameter, static_cast<sqlite3_int64>(keep_at_least)));
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
       execute(db_, "ROLLBACK");
       return 0;

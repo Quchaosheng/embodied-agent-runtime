@@ -281,8 +281,9 @@ TEST(StoreTest, UpdatesSameFingerprintAndRejectsChangedFingerprint)
   ASSERT_TRUE(store.put_idempotency(idempotency("request-1", "fp-1", "COMPLETED")));
   EXPECT_EQ(store.get_idempotency("request-1")->state, "COMPLETED");
 
-  // The admitted identity is immutable: a changed payload cannot overwrite it.
-  EXPECT_TRUE(store.put_idempotency(idempotency("request-1", "fp-2", "COMPLETED")));
+  // The admitted identity is immutable: a changed payload cannot overwrite it,
+  // and the call must say so instead of reporting an update that never applied.
+  EXPECT_FALSE(store.put_idempotency(idempotency("request-1", "fp-2", "COMPLETED")));
   EXPECT_EQ(store.get_idempotency("request-1")->fingerprint, "fp-1");
   EXPECT_EQ(
     query_text(
@@ -337,6 +338,16 @@ TEST(StoreTest, AddsIdentityColumnsToADatabaseCreatedWithoutThem)
   EXPECT_EQ(store.get("task-1")->goal_id, "goal-1");
 }
 
+namespace
+{
+
+// Only finished outcomes may be reclaimed by age; this is the set the gateway
+// passes in.
+const std::vector<std::string> kTerminalStates{
+  "COMPLETED", "CANCELED", "SAFE_STOP", "DEVICE_FAULT", "ABORTED", "REJECTED"};
+
+}  // namespace
+
 TEST(StoreTest, RejectsIdempotencyWithoutIdentity)
 {
   TemporaryDatabase database;
@@ -356,19 +367,33 @@ TEST(StoreTest, PrunesExpiredIdempotencyButKeepsRecentEntries)
   }
 
   // Horizon 250 expires request-0 (100) and request-1 (200) only.
-  EXPECT_EQ(store.prune_idempotency(250, 0), 2U);
+  EXPECT_EQ(store.prune_idempotency(250, 0, kTerminalStates), 2U);
   EXPECT_FALSE(store.get_idempotency("request-0").has_value());
   EXPECT_TRUE(store.get_idempotency("request-2").has_value());
 
   // The keep floor protects unexpired rows, not expired ones: a horizon above
   // every timestamp reclaims the rest even with a floor of two.
-  EXPECT_EQ(store.prune_idempotency(10000, 2), 3U);
+  EXPECT_EQ(store.prune_idempotency(10000, 2, kTerminalStates), 3U);
   EXPECT_FALSE(store.get_idempotency("request-4").has_value());
 
   // A fresh row inside the horizon survives any prune.
   ASSERT_TRUE(store.put_idempotency(idempotency("fresh", "fp", "COMPLETED", 20000)));
-  EXPECT_EQ(store.prune_idempotency(10000, 0), 0U);
+  EXPECT_EQ(store.prune_idempotency(10000, 0, kTerminalStates), 0U);
   EXPECT_TRUE(store.get_idempotency("fresh").has_value());
+}
+
+TEST(StoreTest, PruneKeepsRowsWhoseStateIsNotReclaimable)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  ASSERT_TRUE(store.put_idempotency(idempotency("pending", "fp", "ADMITTED", 100)));
+  ASSERT_TRUE(store.put_idempotency(idempotency("done", "fp", "COMPLETED", 100)));
+
+  // Both rows are past the horizon; only the finished one may be reclaimed.
+  EXPECT_EQ(store.prune_idempotency(10000, 0, kTerminalStates), 1U);
+  ASSERT_TRUE(store.get_idempotency("pending").has_value());
+  EXPECT_EQ(store.get_idempotency("pending")->state, "ADMITTED");
+  EXPECT_FALSE(store.get_idempotency("done").has_value());
 }
 
 TEST(StoreTest, ThrowsWhenIdempotencySchemaIsMissing)
@@ -384,7 +409,7 @@ TEST(StoreTest, ThrowsWhenIdempotencySchemaIsMissing)
   EXPECT_THROW(store.get_idempotency("request-1"), std::runtime_error);
   // Storage failure is reported, not silently treated as "never seen".
   EXPECT_FALSE(store.put_idempotency(idempotency()));
-  EXPECT_EQ(store.prune_idempotency(10000, 0), 0U);
+  EXPECT_EQ(store.prune_idempotency(10000, 0, kTerminalStates), 0U);
 }
 
 TEST(StoreTest, RejectsDatabaseThatCannotUseWal)

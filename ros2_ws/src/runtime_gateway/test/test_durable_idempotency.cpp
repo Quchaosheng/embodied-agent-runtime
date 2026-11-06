@@ -216,6 +216,49 @@ TEST_F(DurableIdempotencyTest, CapacityRefusesNewIdentitiesWithoutDroppingLiveOn
     runtime_gateway::IdempotencyDecision::UNCERTAIN);
 }
 
+
+TEST_F(DurableIdempotencyTest, UnresolvedRequestSurvivesTheRetentionHorizon)
+{
+  runtime_gateway::DurableIdempotency ledger(*store_, 1);
+  // Admitted but never completed: the outcome is unknown, not finished.
+  ASSERT_EQ(
+    ledger.admit(record("request-pending", "task-pending"), now()).decision,
+    runtime_gateway::IdempotencyDecision::PROCEED);
+
+  // A later request past the horizon used to prune the pending row, after
+  // which the original request looked brand new and could dispatch again.
+  const std::int64_t far_future = now() + 48LL * 60 * 60 * 1000 * 1000 * 1000;
+  ASSERT_EQ(
+    ledger.admit(record("request-later", "task-later"), far_future).decision,
+    runtime_gateway::IdempotencyDecision::PROCEED);
+
+  const auto pending = ledger.lookup("request-pending");
+  ASSERT_TRUE(pending.has_value());
+  EXPECT_EQ(pending->state, "ADMITTED");
+  EXPECT_EQ(
+    ledger.admit(record("request-pending", "task-pending"), far_future).decision,
+    runtime_gateway::IdempotencyDecision::UNCERTAIN);
+}
+
+TEST_F(DurableIdempotencyTest, ResolutionWithChangedFingerprintReportsFailure)
+{
+  runtime_gateway::DurableIdempotency ledger(*store_);
+  ASSERT_EQ(
+    ledger.admit(record("request-1"), now()).decision,
+    runtime_gateway::IdempotencyDecision::PROCEED);
+
+  // The stored fingerprint is immutable, so this update cannot apply. It must
+  // report failure instead of leaving the row ADMITTED while claiming success.
+  auto changed = record("request-1");
+  changed.target_id = "other_target";
+  EXPECT_FALSE(
+    ledger.resolve_uncertain(changed, "ABORTED", 3, 500, "resolved", now()));
+
+  const auto stored = ledger.lookup("request-1");
+  ASSERT_TRUE(stored.has_value());
+  EXPECT_EQ(stored->state, "ADMITTED");
+}
+
 TEST_F(DurableIdempotencyTest, RejectsZeroCapacityAndEmptyIdentity)
 {
   EXPECT_THROW(runtime_gateway::DurableIdempotency ledger(*store_, 0), std::invalid_argument);
