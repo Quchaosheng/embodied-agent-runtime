@@ -59,7 +59,12 @@ public:
         }
         return rclcpp_action::GoalResponse::REJECT;
       },
-      [](const std::shared_ptr<ServerGoalHandle>) {
+      [this](const std::shared_ptr<ServerGoalHandle>) {
+        {
+          const std::lock_guard<std::mutex> lock(mutex_);
+          ++cancel_count_;
+        }
+        changed_.notify_all();
         return rclcpp_action::CancelResponse::ACCEPT;
       },
       [this](const std::shared_ptr<ServerGoalHandle> handle) {
@@ -89,6 +94,19 @@ public:
     return handles_.size();
   }
 
+  std::size_t cancel_count() const
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return cancel_count_;
+  }
+
+  bool wait_for_cancel(
+    const std::chrono::milliseconds timeout = 2s, const std::size_t count = 1)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return changed_.wait_for(lock, timeout, [this, count]() {return cancel_count_ >= count;});
+  }
+
   void complete(std::size_t index)
   {
     std::shared_ptr<ServerGoalHandle> handle;
@@ -108,6 +126,7 @@ private:
   mutable std::mutex mutex_;
   std::condition_variable changed_;
   std::vector<std::shared_ptr<ServerGoalHandle>> handles_;
+  std::size_t cancel_count_{0};
   bool accept_{true};
   rclcpp_action::Server<ExecuteWorkflow>::SharedPtr server_;
 };
@@ -133,6 +152,9 @@ protected:
         rclcpp::Parameter("input_mode", "camera"),
         rclcpp::Parameter("confirm_frames", 3),
         rclcpp::Parameter("rearm_missing_frames", 5),
+        // No such device, so a failure-path test cannot depend on a real camera
+        // being present or absent on the machine running it.
+        rclcpp::Parameter("camera_index", kUnavailableCameraIndex),
       });
     adapter_ = std::make_shared<perception_task_adapter::PerceptionTaskAdapterNode>(options);
     server_ = std::make_shared<FakeWorkflowServer>();
@@ -150,6 +172,8 @@ protected:
     adapter_.reset();
     server_.reset();
   }
+
+  static constexpr std::int64_t kUnavailableCameraIndex = 4096;
 
   std::shared_ptr<perception_task_adapter::PerceptionTaskAdapterNode> adapter_;
   std::shared_ptr<FakeWorkflowServer> server_;
@@ -221,6 +245,31 @@ TEST_F(ActionSubmissionTest, CameraFramesConfirmSuppressAndRearm)
   EXPECT_FALSE(adapter_->process_frame(marker_image(20), false));
   ASSERT_TRUE(adapter_->process_frame(marker_image(20), false));
   ASSERT_TRUE(server_->wait_for_goals(2));
+}
+
+// A camera failure stops the input loop, but a workflow that was already
+// accepted must still be cancelled on the way out; otherwise the adapter exits
+// while the orchestrator keeps running the workflow.
+TEST_F(ActionSubmissionTest, CameraFailureStillCancelsAcceptedWorkflow)
+{
+  ASSERT_TRUE(adapter_->process_frame(marker_image(10), true));
+  ASSERT_TRUE(server_->wait_for_goals(1));
+  EXPECT_EQ(server_->cancel_count(), 0U);
+
+  // Same sequence the binary runs on a camera fault: run_camera() reports the
+  // failure, then main() cancels whatever workflow is still accepted.
+  const int run_code = adapter_->run_camera();
+  EXPECT_EQ(run_code, 2);
+
+  // In production the workflow server is a separate process, so the adapter
+  // never spins it. Hand the adapter node to cancel_active() alone and let the
+  // executor keep serving the fake server.
+  executor_.remove_node(adapter_);
+  adapter_->cancel_active();
+  executor_.add_node(adapter_);
+
+  EXPECT_TRUE(server_->wait_for_cancel(3s));
+  EXPECT_EQ(server_->cancel_count(), 1U);
 }
 
 TEST_F(ActionSubmissionTest, AmbiguousCameraFrameResetsConfirmation)
