@@ -120,6 +120,42 @@ TEST_F(GrpcValidationTest, RejectsUnknownWorkflowWithoutActionSubmission)
   EXPECT_EQ(task.state(), "REJECTED");
 }
 
+// The in-memory task_id check forgets on restart; the history primary key does
+// not, so reuse must be refused before dispatch instead of silently dropping
+// the new terminal record.
+TEST_F(GrpcValidationTest, RefusesATaskIdThatAlreadyHasARecordedRun)
+{
+  const auto request = valid_request();
+  ASSERT_TRUE(
+    store_->insert(
+      {"task-1", "dock_a", 1, 0, 0, 5, "old", 1}));
+
+  runtime_gateway::SubmitWorkflowReply reply;
+  grpc::ClientContext context;
+  const auto status = stub_->SubmitWorkflow(&context, request, &reply);
+  EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+  EXPECT_EQ(service_->active_request_count(), 0U);
+
+  // The earlier run is still the one GetTask answers with.
+  runtime_gateway::GetTaskRequest get_request;
+  get_request.set_task_id("task-1");
+  runtime_gateway::TaskRecord task;
+  grpc::ClientContext get_context;
+  ASSERT_TRUE(stub_->GetTask(&get_context, get_request, &task).ok());
+  EXPECT_EQ(task.message(), "old");
+}
+
+// A brand-new task_id is admitted, so the check above is not a blanket refusal.
+TEST_F(GrpcValidationTest, AcceptsATaskIdWithNoRecordedRun)
+{
+  const auto request = valid_request();
+  runtime_gateway::SubmitWorkflowReply reply;
+  grpc::ClientContext context;
+  const auto status = stub_->SubmitWorkflow(&context, request, &reply);
+  // No orchestrator here, so admission fails later, but not on the task_id.
+  EXPECT_NE(status.error_message(), "task_id already belongs to a recorded task");
+}
+
 TEST_F(GrpcValidationTest, ReportsUnavailableWhenOrchestratorIsMissing)
 {
   const auto request = valid_request();
