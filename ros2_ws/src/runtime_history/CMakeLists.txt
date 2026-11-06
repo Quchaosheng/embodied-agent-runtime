@@ -66,6 +66,12 @@ if(BUILD_TESTING)
   target_link_libraries(test_report_json runtime_history_store)
   ament_add_gtest(test_stage_event_log test/test_stage_event_log.cpp)
   target_link_libraries(test_stage_event_log runtime_history_stage_events)
+
+  # Percentile report over the stage log the runtime already writes.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(
+    NAME test_stage_latency_report
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_stage_latency_report.py)
 endif()
 
 ament_export_targets(export_runtime_history HAS_LIBRARY_TARGET)
