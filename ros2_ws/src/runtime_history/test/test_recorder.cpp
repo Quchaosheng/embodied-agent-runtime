@@ -19,7 +19,7 @@ namespace
 runtime_history::TaskRecord record(std::string task_id, std::string message = "completed")
 {
   return {
-    std::move(task_id), "arm", 1, 0, 0, 25,
+    std::move(task_id), "request-1", "single_task", "goal-1", "arm", 1, 0, 0, 25,
     std::move(message), 123456789};
 }
 

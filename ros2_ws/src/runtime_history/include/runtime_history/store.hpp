@@ -14,6 +14,12 @@ namespace runtime_history
 struct TaskRecord
 {
   std::string task_id;
+  // Correlation identity carried by the terminal TaskEvent. These are
+  // identifiers, not execution evidence, and stay empty when the caller
+  // supplied none.
+  std::string request_id;
+  std::string workflow_id;
+  std::string goal_id;
   std::string target_id;
   std::uint8_t action_status;
   std::uint8_t outcome;
