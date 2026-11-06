@@ -64,6 +64,12 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_model_runtime.py)
   set_tests_properties(test_model_runtime PROPERTIES
     ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
+
+  add_test(
+    NAME test_model_dispatch_budget
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_model_dispatch_budget.py)
+  set_tests_properties(test_model_dispatch_budget PROPERTIES
+    ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 ament_package()
