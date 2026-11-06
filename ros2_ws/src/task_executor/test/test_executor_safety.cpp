@@ -193,7 +193,8 @@ protected:
     FakeDeviceBridge::Behavior behavior,
     task_executor::WorkerHook hook = {},
     const std::int64_t cancel_timeout_ms = 100,
-    const std::string & stage_event_log_path = "")
+    const std::string & stage_event_log_path = "",
+    const std::int64_t validation_delay_ms = 5)
   {
     static std::atomic_int next_id{1};
     name_space_ = "/executor_safety_" + std::to_string(next_id++);
@@ -201,7 +202,7 @@ protected:
     rclcpp::NodeOptions options;
     options.arguments({"--ros-args", "-r", "__ns:=" + name_space_});
     options.parameter_overrides({
-        rclcpp::Parameter("validation_delay_ms", 5),
+        rclcpp::Parameter("validation_delay_ms", validation_delay_ms),
         rclcpp::Parameter("ack_timeout_ms", 50),
         rclcpp::Parameter("cancel_timeout_ms", cancel_timeout_ms),
         rclcpp::Parameter("stage_event_log_path", stage_event_log_path)});
@@ -327,9 +328,6 @@ TEST_F(ExecutorSafetyTest, LateAcceptedGoalIsCanceledOnceBeforeParentTerminal)
   EXPECT_EQ(events.front().outcome, ExecuteTask::Result::SAFE_STOP);
 }
 
-// The offline diagnoser groups stage windows by (trace_id, sequence_id) and
-// requires the ordered stage chain; a silent break here would only surface as a
-// useless capture much later.
 // The device replay cache outlives the executor and is keyed by command id, so
 // a fresh process must not restart the sequence at 1.
 TEST_F(ExecutorSafetyTest, CommandIdsDoNotRestartAtTheFirstIdentifier)
@@ -358,6 +356,80 @@ TEST_F(ExecutorSafetyTest, CommandIdsDoNotRestartAtTheFirstIdentifier)
   EXPECT_NE(ids[0], 1);
 }
 
+// The paced validation feedback is a test aid, not validation. With the
+// shipped default the task must dispatch without an artificial wait, and the
+// real target checks must still run.
+TEST(ExecutorValidationDelayTest, DefaultConfigurationAddsNoArtificialWait)
+{
+  if (!rclcpp::ok()) {
+    int argc = 0;
+    rclcpp::init(argc, nullptr);
+  }
+  const std::string name_space = "/executor_validation_default";
+  auto bridge = std::make_shared<FakeDeviceBridge>(
+    name_space, FakeDeviceBridge::Behavior{0ms, true, true});
+  rclcpp::NodeOptions options;
+  options.arguments({"--ros-args", "-r", "__ns:=" + name_space});
+  // No validation_delay_ms override: this pins the shipped default.
+  options.parameter_overrides({
+      rclcpp::Parameter("ack_timeout_ms", 50),
+      rclcpp::Parameter("cancel_timeout_ms", 100)});
+  auto executor_node = task_executor::make_task_executor_node(options);
+  auto client_node = std::make_shared<rclcpp::Node>("validation_client", name_space);
+  auto client = rclcpp_action::create_client<ExecuteTask>(client_node, "execute_task");
+
+  rclcpp::executors::MultiThreadedExecutor spin(rclcpp::ExecutorOptions(), 3);
+  spin.add_node(bridge);
+  spin.add_node(executor_node);
+  spin.add_node(client_node);
+  std::thread spin_thread([&]() {spin.spin();});
+  ASSERT_TRUE(client->wait_for_action_server(2s));
+
+  ExecuteTask::Goal goal;
+  goal.task_id = "default-validation";
+  goal.target_id = "dock_a";
+  goal.allowed_duration.sec = 1;
+  const auto started = std::chrono::steady_clock::now();
+  auto goal_future = client->async_send_goal(goal);
+  ASSERT_EQ(goal_future.wait_for(2s), std::future_status::ready);
+  const auto handle = goal_future.get();
+  ASSERT_NE(handle, nullptr);
+  auto result_future = client->async_get_result(handle);
+  ASSERT_EQ(result_future.wait_for(2s), std::future_status::ready);
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+  const auto result = result_future.get();
+
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::SUCCEEDED);
+  ASSERT_NE(result.result, nullptr);
+  EXPECT_EQ(result.result->outcome, ExecuteTask::Result::COMPLETED);
+  // The previous default spent 200 ms here before touching the bridge; the
+  // bound leaves room for Action round-trip overhead on a loaded host.
+  EXPECT_LT(elapsed, std::chrono::milliseconds(190));
+
+  // Validation still rejects an unknown target with the same configuration.
+  ExecuteTask::Goal bad_goal;
+  bad_goal.task_id = "unknown-target";
+  bad_goal.target_id = "not_a_target";
+  bad_goal.allowed_duration.sec = 1;
+  auto bad_future = client->async_send_goal(bad_goal);
+  ASSERT_EQ(bad_future.wait_for(2s), std::future_status::ready);
+  EXPECT_EQ(bad_future.get(), nullptr);
+
+  spin.cancel();
+  spin_thread.join();
+  spin.remove_node(client_node);
+  spin.remove_node(executor_node);
+  spin.remove_node(bridge);
+  client.reset();
+  client_node.reset();
+  bridge.reset();
+  executor_node.reset();
+  rclcpp::shutdown();
+}
+
+// The offline diagnoser groups stage windows by (trace_id, sequence_id) and
+// requires the ordered stage chain; a silent break here would only surface as a
+// useless capture much later.
 TEST_F(ExecutorSafetyTest, EmitsOrderedStageEvidenceForOneTrace)
 {
   const std::string path = "/tmp/executor_stage_events_" +
