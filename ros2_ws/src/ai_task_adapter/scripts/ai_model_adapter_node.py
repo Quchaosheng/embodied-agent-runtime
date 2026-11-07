@@ -63,6 +63,9 @@ class AiModelAdapterNode(Node):
         self._inference_deadline_ms = int(
             self.declare_parameter('inference_deadline_ms', 2500).value
         )
+        self._server_wait_sec = float(
+            self.declare_parameter('action_server_wait_sec', 2.0).value
+        )
         self._output_version = self.declare_parameter(
             'model_output_version', 'workflow-plan/v1'
         ).value
@@ -143,6 +146,9 @@ class AiModelAdapterNode(Node):
                 'max_duration_ms and non-empty allowlists are required'
             )
             return 2
+        if not math.isfinite(self._server_wait_sec) or self._server_wait_sec <= 0:
+            self.get_logger().error('action_server_wait_sec must be positive')
+            return 2
         if self._observation_ttl_ms <= 0 or self._inference_deadline_ms <= 0:
             self.get_logger().error(
                 'observation TTL and inference deadline must be positive'
@@ -219,12 +225,35 @@ class AiModelAdapterNode(Node):
             f'workflow_id={plan.workflow_id} target_id={plan.target_id} '
             f'duration_ms={plan.duration_ms}'
         )
-        if not self._client.wait_for_server(timeout_sec=5.0):
+        # Waiting for the server and dispatching must fit inside what is left of
+        # the inference deadline; the check above only covered the model call.
+        server_wait_sec = self._remaining_sec(context, self._server_wait_sec)
+        if server_wait_sec <= 0.0:
+            self._record(
+                context, result, 'rejected', ModelRuntimeErrorCode.STALE_OUTPUT, plan
+            )
+            self._metrics.note_rejection(ModelRuntimeErrorCode.STALE_OUTPUT)
             self.get_logger().error(
-                'ExecuteWorkflow server not available after 5 seconds'
+                'model plan expired before the ExecuteWorkflow server was available'
+            )
+            return 2
+        if not self._client.wait_for_server(timeout_sec=server_wait_sec):
+            self.get_logger().error(
+                'ExecuteWorkflow server not available within the remaining budget '
+                f'({server_wait_sec:.3f} s)'
             )
             self._metrics.note_task(False)
             return 1
+        # The server can appear after the deadline; the plan is stale by then.
+        if context.expired(time.monotonic_ns()):
+            self._record(
+                context, result, 'rejected', ModelRuntimeErrorCode.STALE_OUTPUT, plan
+            )
+            self._metrics.note_rejection(ModelRuntimeErrorCode.STALE_OUTPUT)
+            self.get_logger().error(
+                'model plan expired while waiting for the ExecuteWorkflow server'
+            )
+            return 2
 
         goal = ExecuteWorkflow.Goal()
         goal.request_id = self._request_id
@@ -282,6 +311,12 @@ class AiModelAdapterNode(Node):
         )
         self._metrics.note_task(completed)
         return 0 if completed else 4
+
+    @staticmethod
+    def _remaining_sec(context, limit_sec: float) -> float:
+        """Seconds left before the plan deadline, capped by limit_sec."""
+        remaining_ns = context.deadline_ns - time.monotonic_ns()
+        return min(limit_sec, remaining_ns / 1_000_000_000)
 
     def _build_backend(self):
         if self._mode == 'mock':
