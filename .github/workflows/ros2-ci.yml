@@ -92,7 +92,7 @@ jobs:
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
               task_executor runtime_monitor runtime_history task_orchestrator \
               runtime_gateway ai_task_adapter perception_task_adapter \
-            --cmake-args -DBUILD_TESTING=ON
+            --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
       - name: Test eleven packages
         shell: bash

@@ -39,7 +39,7 @@ set -o pipefail
 colcon build \
   --packages-select "${packages[@]}" \
   --cmake-force-configure \
-  --cmake-args -DBUILD_TESTING=ON \
+  --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   2>&1 | tee "$repository/arm64-build.log"
 
 printf 'PASS: ARM64 build completed for profile %s. Next: %s/run_arm64_smoke.sh\n' \
