@@ -128,7 +128,7 @@ TEST_F(GrpcValidationTest, RefusesATaskIdThatAlreadyHasARecordedRun)
   const auto request = valid_request();
   ASSERT_TRUE(
     store_->insert(
-      {"task-1", "dock_a", 1, 0, 0, 5, "old", 1}));
+      {"task-1", "request-old", "single_task", "goal-old", "dock_a", 1, 0, 0, 5, "old", 1}));
 
   runtime_gateway::SubmitWorkflowReply reply;
   grpc::ClientContext context;
@@ -184,7 +184,7 @@ TEST_F(GrpcValidationTest, MapsNonemptySqliteStatistics)
     ASSERT_TRUE(
       store_->insert(
       {
-        "stats-" + std::to_string(index), "dock_a", 1,
+        "stats-" + std::to_string(index), "", "", "", "dock_a", 1,
         static_cast<std::uint8_t>(index % 4), 0, durations[index], "done",
         static_cast<std::int64_t>(index)}));
   }

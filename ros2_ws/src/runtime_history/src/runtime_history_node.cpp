@@ -30,7 +30,8 @@ public:
       "/runtime/task_events", rclcpp::QoS(32).reliable(),
       [this](const robot_task_interfaces::msg::TaskEvent::SharedPtr event) {
         runtime_history::TaskRecord record{
-          event->task_id, event->target_id, event->action_status, event->outcome,
+          event->task_id, event->request_id, event->workflow_id, event->goal_id,
+          event->target_id, event->action_status, event->outcome,
           event->error_code, event->duration_ms, event->message,
           static_cast<std::int64_t>(event->stamp.sec) * 1000000000LL + event->stamp.nanosec};
         if (!recorder_.enqueue(std::move(record))) {

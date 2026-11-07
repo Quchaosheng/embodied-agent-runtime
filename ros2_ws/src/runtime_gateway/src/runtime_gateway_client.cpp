@@ -156,6 +156,9 @@ int get_task(runtime_gateway::RobotRuntime::Stub & stub, const int argc, char **
   }
   std::cout << "{\"found\":" << (reply.found() ? "true" : "false")
             << ",\"task_id\":" << quote(reply.task_id())
+            << ",\"request_id\":" << quote(reply.request_id())
+            << ",\"workflow_id\":" << quote(reply.workflow_id())
+            << ",\"goal_id\":" << quote(reply.goal_id())
             << ",\"target_id\":" << quote(reply.target_id())
             << ",\"state\":" << quote(reply.state())
             << ",\"action_status\":" << reply.action_status()

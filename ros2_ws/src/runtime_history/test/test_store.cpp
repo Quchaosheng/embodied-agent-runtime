@@ -46,8 +46,8 @@ runtime_history::TaskRecord record(
   std::uint8_t outcome = 0)
 {
   return {
-    std::move(task_id), "arm", 1, outcome, 302, duration_ms,
-    "completed", 123456789};
+    std::move(task_id), "request-1", "single_task", "goal-1", "arm", 1, outcome, 302,
+    duration_ms, "completed", 123456789};
 }
 
 std::string query_text(const std::string & path, const char * sql)
@@ -82,6 +82,9 @@ TEST(StoreTest, CreatesExactSchema)
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='task_runs'"),
     "CREATE TABLE task_runs ("
     "task_id TEXT PRIMARY KEY,"
+    "request_id TEXT NOT NULL DEFAULT '',"
+    "workflow_id TEXT NOT NULL DEFAULT '',"
+    "goal_id TEXT NOT NULL DEFAULT '',"
     "target_id TEXT NOT NULL,"
     "action_status INTEGER NOT NULL,"
     "outcome INTEGER NOT NULL,"
@@ -116,13 +119,17 @@ TEST(StoreTest, InsertsAndGetsEveryField)
   TemporaryDatabase database;
   runtime_history::Store store(database.path());
   const runtime_history::TaskRecord expected{
-    "task-7", "welder", 3, 2, 65535, 9876, "operator's note", -42};
+    "task-7", "request-7", "ready_then_task", "goal-7", "welder", 3, 2, 65535, 9876,
+    "operator's note", -42};
 
   ASSERT_TRUE(store.insert(expected));
   const auto actual = store.get(expected.task_id);
 
   ASSERT_TRUE(actual.has_value());
   EXPECT_EQ(actual->task_id, expected.task_id);
+  EXPECT_EQ(actual->request_id, expected.request_id);
+  EXPECT_EQ(actual->workflow_id, expected.workflow_id);
+  EXPECT_EQ(actual->goal_id, expected.goal_id);
   EXPECT_EQ(actual->target_id, expected.target_id);
   EXPECT_EQ(actual->action_status, expected.action_status);
   EXPECT_EQ(actual->outcome, expected.outcome);
@@ -281,6 +288,53 @@ TEST(StoreTest, UpdatesSameFingerprintAndRejectsChangedFingerprint)
     query_text(
       database.path(),
       "SELECT count(*) FROM request_idempotency WHERE request_id='request-1'"), "1");
+}
+
+TEST(StoreTest, PersistsCorrelationIdentityAcrossReopen)
+{
+  TemporaryDatabase database;
+  {
+    runtime_history::Store store(database.path());
+    ASSERT_TRUE(store.insert(record("task-1")));
+  }
+  // A new Store models a process restart on the same file.
+  runtime_history::Store reopened(database.path());
+  const auto stored = reopened.get("task-1");
+  ASSERT_TRUE(stored.has_value());
+  EXPECT_EQ(stored->request_id, "request-1");
+  EXPECT_EQ(stored->workflow_id, "single_task");
+  EXPECT_EQ(stored->goal_id, "goal-1");
+}
+
+TEST(StoreTest, AddsIdentityColumnsToADatabaseCreatedWithoutThem)
+{
+  TemporaryDatabase database;
+  {
+    sqlite3 * db{};
+    ASSERT_EQ(sqlite3_open(database.path().c_str(), &db), SQLITE_OK);
+    ASSERT_EQ(
+      sqlite3_exec(
+        db,
+        "CREATE TABLE task_runs (task_id TEXT PRIMARY KEY,target_id TEXT NOT NULL,"
+        "action_status INTEGER NOT NULL,outcome INTEGER NOT NULL,error_code INTEGER NOT NULL,"
+        "duration_ms INTEGER NOT NULL,message TEXT NOT NULL,completed_at_ns INTEGER NOT NULL)",
+        nullptr, nullptr, nullptr), SQLITE_OK);
+    ASSERT_EQ(
+      sqlite3_exec(
+        db,
+        "INSERT INTO task_runs VALUES ('legacy','arm',1,0,0,5,'old',1)",
+        nullptr, nullptr, nullptr), SQLITE_OK);
+    sqlite3_close(db);
+  }
+
+  // Opening the old file must migrate it in place and keep the existing row.
+  runtime_history::Store store(database.path());
+  const auto legacy = store.get("legacy");
+  ASSERT_TRUE(legacy.has_value());
+  EXPECT_EQ(legacy->target_id, "arm");
+  EXPECT_EQ(legacy->request_id, "");
+  ASSERT_TRUE(store.insert(record("task-1")));
+  EXPECT_EQ(store.get("task-1")->goal_id, "goal-1");
 }
 
 TEST(StoreTest, RejectsIdempotencyWithoutIdentity)

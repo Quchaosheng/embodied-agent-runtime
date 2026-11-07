@@ -13,6 +13,9 @@ namespace
 constexpr char kSchema[] =
   "CREATE TABLE IF NOT EXISTS task_runs ("
   "task_id TEXT PRIMARY KEY,"
+  "request_id TEXT NOT NULL DEFAULT '',"
+  "workflow_id TEXT NOT NULL DEFAULT '',"
+  "goal_id TEXT NOT NULL DEFAULT '',"
   "target_id TEXT NOT NULL,"
   "action_status INTEGER NOT NULL,"
   "outcome INTEGER NOT NULL,"
@@ -130,6 +133,21 @@ Store::Store(const std::string & path)
       throw std::runtime_error("SQLite database does not support WAL mode");
     }
     execute(db_, kSchema);
+    // Databases created before correlation identity existed keep their rows:
+    // add the columns in place rather than rewriting history. A fresh database
+    // already has them, and SQLite reports that as a duplicate-column error.
+    for (const auto * column : {"request_id", "workflow_id", "goal_id"}) {
+      char * error{};
+      const std::string sql =
+        std::string("ALTER TABLE task_runs ADD COLUMN ") + column + " TEXT NOT NULL DEFAULT ''";
+      if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &error) != SQLITE_OK) {
+        const std::string message = error == nullptr ? "" : error;
+        sqlite3_free(error);
+        if (message.find("duplicate column name") == std::string::npos) {
+          throw std::runtime_error(message.empty() ? sqlite3_errmsg(db_) : message);
+        }
+      }
+    }
     execute(db_, kIdempotencySchema);
   } catch (...) {
     sqlite3_close(db_);
@@ -157,17 +175,21 @@ bool Store::insert(const TaskRecord & record)
     Statement statement(
       db_,
       "INSERT OR IGNORE INTO task_runs ("
-      "task_id,target_id,action_status,outcome,error_code,duration_ms,message,completed_at_ns) "
-      "VALUES (?,?,?,?,?,?,?,?)");
+      "task_id,request_id,workflow_id,goal_id,target_id,action_status,outcome,error_code,"
+      "duration_ms,message,completed_at_ns) "
+      "VALUES (?,?,?,?,?,?,?,?,?,?,?)");
     auto * value = statement.get();
     bind_text(db_, value, 1, record.task_id);
-    bind_text(db_, value, 2, record.target_id);
-    check(db_, sqlite3_bind_int(value, 3, record.action_status));
-    check(db_, sqlite3_bind_int(value, 4, record.outcome));
-    check(db_, sqlite3_bind_int(value, 5, record.error_code));
-    check(db_, sqlite3_bind_int64(value, 6, static_cast<sqlite3_int64>(record.duration_ms)));
-    bind_text(db_, value, 7, record.message);
-    check(db_, sqlite3_bind_int64(value, 8, record.completed_at_ns));
+    bind_text(db_, value, 2, record.request_id);
+    bind_text(db_, value, 3, record.workflow_id);
+    bind_text(db_, value, 4, record.goal_id);
+    bind_text(db_, value, 5, record.target_id);
+    check(db_, sqlite3_bind_int(value, 6, record.action_status));
+    check(db_, sqlite3_bind_int(value, 7, record.outcome));
+    check(db_, sqlite3_bind_int(value, 8, record.error_code));
+    check(db_, sqlite3_bind_int64(value, 9, static_cast<sqlite3_int64>(record.duration_ms)));
+    bind_text(db_, value, 10, record.message);
+    check(db_, sqlite3_bind_int64(value, 11, record.completed_at_ns));
     if (sqlite3_step(value) != SQLITE_DONE) {
       execute(db_, "ROLLBACK");
       return false;
@@ -194,8 +216,8 @@ std::optional<TaskRecord> Store::get_unlocked(const std::string & task_id) const
 {
   Statement statement(
     db_,
-    "SELECT task_id,target_id,action_status,outcome,error_code,duration_ms,message,completed_at_ns "
-    "FROM task_runs WHERE task_id=?");
+    "SELECT task_id,request_id,workflow_id,goal_id,target_id,action_status,outcome,"
+    "error_code,duration_ms,message,completed_at_ns FROM task_runs WHERE task_id=?");
   auto * value = statement.get();
   bind_text(db_, value, 1, task_id);
   const int result = sqlite3_step(value);
@@ -212,11 +234,12 @@ std::optional<TaskRecord> Store::get_unlocked(const std::string & task_id) const
              std::string(reinterpret_cast<const char *>(result));
     };
   return TaskRecord{
-    text(0), text(1), static_cast<std::uint8_t>(sqlite3_column_int(value, 2)),
-    static_cast<std::uint8_t>(sqlite3_column_int(value, 3)),
-    static_cast<std::uint16_t>(sqlite3_column_int(value, 4)),
-    static_cast<std::uint64_t>(sqlite3_column_int64(value, 5)), text(6),
-    sqlite3_column_int64(value, 7)};
+    text(0), text(1), text(2), text(3), text(4),
+    static_cast<std::uint8_t>(sqlite3_column_int(value, 5)),
+    static_cast<std::uint8_t>(sqlite3_column_int(value, 6)),
+    static_cast<std::uint16_t>(sqlite3_column_int(value, 7)),
+    static_cast<std::uint64_t>(sqlite3_column_int64(value, 8)), text(9),
+    sqlite3_column_int64(value, 10)};
 }
 
 bool Store::put_idempotency(const IdempotencyRecord & record)

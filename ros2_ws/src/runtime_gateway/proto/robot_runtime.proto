@@ -42,6 +42,11 @@ message GetTaskRequest { string task_id = 1; }
 message TaskRecord {
   bool found = 1;
   string task_id = 2;
+  // Correlation identity of the recorded execution; empty when the caller
+  // supplied none. Identifiers only, not execution evidence.
+  string request_id = 11;
+  string workflow_id = 12;
+  string goal_id = 13;
   string target_id = 3;
   string state = 4;
   uint32 action_status = 5;

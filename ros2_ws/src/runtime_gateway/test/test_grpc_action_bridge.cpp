@@ -575,7 +575,10 @@ TEST_F(GrpcActionBridgeTest, TerminalMemoryRecordYieldsToSqliteRecord)
 {
   ASSERT_TRUE(submit("request-stored", "task-stored").accepted());
   ASSERT_TRUE(orchestrator_->wait_for_goals(1));
-  ASSERT_TRUE(store_->insert({"task-stored", "stored_target", 1, 0, 0, 42, "persisted", 99}));
+  ASSERT_TRUE(
+    store_->insert(
+      {"task-stored", "request-stored", "single_task", "", "stored_target", 1, 0, 0, 42,
+        "persisted", 99}));
   orchestrator_->complete("request-stored");
 
   runtime_gateway::TaskRecord reply;

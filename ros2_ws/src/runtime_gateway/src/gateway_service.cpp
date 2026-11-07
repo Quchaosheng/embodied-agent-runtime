@@ -532,6 +532,9 @@ grpc::Status GatewayService::GetTask(
     }
     reply->set_found(true);
     reply->set_task_id(stored->task_id);
+    reply->set_request_id(stored->request_id);
+    reply->set_workflow_id(stored->workflow_id);
+    reply->set_goal_id(stored->goal_id);
     reply->set_target_id(stored->target_id);
     reply->set_state(state_for_outcome(stored->outcome));
     reply->set_action_status(stored->action_status);
