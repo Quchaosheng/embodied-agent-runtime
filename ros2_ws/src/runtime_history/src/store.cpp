@@ -37,6 +37,17 @@ constexpr char kIdempotencySchema[] =
   "message TEXT NOT NULL,"
   "updated_at_ns INTEGER NOT NULL)";
 
+// Indexes for the queries `stats()` and retention already run: the percentile
+// probes walk duration_ms in order, the outcome grouping reads outcome, and the
+// retention delete and keep-floor order by updated_at_ns. CREATE IF NOT EXISTS
+// also upgrades a database written before they existed; the measured cost is in
+// scripts/benchmark_stats_indexes.py.
+constexpr char kIndexes[] =
+  "CREATE INDEX IF NOT EXISTS task_runs_duration_ms ON task_runs(duration_ms);"
+  "CREATE INDEX IF NOT EXISTS task_runs_outcome ON task_runs(outcome);"
+  "CREATE INDEX IF NOT EXISTS request_idempotency_updated_at_ns "
+  "ON request_idempotency(updated_at_ns)";
+
 class Statement
 {
 public:
@@ -149,6 +160,9 @@ Store::Store(const std::string & path)
       }
     }
     execute(db_, kIdempotencySchema);
+    // Runs on every open, so a database written before the indexes existed gains
+    // them here instead of on a separate migration step.
+    execute(db_, kIndexes);
   } catch (...) {
     sqlite3_close(db_);
     db_ = nullptr;

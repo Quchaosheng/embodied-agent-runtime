@@ -72,6 +72,10 @@ if(BUILD_TESTING)
   add_test(
     NAME test_stage_latency_report
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_stage_latency_report.py)
+  # The measurement behind the statistics indexes: read time and write cost.
+  add_test(
+    NAME test_stats_index_benchmark
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_stats_index_benchmark.py)
 endif()
 
 ament_export_targets(export_runtime_history HAS_LIBRARY_TARGET)
