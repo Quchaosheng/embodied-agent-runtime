@@ -15,7 +15,7 @@ import unittest
 
 
 def _script_path():
-    """Find the report either in a source checkout or in an installed prefix."""
+    """Find the report next to the sources, if this tree has it."""
     override = os.environ.get('STAGE_LATENCY_REPORT')
     if override:
         return pathlib.Path(override)
@@ -23,9 +23,12 @@ def _script_path():
         candidate = parent / 'scripts' / 'stage_latency_report.py'
         if candidate.is_file():
             return candidate
-    raise AssertionError('stage_latency_report.py not found from the test location')
+    return None
 
 
+# A tree can carry the package without the repository-level scripts directory
+# (for example a source-only export). Skip rather than fail there: the report
+# itself is repository tooling, not part of the installed runtime.
 SCRIPT = _script_path()
 
 
@@ -46,6 +49,7 @@ def stage_line(stage, duration_ns, trace='trace-1'):
     })
 
 
+@unittest.skipIf(SCRIPT is None, 'stage_latency_report.py is not present in this tree')
 class StageLatencyReportTest(unittest.TestCase):
 
     def run_report(self, lines, *extra):
