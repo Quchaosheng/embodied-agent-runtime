@@ -334,6 +334,10 @@ DB="$EVIDENCE/runtime.sqlite3"
 # file, so a single capture spans the whole task path.
 STAGE_EVENTS="$EVIDENCE/stage_events.jsonl"
 : > "$STAGE_EVENTS"
+# The terminal TaskEvent capture a consumer in another repository reads. It is
+# written by the runtime side because ROS 2 is not a consumer dependency.
+TASK_EVENTS="$EVIDENCE/task_events.jsonl"
+: > "$TASK_EVENTS"
 start_virtual normal normal
 start_direct monitor "$EVIDENCE/monitor.log" "$MONITOR" --ros-args \
   --params-file "$WORKSPACE/src/runtime_monitor/config/runtime_monitor.yaml"
@@ -343,7 +347,8 @@ start_direct bridge "$EVIDENCE/bridge.log" "$BRIDGE" --ros-args \
 BRIDGE_PID=$LAST_PID
 start_direct executor "$EVIDENCE/executor.log" "$EXECUTOR" --ros-args \
   --params-file "$WORKSPACE/src/task_executor/config/targets.yaml" \
-  -p stage_event_log_path:="$STAGE_EVENTS"
+  -p stage_event_log_path:="$STAGE_EVENTS" \
+  -p task_event_capture_path:="$TASK_EVENTS"
 EXECUTOR_PID=$LAST_PID
 start_direct history "$EVIDENCE/history.log" "$HISTORY" --ros-args -p database_path:="$DB"
 start_direct orchestrator "$EVIDENCE/orchestrator.log" "$ORCHESTRATOR"
@@ -504,7 +509,8 @@ start_direct bridge-recovered "$EVIDENCE/bridge-recovered.log" "$BRIDGE" --ros-a
 BRIDGE_PID=$LAST_PID
 start_direct executor-recovered "$EVIDENCE/executor-recovered.log" "$EXECUTOR" --ros-args \
   --params-file "$WORKSPACE/src/task_executor/config/targets.yaml" \
-  -p stage_event_log_path:="$STAGE_EVENTS"
+  -p stage_event_log_path:="$STAGE_EVENTS" \
+  -p task_event_capture_path:="$TASK_EVENTS"
 EXECUTOR_PID=$LAST_PID
 EXECUTOR_LOG="$EVIDENCE/executor-recovered.log"
 wait_runtime_ready_since "$recovery_started_ns"
@@ -686,4 +692,27 @@ import json, pathlib, sys
 assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
     "accepted_workflow_goal_count": 6, "quiet_window_ms": 1000}
 PY
+# The capture is the artifact a cross-project consumer reads, so the run proves it
+# exists and carries the same outcomes the topic reported.
+require_file "$TASK_EVENTS"
+/usr/bin/python3 - "$TASK_EVENTS" <<'PY'
+import json, pathlib, sys
+
+required = {
+    "stamp", "task_id", "target_id", "request_id", "workflow_id", "goal_id",
+    "action_status", "outcome", "error_code", "duration_ms", "message",
+}
+lines = [line for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+assert lines, "task event capture is empty"
+outcomes = set()
+for line in lines:
+    record = json.loads(line)
+    missing = required - record.keys()
+    assert not missing, (record.get("task_id"), missing)
+    outcomes.add((record["action_status"], record["outcome"], record["error_code"]))
+# The six submitted runs cover completed, device fault, cancel and safe stops.
+assert (1, 0, 0) in outcomes, outcomes
+assert (2, 3, 302) in outcomes, outcomes
+PY
 record "PASS: seven industrial E2E scenarios"
+
