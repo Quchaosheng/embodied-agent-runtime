@@ -309,6 +309,18 @@ std::size_t Store::prune_idempotency(
   }
 }
 
+std::size_t Store::count_idempotency(const std::int64_t not_older_than_ns) const
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  Statement statement(
+    db_, "SELECT COUNT(*) FROM request_idempotency WHERE updated_at_ns >= ?");
+  check(db_, sqlite3_bind_int64(statement.get(), 1, not_older_than_ns));
+  if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  return static_cast<std::size_t>(sqlite3_column_int64(statement.get(), 0));
+}
+
 RuntimeStats Store::stats() const
 {
   const std::lock_guard<std::mutex> lock(mutex_);

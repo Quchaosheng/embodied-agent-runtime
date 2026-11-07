@@ -74,6 +74,13 @@ IdempotencyOutcome DurableIdempotency::admit(
 
   try {
     store_.prune_idempotency(horizon_start(now_ns), capacity_);
+    // Retention only limits what it keeps; it never refused anything. Enforce
+    // the bound here, and refuse rather than delete an unexpired identity: a
+    // pending one would otherwise become re-dispatchable.
+    if (store_.count_idempotency(horizon_start(now_ns)) >= capacity_) {
+      return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0, 429,
+        "durable idempotency ledger is at capacity"};
+    }
   } catch (const std::exception &) {
     // Retention is best effort; admission below still fails closed.
   }

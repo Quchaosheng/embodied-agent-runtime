@@ -186,6 +186,36 @@ TEST_F(DurableIdempotencyTest, CapacityExhaustionPrunesExpiredRowsAndAdmitsNewRe
   EXPECT_EQ(ledger.prune(far_future), 0U);
 }
 
+// capacity used to limit only what retention kept, so an unexpired window could
+// grow without bound. It is now the admission bound, and it refuses instead of
+// deleting a live identity.
+TEST_F(DurableIdempotencyTest, CapacityRefusesNewIdentitiesWithoutDroppingLiveOnes)
+{
+  runtime_gateway::DurableIdempotency ledger(*store_, 2);
+  for (int index = 0; index < 2; ++index) {
+    ASSERT_EQ(
+      ledger.admit(record("request-" + std::to_string(index), "task-" + std::to_string(index)),
+        now()).decision,
+      runtime_gateway::IdempotencyDecision::PROCEED);
+  }
+
+  // The third unexpired identity must be refused, not silently admitted.
+  const auto overflow = ledger.admit(record("request-overflow", "task-overflow"), now());
+  EXPECT_EQ(overflow.decision, runtime_gateway::IdempotencyDecision::UNAVAILABLE);
+  EXPECT_EQ(overflow.error_code, 429);
+  EXPECT_FALSE(ledger.lookup("request-overflow").has_value());
+
+  // And the two live rows must still be there, unchanged.
+  ASSERT_TRUE(ledger.lookup("request-0").has_value());
+  ASSERT_TRUE(ledger.lookup("request-1").has_value());
+  EXPECT_EQ(ledger.lookup("request-0")->state, "ADMITTED");
+
+  // A retry of an existing identity still replays; capacity is not a lockout.
+  EXPECT_EQ(
+    ledger.admit(record("request-0", "task-0"), now()).decision,
+    runtime_gateway::IdempotencyDecision::UNCERTAIN);
+}
+
 TEST_F(DurableIdempotencyTest, RejectsZeroCapacityAndEmptyIdentity)
 {
   EXPECT_THROW(runtime_gateway::DurableIdempotency ledger(*store_, 0), std::invalid_argument);
