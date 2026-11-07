@@ -367,7 +367,12 @@ void PerceptionTaskAdapterNode::cancel_active()
     if (handle) {
       break;
     }
-    rclcpp::spin_some(shared_from_this());
+    // Another thread may already own this node's wait set; spinning here would
+    // then throw. Waiting for the handle is what this loop actually needs.
+    try {
+      rclcpp::spin_some(shared_from_this());
+    } catch (const std::runtime_error &) {
+    }
     std::this_thread::sleep_for(10ms);
   }
   if (!handle) {
@@ -377,7 +382,10 @@ void PerceptionTaskAdapterNode::cancel_active()
   auto future = impl_->action_client->async_cancel_goal(handle);
   const auto remaining = deadline - std::chrono::steady_clock::now();
   if (remaining > std::chrono::steady_clock::duration::zero()) {
-    rclcpp::spin_until_future_complete(shared_from_this(), future, remaining);
+    try {
+      rclcpp::spin_until_future_complete(shared_from_this(), future, remaining);
+    } catch (const std::runtime_error &) {
+    }
   }
 }
 
