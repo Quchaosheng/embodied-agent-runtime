@@ -275,8 +275,17 @@ private:
       static_cast<std::uint16_t>(goal->command_id), goal->opcode, goal->argument};
     bool command_sent = false;
     for (std::uint8_t attempt = 0; attempt <= kMaxRetries; ++attempt) {
-      if (goal_handle->is_canceling() && !command_sent) {
-        finish_canceled(goal_handle, "command canceled before CAN send");
+      // Checked on every attempt, not only before the first: a cancel accepted
+      // between an ACK timeout and the retry used to re-send the very command
+      // the caller had already asked to stop.
+      if (goal_handle->is_canceling()) {
+        if (!command_sent) {
+          finish_canceled(goal_handle, "command canceled before CAN send");
+        } else {
+          // The command is already on the wire, so cancel means STOP, not
+          // "pretend it never happened".
+          stop_and_finish(goal_handle, command.command_id, true, 0, "");
+        }
         return;
       }
 
