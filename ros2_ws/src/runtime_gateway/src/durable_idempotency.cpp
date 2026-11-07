@@ -3,6 +3,8 @@
 #include "runtime_history/store.hpp"
 
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace runtime_gateway
 {
@@ -17,6 +19,16 @@ constexpr char kAdmitted[] = "ADMITTED";
 std::int64_t horizon_start(const std::int64_t now_ns)
 {
   return now_ns - kRetryHorizonNs;
+}
+
+// Only finished outcomes may leave the ledger by age. An unresolved request is
+// the one thing the ledger exists to remember, so it is never reclaimed just
+// because time passed or other requests arrived.
+const std::vector<std::string> & reclaimable_states()
+{
+  static const std::vector<std::string> states{
+    "COMPLETED", "CANCELED", "SAFE_STOP", "DEVICE_FAULT", "ABORTED", "REJECTED"};
+  return states;
 }
 
 }  // namespace
@@ -73,7 +85,7 @@ IdempotencyOutcome DurableIdempotency::admit(
   }
 
   try {
-    store_.prune_idempotency(horizon_start(now_ns), capacity_);
+    store_.prune_idempotency(horizon_start(now_ns), capacity_, reclaimable_states());
     // Retention only limits what it keeps; it never refused anything. Enforce
     // the bound here, and refuse rather than delete an unexpired identity: a
     // pending one would otherwise become re-dispatchable.
@@ -144,7 +156,7 @@ std::optional<IdempotencyOutcome> DurableIdempotency::lookup(
 std::size_t DurableIdempotency::prune(const std::int64_t now_ns)
 {
   try {
-    return store_.prune_idempotency(horizon_start(now_ns), capacity_);
+    return store_.prune_idempotency(horizon_start(now_ns), capacity_, reclaimable_states());
   } catch (const std::exception &) {
     return 0;
   }

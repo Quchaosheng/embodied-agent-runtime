@@ -5,6 +5,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct sqlite3;
 
@@ -71,7 +72,12 @@ public:
   // crash mid-dispatch is recoverable as uncertain instead of a silent re-run.
   bool put_idempotency(const IdempotencyRecord & record);
   std::optional<IdempotencyRecord> get_idempotency(const std::string & request_id) const;
-  std::size_t prune_idempotency(std::int64_t older_than_ns, std::size_t keep_at_least);
+  // Reclaims rows older than the horizon. Rows whose state is not listed in
+  // reclaimable_states are always kept: an unresolved request must never age
+  // into "never seen" just because later requests arrived.
+  std::size_t prune_idempotency(
+    std::int64_t older_than_ns, std::size_t keep_at_least,
+    const std::vector<std::string> & reclaimable_states);
   // Number of unexpired ledger rows; the admission path uses it to enforce a
   // real bound instead of only limiting what retention keeps.
   std::size_t count_idempotency(std::int64_t not_older_than_ns) const;
