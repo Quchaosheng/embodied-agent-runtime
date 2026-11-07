@@ -208,6 +208,10 @@ private:
   static constexpr std::uint16_t kErrorUnexpectedChildResult = 114;
   static constexpr std::uint16_t kMaxApplicationCommandId = 0x7FFF;
   static constexpr auto kLateGoalResponseGrace = std::chrono::milliseconds(2000);
+  // Cancel/deadline polling: start fine so a prompt cancel is seen quickly,
+  // then settle at the interval this code used before backoff existed.
+  static constexpr std::int64_t kFirstCancelPoll = 5;
+  static constexpr std::int64_t kMaxCancelPoll = 25;
 
   static bool duration_is_valid(const builtin_interfaces::msg::Duration & duration)
   {
@@ -470,13 +474,20 @@ private:
     run_worker_hook(task_executor::WorkerPhase::kAfterSendGoal);
 
     StopCause stop_cause = StopCause::kNone;
+    // A child goal response wakes this wait directly. Cancellation and the
+    // deadline cannot: rclcpp_action offers no hook for them, so they are
+    // polled. Back off from the first poll to a 25 ms ceiling rather than
+    // spinning at the ceiling for the whole dispatch, which keeps the cancel
+    // detection bound unchanged while spending less CPU waiting.
+    std::chrono::milliseconds poll_interval{kFirstCancelPoll};
     while (true) {
       bool goal_response_received = false;
       {
         std::unique_lock<std::mutex> lock(child->mutex);
         goal_response_received = child->changed.wait_for(
-          lock, std::chrono::milliseconds(25),
+          lock, poll_interval,
           [&]() {return child->goal_response_received;});
+        poll_interval = std::min(poll_interval * 2, std::chrono::milliseconds(kMaxCancelPoll));
       }
       if (goal_response_received) {
         break;
