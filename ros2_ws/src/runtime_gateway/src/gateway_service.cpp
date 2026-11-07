@@ -255,14 +255,14 @@ grpc::Status GatewayService::SubmitWorkflow(
   // can stop a replay from reaching the device.
   const auto admission = state_->durable.admit(initial, now_ns());
   if (admission.decision == IdempotencyDecision::UNAVAILABLE) {
-    state_->registry.update_terminal(
-      request->request_id(), "REJECTED", 0, 503, admission.message);
+    // The reservation must not outlive a failed admission: it carries this
+    // payload's fingerprint, and a later retry of the authoritative request
+    // would then be compared against it and rejected as a conflict.
+    state_->registry.erase(request->request_id());
     return {grpc::StatusCode::UNAVAILABLE, admission.message};
   }
   if (admission.decision == IdempotencyDecision::CONFLICT) {
-    state_->registry.update_terminal(
-      request->request_id(), "REJECTED", 0, 409,
-      "request_id conflicts with a durable request");
+    state_->registry.erase(request->request_id());
     return {grpc::StatusCode::INVALID_ARGUMENT, "request_id conflicts with a durable request"};
   }
   if (admission.decision == IdempotencyDecision::UNCERTAIN) {
@@ -336,14 +336,30 @@ grpc::Status GatewayService::SubmitWorkflow(
             state->dispatch_cancel(request_id, handle);
           }
         } else {
+          RequestRecord payload;
+          bool rejected = false;
           {
             const std::lock_guard<std::mutex> lock(state->mutex);
             const auto goal = state->goals.find(request_id);
             if (goal != state->goals.end()) {
               goal->second.pending = false;
-              state->registry.update_terminal(request_id, "REJECTED", 0, 400, "goal rejected");
+              payload = goal->second.payload;
               state->goals.erase(goal);
+              rejected = true;
             }
+          }
+          if (rejected && !payload.request_id.empty()) {
+            // A rejection is terminal. Persisting only the in-memory copy made a
+            // restarted gateway see the request as UNCERTAIN instead of refused.
+            if (!state->durable.complete(
+                payload, "REJECTED", 0, 400, "goal rejected", now_ns()))
+            {
+              RCLCPP_ERROR(
+                state->logger, "failed to persist durable rejection request_id=%s",
+                request_id.c_str());
+            }
+            const std::lock_guard<std::mutex> lock(state->mutex);
+            state->registry.update_terminal(request_id, "REJECTED", 0, 400, "goal rejected");
           }
           state->changed.notify_all();
         }

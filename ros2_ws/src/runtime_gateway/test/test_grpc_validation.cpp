@@ -1,3 +1,4 @@
+#include "runtime_gateway/durable_idempotency.hpp"
 #include "runtime_gateway/gateway_service.hpp"
 
 #include "runtime_history/store.hpp"
@@ -154,6 +155,40 @@ TEST_F(GrpcValidationTest, AcceptsATaskIdWithNoRecordedRun)
   const auto status = stub_->SubmitWorkflow(&context, request, &reply);
   // No orchestrator here, so admission fails later, but not on the task_id.
   EXPECT_NE(status.error_message(), "task_id already belongs to a recorded task");
+}
+
+// A rejected conflict must not stay registered: the reservation carries the
+// conflicting payload, and a later authoritative retry would be compared
+// against it and refused before the durable replay is ever consulted.
+TEST_F(GrpcValidationTest, ConflictingReservationDoesNotBlockTheAuthoritativeRetry)
+{
+  const auto request = valid_request();
+  {
+    runtime_gateway::DurableIdempotency ledger(*store_);
+    runtime_gateway::RequestRecord admitted{
+      request.request_id(), request.task_id(), request.target_id(), request.workflow_id(),
+      request.timeout_ms(), "SUBMITTING", 0, 0, ""};
+    // Seed the authoritative identity, then a different payload under the same
+    // request_id after the "restart" represented by a fresh registry.
+    ASSERT_EQ(
+      ledger.admit(admitted, 1).decision,
+      runtime_gateway::IdempotencyDecision::PROCEED);
+    ASSERT_TRUE(ledger.complete(admitted, "COMPLETED", 0, 0, "done", 2));
+  }
+
+  auto conflicting = request;
+  conflicting.set_target_id("other_target");
+  runtime_gateway::SubmitWorkflowReply conflict_reply;
+  grpc::ClientContext conflict_context;
+  stub_->SubmitWorkflow(&conflict_context, conflicting, &conflict_reply);
+  EXPECT_FALSE(conflict_reply.accepted());
+
+  // The original request must still replay its stored result.
+  runtime_gateway::SubmitWorkflowReply replay;
+  grpc::ClientContext context;
+  const auto status = stub_->SubmitWorkflow(&context, request, &replay);
+  EXPECT_TRUE(status.ok()) << status.error_message();
+  EXPECT_EQ(replay.state(), "COMPLETED");
 }
 
 TEST_F(GrpcValidationTest, ReportsUnavailableWhenOrchestratorIsMissing)

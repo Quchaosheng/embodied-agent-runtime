@@ -112,6 +112,18 @@ bool RequestRegistry::update_terminal(
   return true;
 }
 
+bool RequestRegistry::erase(const std::string & request_id)
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (records_.erase(request_id) == 0) {
+    return false;
+  }
+  insertion_order_.erase(
+    std::remove(insertion_order_.begin(), insertion_order_.end(), request_id),
+    insertion_order_.end());
+  return true;
+}
+
 void RequestRegistry::clear()
 {
   const std::lock_guard<std::mutex> lock(mutex_);

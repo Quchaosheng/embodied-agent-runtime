@@ -55,6 +55,29 @@ TEST(RequestRegistryTest, EvictsOldestTerminalRecordAtCapacity)
   EXPECT_EQ(registry.size(), 2U);
 }
 
+// Erasing a reservation that never became an execution must restore the
+// registry to its previous state, including the task_id uniqueness check.
+TEST(RequestRegistryTest, EraseUndoesAReservationCompletely)
+{
+  runtime_gateway::RequestRegistry registry;
+  ASSERT_EQ(
+    registry.insert(record("request-1", "task-1")),
+    runtime_gateway::InsertResult::INSERTED);
+  EXPECT_EQ(registry.size(), 1U);
+
+  EXPECT_TRUE(registry.erase("request-1"));
+  EXPECT_EQ(registry.size(), 0U);
+  EXPECT_FALSE(registry.get_by_request_id("request-1").has_value());
+
+  // The freed identity may be admitted again, exactly as if never reserved.
+  EXPECT_EQ(
+    registry.insert(record("request-1", "task-1")),
+    runtime_gateway::InsertResult::INSERTED);
+  // A second erase of a missing key is not an error, just false.
+  EXPECT_TRUE(registry.erase("request-1"));
+  EXPECT_FALSE(registry.erase("request-1"));
+}
+
 TEST(RequestRegistryTest, InsertsAndReturnsFirstRequest)
 {
   runtime_gateway::RequestRegistry registry;
