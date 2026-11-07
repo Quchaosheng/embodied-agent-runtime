@@ -1,0 +1,26 @@
+{
+  "1000": {
+    "without_indexes": {
+      "write_ms": 76.5,
+      "prune_ms": 2.09,
+      "stats_ms": 1.84
+    },
+    "with_indexes": {
+      "write_ms": 96.2,
+      "prune_ms": 1.24,
+      "stats_ms": 0.208
+    }
+  },
+  "10000": {
+    "without_indexes": {
+      "write_ms": 728.7,
+      "prune_ms": 24.81,
+      "stats_ms": 11.052
+    },
+    "with_indexes": {
+      "write_ms": 1215.0,
+      "prune_ms": 17.52,
+      "stats_ms": 2.528
+    }
+  }
+}

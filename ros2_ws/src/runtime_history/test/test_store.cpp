@@ -114,6 +114,55 @@ TEST(StoreTest, EnablesWalAndBusyTimeout)
   sqlite3_close(lock);
 }
 
+TEST(StoreTest, CreatesTheStatisticsAndRetentionIndexes)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+
+  EXPECT_EQ(
+    query_text(
+      database.path(),
+      "SELECT group_concat(name, ',') FROM ("
+      "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'task_runs_%' "
+      "OR name LIKE 'request_idempotency_%' ORDER BY name)"),
+    "request_idempotency_updated_at_ns,task_runs_duration_ms,task_runs_outcome");
+}
+
+// A database written before the indexes existed must gain them on open without
+// losing rows: the statistics query is what the change exists for.
+TEST(StoreTest, AddsMissingIndexesToAnExistingDatabase)
+{
+  TemporaryDatabase database;
+  {
+    runtime_history::Store store(database.path());
+    ASSERT_TRUE(store.insert(record("task-before")));
+    const runtime_history::IdempotencyRecord claimed{
+      "request-before", "fp-before", "COMPLETED", 0, 0, "done", 1000};
+    ASSERT_TRUE(store.put_idempotency(claimed));
+  }
+  sqlite3 * older{};
+  ASSERT_EQ(sqlite3_open(database.path().c_str(), &older), SQLITE_OK);
+  ASSERT_EQ(
+    sqlite3_exec(
+      older, "DROP INDEX task_runs_duration_ms; DROP INDEX task_runs_outcome; "
+      "DROP INDEX request_idempotency_updated_at_ns", nullptr, nullptr, nullptr),
+    SQLITE_OK);
+  sqlite3_close(older);
+
+  runtime_history::Store store(database.path());
+  const auto stats = store.stats();
+  EXPECT_EQ(stats.sample_count, 1U);
+  EXPECT_EQ(stats.p50_ms, 25U);
+  EXPECT_EQ(store.get("task-before")->message, "completed");
+  EXPECT_EQ(store.get_idempotency("request-before")->state, "COMPLETED");
+  EXPECT_EQ(
+    query_text(
+      database.path(),
+      "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN "
+      "('task_runs_duration_ms','task_runs_outcome','request_idempotency_updated_at_ns')"),
+    "3");
+}
+
 TEST(StoreTest, InsertsAndGetsEveryField)
 {
   TemporaryDatabase database;
