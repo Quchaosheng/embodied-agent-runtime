@@ -170,6 +170,28 @@ int get_task(runtime_gateway::RobotRuntime::Stub & stub, const int argc, char **
   return 0;
 }
 
+int resolve_uncertain(
+  runtime_gateway::RobotRuntime::Stub & stub,
+  const std::map<std::string, std::string> & values)
+{
+  runtime_gateway::ResolveUncertainRequest request;
+  request.set_request_id(required(values, "--request-id"));
+  request.set_state(required(values, "--state"));
+  const auto message = values.find("--message");
+  request.set_message(message == values.end() ? std::string{} : message->second);
+  runtime_gateway::ResolveUncertainReply reply;
+  grpc::ClientContext context;
+  set_deadline(context);
+  const auto status = stub.ResolveUncertain(&context, request, &reply);
+  if (!status.ok()) {
+    return rpc_error(status);
+  }
+  std::cout << "{\"resolved\":" << (reply.resolved() ? "true" : "false")
+            << ",\"state\":" << quote(reply.state())
+            << ",\"message\":" << quote(reply.message()) << "}\n";
+  return 0;
+}
+
 int get_stats(runtime_gateway::RobotRuntime::Stub & stub, const int argc)
 {
   if (argc != 2) {
@@ -227,6 +249,9 @@ int main(int argc, char ** argv)
     }
     if (command == "get-stats") {
       return get_stats(*stub, argc);
+    }
+    if (command == "resolve") {
+      return resolve_uncertain(*stub, options(argc, argv, 2));
     }
     throw std::invalid_argument("unknown command");
   } catch (const std::exception & error) {

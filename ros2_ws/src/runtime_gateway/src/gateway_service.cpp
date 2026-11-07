@@ -130,6 +130,60 @@ struct GatewayService::State
     before_cancel_dispatch(std::move(before_cancel_dispatch_value)), logger(node.get_logger())
   {}
 
+  struct ResolveResult
+  {
+    bool ok{false};
+    bool fatal{false};
+    std::string state;
+    std::string message;
+  };
+
+  // Applies an explicit operator decision to an uncertain row. The payload is
+  // rebuilt from the stored identity so the fingerprint matches by
+  // construction; nothing is dispatched to the device.
+  ResolveResult resolve(
+    const std::string & request_id, const std::string & state,
+    const std::string & message)
+  {
+    ResolveResult result{false, false, state, message};
+    std::optional<runtime_history::IdempotencyRecord> stored;
+    try {
+      stored = store.get_idempotency(request_id);
+    } catch (const std::exception & error) {
+      result.fatal = true;
+      result.message = error.what();
+      return result;
+    }
+    if (!stored) {
+      result.state = "NOT_FOUND";
+      result.message = "no durable record for this request_id";
+      return result;
+    }
+    if (is_terminal_state(stored->state)) {
+      result.state = stored->state;
+      result.message = "request already has a terminal outcome";
+      return result;
+    }
+    try {
+      result.ok = durable.resolve_uncertain(
+        request_id, stored->fingerprint, state, 0, message, now_ns());
+    } catch (const std::exception & error) {
+      result.fatal = true;
+      result.message = error.what();
+      return result;
+    }
+    if (!result.ok) {
+      result.message = "the stored row could not be updated";
+      return result;
+    }
+    {
+      const std::lock_guard<std::mutex> lock(mutex);
+      registry.update_terminal(request_id, state, 0, 0, message);
+    }
+    result.state = state;
+    return result;
+  }
+
   bool dispatch_cancel(const std::string & request_id, const GoalHandle::SharedPtr & handle)
   {
     {
@@ -563,6 +617,33 @@ grpc::Status GatewayService::GetTask(
   } catch (const std::exception & error) {
     return {grpc::StatusCode::INTERNAL, error.what()};
   }
+}
+
+grpc::Status GatewayService::ResolveUncertain(
+  grpc::ServerContext *, const ResolveUncertainRequest * request,
+  ResolveUncertainReply * reply)
+{
+  if (request->request_id().empty()) {
+    return {grpc::StatusCode::INVALID_ARGUMENT, "request_id is required"};
+  }
+  if (!is_terminal_state(request->state())) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+      "state must be a terminal outcome: COMPLETED, CANCELED, SAFE_STOP, "
+      "DEVICE_FAULT, ABORTED or REJECTED"};
+  }
+
+  // The ledger is the authority. A missing row, an already-terminal row and a
+  // write that did not apply are reported distinctly instead of collapsing
+  // into one failure, and nothing is redispatched to the device.
+  const auto resolved = state_->resolve(
+    request->request_id(), request->state(), request->message());
+  if (resolved.fatal) {
+    return {grpc::StatusCode::UNAVAILABLE, resolved.message};
+  }
+  reply->set_resolved(resolved.ok);
+  reply->set_state(resolved.state);
+  reply->set_message(resolved.message);
+  return grpc::Status::OK;
 }
 
 grpc::Status GatewayService::GetStats(

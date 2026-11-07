@@ -138,6 +138,30 @@ bool DurableIdempotency::resolve_uncertain(
   return complete(record, state, outcome, error_code, message, now_ns);
 }
 
+bool DurableIdempotency::resolve_uncertain(
+  const std::string & request_id, const std::string & fingerprint,
+  const std::string & state, const std::uint8_t outcome, const std::string & message,
+  const std::int64_t now_ns)
+{
+  if (!is_terminal_state(state)) {
+    return false;
+  }
+  try {
+    const auto existing = store_.get_idempotency(request_id);
+    if (!existing || !is_uncertain_state(existing->state)) {
+      return false;
+    }
+    if (existing->fingerprint != fingerprint) {
+      return false;
+    }
+    const runtime_history::IdempotencyRecord value{
+      request_id, fingerprint, state, outcome, 0, message, now_ns};
+    return store_.put_idempotency(value);
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
 std::optional<IdempotencyOutcome> DurableIdempotency::lookup(
   const std::string & request_id) const
 {
