@@ -111,9 +111,9 @@ struct PerceptionTaskAdapterNode::Impl
 
   void stop_locked(int code)
   {
-    active = false;
-    goal_handle.reset();
-    trigger->on_terminal();
+    // Stops the input loop only. The goal handle stays owned here so the exit
+    // path can still cancel a workflow that was already accepted; releasing it
+    // first made cancel_active() return early and leave that workflow running.
     finished = true;
     exit_code = code;
   }
@@ -350,9 +350,8 @@ void PerceptionTaskAdapterNode::cancel_active()
   while (std::chrono::steady_clock::now() < deadline && rclcpp::ok()) {
     {
       std::lock_guard<std::mutex> lock(impl_->mutex);
-      if (!impl_->active) {
-        return;
-      }
+      // A missing handle means there is nothing to cancel, not that the input
+      // loop stopped: an accepted workflow keeps its handle until it finishes.
       handle = impl_->goal_handle;
     }
     if (handle) {
