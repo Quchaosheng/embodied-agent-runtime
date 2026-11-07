@@ -217,6 +217,19 @@ grpc::Status GatewayService::SubmitWorkflow(
     request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
     request->timeout_ms(), "SUBMITTING", 0, 0, ""};
 
+  // task_id is the history primary key, so a reused one would silently drop the
+  // new terminal record and make GetTask answer with the older run. Check it
+  // before anything is reserved: the in-memory check below is bounded and
+  // forgets on restart, while the durable row does not.
+  try {
+    if (state_->store.get(request->task_id()).has_value()) {
+      return {grpc::StatusCode::INVALID_ARGUMENT,
+        "task_id already belongs to a recorded task"};
+    }
+  } catch (const std::exception & error) {
+    return {grpc::StatusCode::UNAVAILABLE, error.what()};
+  }
+
   // Live duplicates are handled by the in-memory registry so an in-flight
   // retry still reports its real state instead of an unknown one.
   const auto inserted = state_->registry.insert(initial);
