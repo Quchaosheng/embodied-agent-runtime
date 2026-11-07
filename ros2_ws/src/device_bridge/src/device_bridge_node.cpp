@@ -115,10 +115,15 @@ private:
     std::shared_ptr<const ExecuteDeviceCommand::Goal> goal)
   {
     std::chrono::milliseconds ack_timeout;
-    if (goal->command_id == 0 || goal->command_id > 0xFFFFU) {
+    if (!device_bridge::application_command_id_in_range(goal->command_id)) {
+      // IDs at or above kStopCommandIdMin are STOP's, so an ordinary command there
+      // could share an identity with a STOP ACK.
       RCLCPP_WARN(
-        get_logger(), "Rejecting command_id=%u: command_id must be in [1, 65535]",
-        goal->command_id);
+        get_logger(),
+        "Rejecting command_id=%u: application command IDs are [1, %u]; "
+        "IDs at or above %u are reserved for STOP",
+        goal->command_id, runtime_can::kApplicationCommandIdMax,
+        runtime_can::kStopCommandIdMin);
       return rclcpp_action::GoalResponse::REJECT;
     }
     if (!device_bridge::duration_to_milliseconds(
