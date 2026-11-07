@@ -56,7 +56,7 @@ public:
     const auto configured_cancel_timeout = declare_parameter<std::int64_t>(
       "cancel_timeout_ms", 1000);
     const auto configured_validation_delay = declare_parameter<std::int64_t>(
-      "validation_delay_ms", 200);
+      "validation_delay_ms", 0);
     const auto configured_event_history_depth = declare_parameter<std::int64_t>(
       "task_event_history_depth", 128);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
@@ -95,8 +95,10 @@ public:
     ack_timeout_ms_ = configured_ack_timeout;
     cancel_timeout_ms_ = configured_cancel_timeout;
     task_event_history_depth_ = static_cast<std::size_t>(configured_event_history_depth);
+    // 0 is allowed: the real target and duration checks already ran in
+    // handle_goal, so the paced feedback loop is a test aid, not validation.
     validation_delay_ms_ = static_cast<int>(
-      std::clamp<std::int64_t>(configured_validation_delay, 1, 60000));
+      std::clamp<std::int64_t>(configured_validation_delay, 0, 60000));
     validator_ = std::make_unique<task_executor::TargetValidator>(targets);
     device_client_ = rclcpp_action::create_client<ExecuteDeviceCommand>(
       this, "execute_device_command");
@@ -362,7 +364,7 @@ private:
     const auto goal = goal_handle->get_goal();
     const auto deadline = std::chrono::steady_clock::now() +
       to_steady_duration(goal->allowed_duration);
-    const int validation_step_ms = std::max(validation_delay_ms_ / 5, 1);
+    const int validation_step_ms = validation_delay_ms_ / 5;
     emit_stage(goal, "action_execute_start");
 
     for (int step = 1; step <= 5; ++step) {
@@ -385,7 +387,9 @@ private:
       publish_feedback(
         goal_handle, ExecuteTask::Feedback::VALIDATING,
         static_cast<float>(step) * 0.04F);
-      std::this_thread::sleep_for(std::chrono::milliseconds(validation_step_ms));
+      if (validation_step_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(validation_step_ms));
+      }
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -1028,7 +1032,7 @@ private:
   }
 
   std::string goal_id_;
-  int validation_delay_ms_{200};
+  int validation_delay_ms_{0};
   std::int64_t ack_timeout_ms_{500};
   std::int64_t cancel_timeout_ms_{1000};
   std::int64_t diagnostic_period_ms_{1000};

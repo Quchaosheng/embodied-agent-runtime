@@ -9,5 +9,7 @@ task_executor:
     device_opcode: 1
     ack_timeout_ms: 500
     cancel_timeout_ms: 1000
-    validation_delay_ms: 200
+    # Real validation happens in handle_goal; this only paces feedback, so the
+    # production default adds no artificial wait before dispatch.
+    validation_delay_ms: 0
     diagnostic_period_ms: 1000
