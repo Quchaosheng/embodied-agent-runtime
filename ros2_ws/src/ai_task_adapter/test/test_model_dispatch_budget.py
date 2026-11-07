@@ -57,12 +57,18 @@ class FakeFuture:
     def __init__(self, done=True, result=None):
         self._done = done
         self._result = result
+        self._callbacks = []
 
     def done(self):
         return self._done
 
     def result(self):
         return self._result
+
+    def add_done_callback(self, callback):
+        self._callbacks.append(callback)
+        if self._done:
+            callback(self)
 
 
 class FakeGoalHandle:
@@ -84,6 +90,23 @@ class FakeGoalHandle:
         return FakeFuture(done=True, result=None)
 
 
+class LateAcceptFuture(FakeFuture):
+    """A send future that stays pending until the test resolves it."""
+
+    def __init__(self):
+        super().__init__(done=False)
+        self._callbacks = []
+
+    def add_done_callback(self, callback):
+        self._callbacks.append(callback)
+
+    def resolve(self, handle):
+        self._result = handle
+        self._done = True
+        for callback in self._callbacks:
+            callback(self)
+
+
 class FakeActionClient:
 
     def __init__(self, wait_ok=True, wait_cost_ns=0, send_done=True):
@@ -93,6 +116,8 @@ class FakeActionClient:
         self.wait_timeout_sec = None
         self.sent = 0
         self.last_goal = None
+        self.last_handle = None
+        self.pending_future = None
 
     def wait_for_server(self, timeout_sec=None):
         self.wait_timeout_sec = timeout_sec
@@ -103,7 +128,11 @@ class FakeActionClient:
     def send_goal_async(self, goal):
         self.sent += 1
         self.last_goal = goal
-        return FakeFuture(done=self.send_done, result=FakeGoalHandle())
+        if self.send_done:
+            self.last_handle = FakeGoalHandle()
+            return FakeFuture(done=True, result=self.last_handle)
+        self.pending_future = LateAcceptFuture()
+        return self.pending_future
 
 
 class FakeClock:
@@ -156,6 +185,7 @@ def build_node(**overrides):
     )
     node._metrics = adapter_module.ModelRuntimeMetrics()
     node._client = FakeActionClient()
+    node._awaiting_acceptance = False
     node.get_logger = lambda: FakeLogger()
     for key, value in overrides.items():
         setattr(node, key, value)
@@ -201,6 +231,53 @@ class ModelDispatchBudgetTest(unittest.TestCase):
         exit_code = node.run()
         self.assertEqual(exit_code, 1)
         self.assertEqual(client.sent, 0)
+
+
+class ModelLateAcceptanceTest(unittest.TestCase):
+    """A goal accepted after the response timeout must not run unattended."""
+
+    def setUp(self):
+        self._patches = [
+            mock.patch.object(adapter_module.time, 'monotonic_ns', clock.monotonic_ns),
+            mock.patch.object(adapter_module.rclpy, 'spin_until_future_complete',
+                              lambda *args, **kwargs: None),
+        ]
+        for patch in self._patches:
+            patch.start()
+        clock.now_ns = 0
+
+    def tearDown(self):
+        for patch in reversed(self._patches):
+            patch.stop()
+
+    def test_late_acceptance_after_response_timeout_is_cancelled(self):
+        client = FakeActionClient(send_done=False)
+        node = build_node(_client=client)
+        exit_code = node.run()
+        self.assertEqual(exit_code, 4)
+        self.assertEqual(client.sent, 1)
+
+        # The server accepts after run() already reported the timeout.
+        accepted = FakeGoalHandle()
+        client.pending_future.resolve(accepted)
+        self.assertEqual(accepted.cancelled, 1)
+
+    def test_acceptance_before_the_timeout_is_not_cancelled(self):
+        client = FakeActionClient()
+        node = build_node(_client=client)
+        node.run()
+        self.assertEqual(client.last_handle.cancelled, 0)
+
+    def test_rejected_late_response_is_not_cancelled(self):
+        class RejectedHandle(FakeGoalHandle):
+            accepted = False
+
+        client = FakeActionClient(send_done=False)
+        node = build_node(_client=client)
+        node.run()
+        rejected = RejectedHandle()
+        client.pending_future.resolve(rejected)
+        self.assertEqual(rejected.cancelled, 0)
 
 
 if __name__ == '__main__':

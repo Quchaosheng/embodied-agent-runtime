@@ -112,6 +112,7 @@ class AiModelAdapterNode(Node):
             self.declare_parameter('targets', ['dock_a', 'home']).value
         )
         self._client = ActionClient(self, ExecuteWorkflow, 'execute_workflow')
+        self._awaiting_acceptance = False
 
     def run(self) -> int:
         if self._mode not in {'openai_compatible', 'mock', 'replay'}:
@@ -263,17 +264,28 @@ class AiModelAdapterNode(Node):
         goal.allowed_duration.sec = plan.duration_ms // 1000
         goal.allowed_duration.nanosec = (plan.duration_ms % 1000) * 1_000_000
         send_future = self._client.send_goal_async(goal)
+        # The request is already at the server; a slow acceptance response must
+        # not leave an accepted goal running with nobody able to cancel it.
+        send_future.add_done_callback(self._cancel_on_late_acceptance)
         rclpy.spin_until_future_complete(self, send_future, timeout_sec=5.0)
         if not send_future.done():
-            self.get_logger().error('ExecuteWorkflow goal response timed out')
+            # Only now is an acceptance "late"; anything arriving before this
+            # point is handled normally below.
+            self._awaiting_acceptance = True
+            self.get_logger().error(
+                'ExecuteWorkflow goal response timed out; a late acceptance will '
+                'be cancelled instead of leaving the goal unattended'
+            )
             self._metrics.note_task(False)
             return 4
         try:
             goal_handle = send_future.result()
         except Exception as error:
             self.get_logger().error(f'ExecuteWorkflow goal request failed: {error}')
+            self._awaiting_acceptance = False
             self._metrics.note_task(False)
             return 4
+        self._awaiting_acceptance = False
         if goal_handle is None or not goal_handle.accepted:
             self.get_logger().error('ExecuteWorkflow goal rejected')
             self._metrics.note_task(False)
@@ -317,6 +329,31 @@ class AiModelAdapterNode(Node):
         """Seconds left before the plan deadline, capped by limit_sec."""
         remaining_ns = context.deadline_ns - time.monotonic_ns()
         return min(limit_sec, remaining_ns / 1_000_000_000)
+
+    def _cancel_on_late_acceptance(self, future) -> None:
+        """Cancel a goal accepted after the caller already reported a timeout."""
+        if not self._awaiting_acceptance:
+            return
+        # run() arms this flag only after the wait has already timed out, so a
+        # callback firing here is by definition late.
+        try:
+            handle = future.result() if future.done() else None
+        except Exception:
+            return
+        self._awaiting_acceptance = False
+        if handle is None or not handle.accepted:
+            return
+        self.get_logger().error(
+            'ExecuteWorkflow accepted the goal after the response timeout; '
+            'cancelling it so it cannot run unattended'
+        )
+        try:
+            handle.cancel_goal_async()
+        except Exception as error:
+            self.get_logger().error(
+                f'late ExecuteWorkflow cancellation failed: {error}; '
+                'the goal outcome is unconfirmed'
+            )
 
     def _build_backend(self):
         if self._mode == 'mock':
