@@ -272,6 +272,38 @@ TEST_F(ActionSubmissionTest, CameraFailureStillCancelsAcceptedWorkflow)
   EXPECT_EQ(server_->cancel_count(), 1U);
 }
 
+// While a workflow runs, detection results are discarded anyway. Skipping the
+// detection is not observable from outside (the trigger resets its state in
+// both paths), so this pins the behaviour that must not change: frames are
+// still consumed, no second goal is submitted, and the adapter stays healthy.
+TEST_F(ActionSubmissionTest, ActiveWorkflowConsumesFramesWithoutRearming)
+{
+  ASSERT_TRUE(adapter_->process_frame(marker_image(10), true));
+  ASSERT_TRUE(server_->wait_for_goals(1));
+
+  for (int frame = 0; frame < 5; ++frame) {
+    EXPECT_FALSE(adapter_->process_frame(cv::Mat{}, false));
+    EXPECT_FALSE(adapter_->process_frame(marker_image(20), false));
+  }
+  EXPECT_EQ(server_->goal_count(), 1U);
+  EXPECT_FALSE(adapter_->finished());
+
+  // After the workflow ends the adapter re-arms: a different marker confirms
+  // again and submits a second workflow. (Camera mode never sets `finished`;
+  // only image mode exits on its own.)
+  server_->complete(0);
+  // Wait for the result callback to clear the active workflow before re-arming.
+  for (int frame = 0; frame < 100; ++frame) {
+    adapter_->process_frame(cv::Mat{}, false);
+    std::this_thread::sleep_for(5ms);
+  }
+  EXPECT_FALSE(adapter_->process_frame(marker_image(20), false));
+  EXPECT_FALSE(adapter_->process_frame(marker_image(20), false));
+  ASSERT_TRUE(adapter_->process_frame(marker_image(20), false));
+  ASSERT_TRUE(server_->wait_for_goals(2));
+  EXPECT_EQ(server_->goal(1).target_id, "home");
+}
+
 TEST_F(ActionSubmissionTest, AmbiguousCameraFrameResetsConfirmation)
 {
   EXPECT_FALSE(adapter_->process_frame(marker_image(10), false));
