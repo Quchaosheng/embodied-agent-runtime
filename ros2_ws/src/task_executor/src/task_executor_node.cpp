@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -1004,6 +1005,21 @@ private:
     return next_command_id_++;
   }
 
+  // The device replay cache outlives this process and is keyed by command id
+  // alone, so starting over at 1 would replay a previous run's ACK (same
+  // payload) or report a conflict (different payload). Resume in a segment
+  // derived from the wall clock instead; the sequence stays monotonic within
+  // an execution, so repeated IDs remain impossible while this process lives.
+  static std::uint16_t initial_command_id()
+  {
+    const auto now = std::chrono::system_clock::now().time_since_epoch();
+    const auto seed = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
+    std::mt19937 generator(static_cast<std::mt19937::result_type>(seed));
+    std::uniform_int_distribution<std::uint32_t> distribution(1, kMaxApplicationCommandId);
+    return static_cast<std::uint16_t>(distribution(generator));
+  }
+
   void run_worker_hook(const task_executor::WorkerPhase phase)
   {
     if (worker_hook_) {
@@ -1018,7 +1034,7 @@ private:
   std::int64_t diagnostic_period_ms_{1000};
   std::size_t task_event_history_depth_{128};
   std::uint8_t device_opcode_{1};
-  std::uint16_t next_command_id_{1};
+  std::uint16_t next_command_id_{initial_command_id()};
   std::unique_ptr<task_executor::TargetValidator> validator_;
   std::unique_ptr<runtime_history::StageEventLog> stage_log_;
   std::unordered_map<std::string, std::int32_t> target_arguments_;

@@ -52,7 +52,13 @@ public:
   {
     server_ = rclcpp_action::create_server<ExecuteDeviceCommand>(
       this, "execute_device_command",
-      [this](const rclcpp_action::GoalUUID &, std::shared_ptr<const ExecuteDeviceCommand::Goal>) {
+      [this](
+        const rclcpp_action::GoalUUID &,
+        std::shared_ptr<const ExecuteDeviceCommand::Goal> goal) {
+        {
+          const std::lock_guard<std::mutex> lock(commands_mutex_);
+          command_ids_.push_back(goal->command_id);
+        }
         std::this_thread::sleep_for(behavior_.goal_delay);
         return behavior_.accept ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
                rclcpp_action::GoalResponse::REJECT;
@@ -113,6 +119,12 @@ public:
     }
   }
 
+  std::vector<std::uint16_t> command_ids() const
+  {
+    const std::lock_guard<std::mutex> lock(commands_mutex_);
+    return command_ids_;
+  }
+
   int accepted_count() const {return accepted_count_;}
   int cancel_count() const {return cancel_count_;}
 
@@ -150,6 +162,8 @@ private:
   std::atomic_bool running_{true};
   std::mutex workers_mutex_;
   std::vector<std::thread> workers_;
+  mutable std::mutex commands_mutex_;
+  std::vector<std::uint16_t> command_ids_;
   std::mutex terminal_mutex_;
   std::condition_variable terminal_changed_;
   bool terminal_released_{false};
@@ -316,6 +330,34 @@ TEST_F(ExecutorSafetyTest, LateAcceptedGoalIsCanceledOnceBeforeParentTerminal)
 // The offline diagnoser groups stage windows by (trace_id, sequence_id) and
 // requires the ordered stage chain; a silent break here would only surface as a
 // useless capture much later.
+// The device replay cache outlives the executor and is keyed by command id, so
+// a fresh process must not restart the sequence at 1.
+TEST_F(ExecutorSafetyTest, CommandIdsDoNotRestartAtTheFirstIdentifier)
+{
+  start({0ms, true, true});
+  const auto first = send_task("command-id-1", 1000);
+  ASSERT_NE(first, nullptr);
+  const auto first_result = wait_result(first);
+  EXPECT_EQ(first_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  const auto second = send_task("command-id-2", 1000);
+  ASSERT_NE(second, nullptr);
+  const auto second_result = wait_result(second);
+  EXPECT_EQ(second_result.code, rclcpp_action::ResultCode::SUCCEEDED);
+
+  const auto ids = bridge_->command_ids();
+  ASSERT_EQ(ids.size(), 2U);
+  // Every id must stay inside the application range the protocol reserves.
+  for (const auto id : ids) {
+    EXPECT_GE(id, 1);
+    EXPECT_LE(id, 0x7FFFU);
+  }
+  // Sequential within one process, so two runs can never reuse an id.
+  EXPECT_EQ(static_cast<std::uint16_t>(ids[0] + 1), ids[1]);
+  // Not the fixed restart point: that is what collided with a live cache.
+  EXPECT_NE(ids[0], 1);
+}
+
 TEST_F(ExecutorSafetyTest, EmitsOrderedStageEvidenceForOneTrace)
 {
   const std::string path = "/tmp/executor_stage_events_" +
