@@ -583,6 +583,40 @@ TEST_F(ExecutorSafetyTest, ParentCancelWhileGoalResponsePendingCancelsLateAccept
   EXPECT_EQ(events.front().action_status, TaskEvent::CANCELED);
 }
 
+// An acceptance response that never arrives within the grace window must not be
+// reported as a clean cancel: the bridge may still accept and drive hardware.
+TEST_F(ExecutorSafetyTest, CancelWithLateAcceptanceReportsUnconfirmedStop)
+{
+  std::promise<void> send_started;
+  start({3000ms, true, false}, [&](const task_executor::WorkerPhase phase) {
+      if (phase == task_executor::WorkerPhase::kAfterSendGoal) {
+        send_started.set_value();
+      }
+  });
+
+  const auto goal_handle = send_task("cancel-late-acceptance", 5000);
+  ASSERT_NE(goal_handle, nullptr);
+  ASSERT_EQ(send_started.get_future().wait_for(1s), std::future_status::ready);
+  const auto cancel_future = task_client_->async_cancel_goal(goal_handle);
+  ASSERT_EQ(cancel_future.wait_for(1s), std::future_status::ready);
+  EXPECT_TRUE(wait_events("cancel-late-acceptance", 1, 150ms).empty());
+
+  const auto result = wait_result(goal_handle);
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+  ASSERT_NE(result.result, nullptr);
+  EXPECT_EQ(result.result->outcome, ExecuteTask::Result::SAFE_STOP);
+  EXPECT_EQ(result.result->error_code, 113);
+  const auto events = wait_one_event_after_quiet("cancel-late-acceptance");
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events.front().action_status, TaskEvent::ABORTED);
+  EXPECT_EQ(events.front().error_code, 113);
+
+  // The late acceptance must still be cancelled exactly once, or the bridge
+  // would keep a command the caller was told had stopped.
+  ASSERT_TRUE(bridge_->wait_for_cancel(3s));
+  EXPECT_EQ(bridge_->cancel_count(), 1);
+}
+
 TEST_F(ExecutorSafetyTest, ShutdownWaitsForLateAcceptedChildTerminal)
 {
   std::promise<void> send_started;
