@@ -159,6 +159,44 @@ class ModelRuntimeTest(unittest.TestCase):
         self.assertEqual(report['model_latency_ms']['p50'], 2.0)
         self.assertEqual(report['reason_counts'], {'timeout': 1})
 
+    def test_failure_window_survives_a_new_instance_when_a_path_is_given(self):
+        # The adapter builds one node per invocation, so in-process history can
+        # never reach a storm threshold; a persisted file is what makes the
+        # configured limit mean anything.
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'failures.json'
+            for index in range(3):
+                admission = ModelAdmission(
+                    dedup_window_ms=5000,
+                    failure_window_ms=60000,
+                    max_failures=3,
+                    max_future_skew_ms=100,
+                    failure_state_path=str(state),
+                )
+                storm = admission.note_backend_failure(1_000 + index)
+                self.assertEqual(storm, index == 2)
+
+    def test_failure_window_stays_in_process_without_a_path(self):
+        for index in range(3):
+            admission = ModelAdmission(
+                dedup_window_ms=5000,
+                failure_window_ms=60000,
+                max_failures=3,
+                max_future_skew_ms=100,
+            )
+            # Documented behaviour: one invocation cannot accumulate.
+            self.assertFalse(admission.note_backend_failure(1_000 + index))
+
+    def test_unwritable_failure_state_degrades_instead_of_raising(self):
+        admission = ModelAdmission(
+            dedup_window_ms=5000,
+            failure_window_ms=60000,
+            max_failures=3,
+            max_future_skew_ms=100,
+            failure_state_path='/proc/definitely/not/writable/failures.json',
+        )
+        self.assertFalse(admission.note_backend_failure(1_000))
+
     def test_node_wires_explicit_backends_without_implicit_mock_fallback(self):
         node = Path(__file__).resolve().parents[1] / 'scripts/ai_model_adapter_node.py'
         source = node.read_text(encoding='utf-8')
