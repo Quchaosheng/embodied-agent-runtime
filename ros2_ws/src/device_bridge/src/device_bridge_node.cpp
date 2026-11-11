@@ -40,6 +40,11 @@ public:
     const auto configured_stop_timeout = declare_parameter<std::int64_t>(
       "stop_timeout_ms", 500);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
+    // A device that reports execution separately is opted into explicitly: a
+    // protocol that only ACKs would otherwise be waited on forever.
+    completion_states_enabled_ = declare_parameter<bool>("completion_states_enabled", false);
+    const auto configured_completion_timeout = declare_parameter<std::int64_t>(
+      "completion_timeout_ms", 30000);
     stage_log_ = std::make_unique<runtime_history::StageEventLog>(
       declare_parameter<std::string>("stage_event_log_path", ""));
     if (configured_max_timeout <= 0 || configured_stop_timeout <= 0 ||
@@ -47,6 +52,10 @@ public:
     {
       throw std::invalid_argument("max_ack_timeout_ms must be positive");
     }
+    if (configured_completion_timeout <= 0 || configured_completion_timeout > 600000) {
+      throw std::invalid_argument("completion_timeout_ms must be in [1, 600000]");
+    }
+    completion_timeout_ = std::chrono::milliseconds(configured_completion_timeout);
     if (diagnostic_period_ms_ <= 0 || diagnostic_period_ms_ > 60000) {
       throw std::invalid_argument("diagnostic_period_ms must be in [1, 60000]");
     }
@@ -59,7 +68,11 @@ public:
     if (!socket_.open(interface_name_, error)) {
       throw std::runtime_error("failed to open " + interface_name_ + ": " + error);
     }
-    if (!socket_.set_filter(runtime_can::kResponseFrameId, error)) {
+    // The execution status arrives on its own frame id, so both are filtered
+    // in: otherwise a device that reports completion would never be heard.
+    if (!socket_.set_filter(
+        runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error))
+    {
       throw std::runtime_error("failed to set response filter: " + error);
     }
 
@@ -326,11 +339,9 @@ private:
           diagnostic_state_.record_success();
           publish_diagnostics();
           emit_stage(goal, "can_ack_received", attempt_extra);
-          auto result = std::make_shared<ExecuteDeviceCommand::Result>();
-          result->outcome = ExecuteDeviceCommand::Result::COMPLETED;
-          result->error_code = 0;
-          result->message = "device acknowledged command";
-          goal_handle->succeed(result);
+          // The ACK only says the command arrived. What the result means is
+          // decided by whether this protocol reports execution separately.
+          finish_acknowledged(goal_handle, command.command_id, completion_timeout_);
           return;
         }
         const auto error_code = device_bridge::device_error_code(response.result_code);
@@ -384,6 +395,114 @@ private:
         "command ACK timeout; attempting device STOP");
       return;
     }
+  }
+
+  // Called once the device ACKed the command. A protocol that reports execution
+  // separately is waited on; a protocol that only acknowledges keeps the old
+  // meaning, but the result says so explicitly instead of implying motion.
+  void finish_acknowledged(
+    const std::shared_ptr<GoalHandle> & goal_handle,
+    const std::uint16_t command_id,
+    const std::chrono::milliseconds completion_timeout)
+  {
+    if (device_bridge::classify_status(std::nullopt, completion_states_enabled_) ==
+      device_bridge::Acknowledgement::kAckOnlyCompleted)
+    {
+      finish_completed(
+        goal_handle, ExecuteDeviceCommand::Feedback::COMPLETION_ACK_ONLY,
+        "device acknowledged command; this protocol has no completion state");
+      return;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + completion_timeout;
+    while (running_ && rclcpp::ok()) {
+      if (goal_handle->is_canceling()) {
+        stop_and_finish(goal_handle, command_id, true, 0, "");
+        return;
+      }
+      const auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        // "Executing" without a bound is not a state machine, so an unfinished
+        // command is a reported gap, not a completed one.
+        stop_and_finish(
+          goal_handle, command_id, false, device_bridge::kErrorCompletionTimeout,
+          "device did not report completion within " +
+          std::to_string(completion_timeout.count()) + " ms; attempting device STOP");
+        return;
+      }
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+      runtime_can::RawFrame frame;
+      std::string receive_error;
+      const auto status = socket_.receive(
+        frame, std::min(remaining, receive_poll_ms_), receive_error);
+      if (status == runtime_can::ReceiveStatus::kTimeout) {
+        continue;
+      }
+      if (status == runtime_can::ReceiveStatus::kError) {
+        stop_and_finish(
+          goal_handle, command_id, false, device_bridge::kErrorTransport,
+          "CAN receive failed while waiting for completion: " + receive_error +
+          "; attempting device STOP");
+        return;
+      }
+
+      runtime_can::DecodeError decode_error;
+      const auto decoded = runtime_can::decode_status(frame, decode_error);
+      if (!decoded) {
+        RCLCPP_WARN(
+          get_logger(), "Ignoring invalid status frame: %s",
+          runtime_can::to_string(decode_error).data());
+        continue;
+      }
+      // A status for another command must not settle this one.
+      if (decoded->command_id != command_id) {
+        continue;
+      }
+
+      switch (decoded->completion) {
+        case runtime_can::Completion::kAccepted:
+          publish_feedback(
+            goal_handle, ExecuteDeviceCommand::Feedback::WAITING_ACK, 0,
+            ExecuteDeviceCommand::Feedback::COMPLETION_ACCEPTED);
+          break;
+        case runtime_can::Completion::kExecuting:
+          publish_feedback(
+            goal_handle, ExecuteDeviceCommand::Feedback::EXECUTING, 0,
+            ExecuteDeviceCommand::Feedback::COMPLETION_EXECUTING);
+          break;
+        case runtime_can::Completion::kCompleted:
+          finish_completed(
+            goal_handle, ExecuteDeviceCommand::Feedback::COMPLETION_COMPLETED,
+            "device reported command completed");
+          return;
+        case runtime_can::Completion::kFaulted: {
+            const auto error_code = device_bridge::device_error_code(decoded->fault_code);
+            diagnostic_state_.record_device_fault(error_code);
+            publish_diagnostics();
+            finish_aborted(
+              goal_handle, ExecuteDeviceCommand::Result::DEVICE_FAULT, error_code,
+              "device reported fault code=" + std::to_string(decoded->fault_code));
+            return;
+          }
+      }
+    }
+    stop_and_finish(
+      goal_handle, command_id, false, device_bridge::kErrorShutdown,
+      "bridge shutdown while waiting for completion; attempting device STOP");
+  }
+
+  void finish_completed(
+    const std::shared_ptr<GoalHandle> & goal_handle, const std::uint8_t completion,
+    const std::string & message)
+  {
+    // The completion state rides the last feedback frame, because Result keeps
+    // its existing shape for clients that already read it.
+    publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::SENDING, 0, completion);
+    auto result = std::make_shared<ExecuteDeviceCommand::Result>();
+    result->outcome = ExecuteDeviceCommand::Result::COMPLETED;
+    result->error_code = 0;
+    result->message = message;
+    goal_handle->succeed(result);
   }
 
   void stop_and_finish(
@@ -468,11 +587,13 @@ private:
   void publish_feedback(
     const std::shared_ptr<GoalHandle> & goal_handle,
     const std::uint8_t state,
-    const std::uint8_t retry_count)
+    const std::uint8_t retry_count,
+    const std::uint8_t completion = ExecuteDeviceCommand::Feedback::COMPLETION_UNKNOWN)
   {
     auto feedback = std::make_shared<ExecuteDeviceCommand::Feedback>();
     feedback->state = state;
     feedback->retry_count = retry_count;
+    feedback->completion = completion;
     goal_handle->publish_feedback(feedback);
   }
 
@@ -529,6 +650,8 @@ private:
   std::int64_t diagnostic_period_ms_{1000};
   std::chrono::milliseconds receive_poll_ms_{25};
   std::chrono::milliseconds stop_timeout_ms_{500};
+  std::chrono::milliseconds completion_timeout_{30000};
+  bool completion_states_enabled_{false};
   std::uint16_t next_stop_command_id_{runtime_can::kStopCommandIdMin};
   std::atomic_bool running_{true};
   std::atomic_bool active_goal_{false};

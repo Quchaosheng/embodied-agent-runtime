@@ -61,3 +61,59 @@ TEST(ProtocolTest, ReservesSeparateStopCommandNamespace)
   EXPECT_LT(runtime_can::kApplicationCommandIdMax, runtime_can::kStopCommandIdMin);
   EXPECT_EQ(runtime_can::kApplicationCommandIdMax + 1, runtime_can::kStopCommandIdMin);
 }
+
+// The execution status is a separate frame from the ACK: a device that only
+// acknowledges never sends one, which is why the two paths stay distinguishable.
+TEST(ProtocolTest, StatusFrameIsDisjointFromTheCommandAck)
+{
+  const runtime_can::StatusFrame status{
+    runtime_can::kApplicationCommandIdMax, runtime_can::Completion::kExecuting, 0, {1, 2, 3}};
+
+  const auto frame = runtime_can::encode_status(status);
+
+  EXPECT_EQ(frame.id, runtime_can::kStatusFrameId);
+  EXPECT_NE(frame.id, runtime_can::kResponseFrameId);
+  EXPECT_NE(frame.id, runtime_can::kCommandFrameId);
+  EXPECT_EQ(frame.size, runtime_can::kPayloadSize);
+}
+
+TEST(ProtocolTest, RoundTripsEveryCompletionState)
+{
+  for (const auto completion : {
+    runtime_can::Completion::kAccepted, runtime_can::Completion::kExecuting,
+    runtime_can::Completion::kCompleted, runtime_can::Completion::kFaulted})
+  {
+    runtime_can::DecodeError error;
+    const runtime_can::StatusFrame status{42, completion, 7, {9, 8, 7}};
+    const auto decoded = runtime_can::decode_status(
+      runtime_can::encode_status(status), error);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(error, runtime_can::DecodeError::kNone);
+    EXPECT_EQ(decoded->command_id, 42U);
+    EXPECT_EQ(decoded->completion, completion);
+    EXPECT_EQ(decoded->fault_code, 7U);
+    EXPECT_EQ(decoded->detail, (std::array<std::uint8_t, 3>{9, 8, 7}));
+  }
+}
+
+// An unknown completion byte is rejected rather than read as "completed": that
+// would report motion the device never confirmed.
+TEST(ProtocolTest, RejectsAnUnknownCompletionState)
+{
+  auto frame = runtime_can::encode_status(
+    runtime_can::StatusFrame{42, runtime_can::Completion::kCompleted, 0, {}});
+  frame.data[3] = 42;
+  runtime_can::DecodeError error;
+  EXPECT_FALSE(runtime_can::decode_status(frame, error).has_value());
+  EXPECT_EQ(error, runtime_can::DecodeError::kUnknownCompletion);
+}
+
+TEST(ProtocolTest, RejectsAStatusFrameWithTheWrongId)
+{
+  auto frame = runtime_can::encode_status(
+    runtime_can::StatusFrame{42, runtime_can::Completion::kAccepted, 0, {}});
+  frame.id = runtime_can::kResponseFrameId;
+  runtime_can::DecodeError error;
+  EXPECT_FALSE(runtime_can::decode_status(frame, error).has_value());
+  EXPECT_EQ(error, runtime_can::DecodeError::kWrongFrameId);
+}

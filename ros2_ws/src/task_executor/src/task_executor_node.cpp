@@ -701,7 +701,11 @@ private:
       auto result = std::make_shared<ExecuteTask::Result>();
       result->outcome = ExecuteTask::Result::COMPLETED;
       result->error_code = 0;
-      result->message = "task completed through Device Bridge";
+      // Keep the bridge's wording: it says whether the device protocol
+      // acknowledged the command or reported it finished. Replacing it with a
+      // generic string would erase exactly that distinction.
+      result->message = child_result.result->message.empty() ?
+        "task completed through Device Bridge" : child_result.result->message;
       update_diagnostics(
         [this]() {diagnostic_state_.record_success("COMPLETED");}, true);
       if (commit_parent_terminal(goal_handle, [&]() {goal_handle->succeed(result);})) {

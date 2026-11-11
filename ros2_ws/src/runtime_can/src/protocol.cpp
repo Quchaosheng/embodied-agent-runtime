@@ -104,6 +104,64 @@ std::optional<Response> decode_response(const RawFrame & frame, DecodeError & er
     {frame.data[5], frame.data[6], frame.data[7]}};
 }
 
+RawFrame encode_status(const StatusFrame & status)
+{
+  RawFrame frame;
+  frame.id = kStatusFrameId;
+  frame.size = kPayloadSize;
+  frame.data[0] = kProtocolVersion;
+  frame.data[1] = static_cast<std::uint8_t>(status.command_id >> 8U);
+  frame.data[2] = static_cast<std::uint8_t>(status.command_id);
+  frame.data[3] = static_cast<std::uint8_t>(status.completion);
+  frame.data[4] = status.fault_code;
+  frame.data[5] = status.detail[0];
+  frame.data[6] = status.detail[1];
+  frame.data[7] = status.detail[2];
+  return frame;
+}
+
+std::optional<StatusFrame> decode_status(const RawFrame & frame, DecodeError & error)
+{
+  if (frame.id != kStatusFrameId) {
+    error = DecodeError::kWrongFrameId;
+    return std::nullopt;
+  }
+  if (frame.size != kPayloadSize) {
+    error = DecodeError::kWrongPayloadSize;
+    return std::nullopt;
+  }
+  if (frame.data[0] != kProtocolVersion) {
+    error = DecodeError::kUnsupportedVersion;
+    return std::nullopt;
+  }
+  // An unrecognised completion state is rejected, not guessed at: treating an
+  // unknown value as completed would report motion that was never confirmed.
+  if (frame.data[3] > static_cast<std::uint8_t>(Completion::kFaulted)) {
+    error = DecodeError::kUnknownCompletion;
+    return std::nullopt;
+  }
+
+  error = DecodeError::kNone;
+  return StatusFrame{
+    decode_u16(frame.data), static_cast<Completion>(frame.data[3]), frame.data[4],
+    {frame.data[5], frame.data[6], frame.data[7]}};
+}
+
+std::string_view to_string(Completion completion)
+{
+  switch (completion) {
+    case Completion::kAccepted:
+      return "accepted";
+    case Completion::kExecuting:
+      return "executing";
+    case Completion::kCompleted:
+      return "completed";
+    case Completion::kFaulted:
+      return "faulted";
+  }
+  return "unknown";
+}
+
 std::string_view to_string(DecodeError error)
 {
   switch (error) {
@@ -115,6 +173,8 @@ std::string_view to_string(DecodeError error)
       return "wrong_payload_size";
     case DecodeError::kUnsupportedVersion:
       return "unsupported_version";
+    case DecodeError::kUnknownCompletion:
+      return "unknown_completion";
   }
   return "unknown";
 }
