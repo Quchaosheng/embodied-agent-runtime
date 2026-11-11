@@ -528,7 +528,7 @@ private:
       {
         std::unique_lock<std::mutex> lock(child->mutex);
         child->changed.wait_until(lock, deadline, [&]() {
-          return child->woken || child->goal_response_received || child->terminal;
+            return child->woken || child->goal_response_received || child->terminal;
         });
         goal_response_received = child->goal_response_received;
         // Consume the wake so the loop only spins when a condition below
