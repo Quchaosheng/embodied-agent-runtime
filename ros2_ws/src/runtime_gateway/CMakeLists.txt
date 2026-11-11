@@ -67,7 +67,7 @@ target_include_directories(gateway_service PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(gateway_service
   request_registry durable_idempotency runtime_gateway_proto
-  runtime_history::runtime_history_store)
+  runtime_history::runtime_history_store runtime_history::runtime_history_stage_events)
 ament_target_dependencies(gateway_service rclcpp rclcpp_action robot_task_interfaces)
 
 add_library(loopback_server src/loopback_server.cpp)

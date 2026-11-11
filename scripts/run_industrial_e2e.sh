@@ -348,7 +348,9 @@ EXECUTOR_PID=$LAST_PID
 start_direct history "$EVIDENCE/history.log" "$HISTORY" --ros-args -p database_path:="$DB"
 start_direct orchestrator "$EVIDENCE/orchestrator.log" "$ORCHESTRATOR"
 start_direct gateway "$EVIDENCE/gateway.log" "$GATEWAY" --ros-args \
-  -p port:="$GATEWAY_PORT" -p database_path:="$DB"
+  -p port:="$GATEWAY_PORT" -p database_path:="$DB" \
+  -p stage_event_log_path:="$STAGE_EVENTS"
+GATEWAY_PID=$LAST_PID
 wait_log "$EVIDENCE/gateway.log" "gRPC listening on 127.0.0.1:$GATEWAY_PORT" 5
 
 deadline=$((SECONDS + 8))
@@ -687,3 +689,31 @@ assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
     "accepted_workflow_goal_count": 6, "quiet_window_ms": 1000}
 PY
 record "PASS: seven industrial E2E scenarios"
+
+# Percentiles over the same stage log this run already wrote, with the CPU and
+# peak RSS of the runtime processes that produced it. Trend only by default:
+# the committed baseline is not a portable threshold, so a regression is
+# reported and recorded rather than failing the run. Set
+# PERFORMANCE_REGRESSION_GATE=1 to make it fail instead.
+PERF_REPORT="$EVIDENCE/performance.json"
+PERF_ARGS=(--log "$STAGE_EVENTS" --json --label
+  "$(uname -srm) load=$(cut -d' ' -f1-3 /proc/loadavg)"
+  --pid "$GATEWAY_PID" --pid "$EXECUTOR_PID" --pid "$BRIDGE_PID")
+if [[ ${PERFORMANCE_REGRESSION_GATE:-0} == 1 ]]; then
+  /usr/bin/python3 "$WORKSPACE/../scripts/performance_regression.py" \
+    "${PERF_ARGS[@]}" > "$PERF_REPORT" 2> "$EVIDENCE/performance.stderr" ||
+    { cat "$EVIDENCE/performance.stderr" >&2
+      cat "$PERF_REPORT" >&2
+      fail "performance regression past the configured tolerance"; }
+else
+  /usr/bin/python3 "$WORKSPACE/../scripts/performance_regression.py" \
+    "${PERF_ARGS[@]}" > "$PERF_REPORT" 2> "$EVIDENCE/performance.stderr" || {
+      # Exit 2 means the capture had no measurable interval; exit 1 means a
+      # regression was recorded. Neither stops a trend-only run, but both are
+      # printed so a silent empty report is not mistaken for a clean one.
+      printf 'performance report status %s:\n' "$?" >&2
+      cat "$EVIDENCE/performance.stderr" >&2
+    }
+fi
+[[ -s "$PERF_REPORT" ]] || printf 'performance report empty\n' >&2
+record "PASS: performance report written to $PERF_REPORT"

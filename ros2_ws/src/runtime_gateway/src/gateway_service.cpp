@@ -2,6 +2,7 @@
 
 #include "runtime_gateway/durable_idempotency.hpp"
 
+#include "runtime_history/stage_event_log.hpp"
 #include "runtime_history/store.hpp"
 
 #include "robot_task_interfaces/action/execute_workflow.hpp"
@@ -127,8 +128,53 @@ struct GatewayService::State
     action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
     before_send(std::move(before_send_value)),
     before_cancel_lookup(std::move(before_cancel_lookup_value)),
-    before_cancel_dispatch(std::move(before_cancel_dispatch_value)), logger(node.get_logger())
+    before_cancel_dispatch(std::move(before_cancel_dispatch_value)), logger(node.get_logger()),
+    // The service can be rebuilt against the same node (the restart test does
+    // exactly that), and declare_parameter throws the second time. Read it
+    // without re-declaring when the node already has it.
+    stage_log(read_parameter(node, "stage_event_log_path"))
   {}
+
+  static std::string read_parameter(rclcpp::Node & node, const std::string & name)
+  {
+    if (node.has_parameter(name)) {
+      return node.get_parameter(name).as_string();
+    }
+    return node.declare_parameter<std::string>(name, "");
+  }
+
+  // Gateway stages are emitted from here so the admission and dispatch
+  // boundaries show up in the same RuntimeEvent v2 file the executor and the
+  // bridge already write. No new format, no new tracing backend.
+  void emit_stage(
+    const std::string & trace_id, const std::string & stage,
+    const std::uint64_t duration_ns = 0, const std::string & extra_json = "{}")
+  {
+    if (!stage_log.enabled() || trace_id.empty()) {
+      return;
+    }
+    runtime_history::StageEvent event;
+    event.trace_id = trace_id;
+    event.source_node = "runtime_gateway";
+    event.stage = stage;
+    event.event_name = stage;
+    event.event_type = "gateway";
+    event.duration_ns = duration_ns;
+    event.extra_json = extra_json;
+    stage_log.emit(event);
+  }
+
+  // Admission duration for one submit, so the report can print it without the
+  // gateway knowing anything about percentiles.
+  void emit_admission_stage(
+    const SubmitWorkflowRequest & request, const std::chrono::steady_clock::time_point started)
+  {
+    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now() - started).count();
+    emit_stage(
+      request.request_id(), "gateway_admission", static_cast<std::uint64_t>(elapsed),
+      "{\"workflow_id\":" + runtime_history::json_quote(request.workflow_id()) + "}");
+  }
 
   struct ResolveResult
   {
@@ -236,6 +282,7 @@ struct GatewayService::State
   std::function<void()> before_cancel_lookup;
   std::function<void()> before_cancel_dispatch;
   rclcpp::Logger logger;
+  runtime_history::StageEventLog stage_log;
   mutable std::mutex mutex;
   std::condition_variable changed;
   std::unordered_map<std::string, PendingGoal> goals;
@@ -267,6 +314,7 @@ grpc::Status GatewayService::SubmitWorkflow(
   if (!valid(*request)) {
     return {grpc::StatusCode::INVALID_ARGUMENT, "required fields and timeout_ms must be valid"};
   }
+  const auto admission_started = std::chrono::steady_clock::now();
   const RequestRecord initial{
     request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
     request->timeout_ms(), "SUBMITTING", 0, 0, ""};
@@ -465,6 +513,12 @@ grpc::Status GatewayService::SubmitWorkflow(
     RCLCPP_INFO(
       state_->logger, "Dispatching ExecuteWorkflow Goal request_id=%s task_id=%s",
       request->request_id().c_str(), request->task_id().c_str());
+    // Admission is bounded here: the durable row is written above, and the
+    // dispatch starts now. The stage separates the two for the report.
+    state_->emit_admission_stage(*request, admission_started);
+    state_->emit_stage(
+      request->request_id(), "gateway_dispatch",
+      0, "{\"workflow_id\":" + runtime_history::json_quote(request->workflow_id()) + "}");
     future = state_->action_client->async_send_goal(goal, options);
   } catch (const std::exception & error) {
     {

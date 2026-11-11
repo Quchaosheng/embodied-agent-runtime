@@ -319,6 +319,10 @@ private:
   {
     RCLCPP_INFO(
       get_logger(), "Accepting task cancel task_id=%s", goal_handle->get_goal()->task_id.c_str());
+    // Cancel-request stage evidence. It shares the task_id trace with the
+    // bridge's STOP frames and this node's terminal stage, which is what makes
+    // cancel detection measurable from the existing capture.
+    emit_stage(goal_handle->get_goal(), "cancel_requested");
     // rclcpp_action exposes no notification for a cancel request, so this
     // callback is the notification: it runs on the executor thread the moment
     // the request arrives, which lets the worker stop polling for it.
