@@ -662,14 +662,39 @@ TEST_F(GrpcActionBridgeTest, TerminalRetryAfterRestartReplaysStoredResultWithout
 // Admission and dispatch had no stage evidence at all, so the regression suite
 // had nothing to measure there. This pins the two marks it reads now, in the
 // same RuntimeEvent v2 shape the executor and the bridge already use.
-TEST(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
+// Admission and dispatch had no stage evidence at all, so the regression suite
+// had nothing to measure there. This pins the two marks it reads now, in the
+// same RuntimeEvent v2 shape the executor and the bridge already use.
+//
+// It owns its rclcpp lifetime: a plain TEST that re-inits a runtime another
+// suite already shut down leaves the process to crash in an atexit handler
+// (CI reported SIGSEGV after every assertion had passed).
+class GatewayStageEvidenceTest : public testing::Test
 {
-  if (!rclcpp::ok()) {
-    int argc = 1;
-    char name[] = "test_gateway_stage_evidence";
-    char * argv[] = {name, nullptr};
-    rclcpp::init(argc, argv);
+protected:
+  static void SetUpTestSuite()
+  {
+    if (!rclcpp::ok()) {
+      int argc = 1;
+      char name[] = "test_gateway_stage_evidence";
+      char * argv[] = {name, nullptr};
+      rclcpp::init(argc, argv);
+      initialized_here_ = true;
+    }
   }
+
+  static void TearDownTestSuite()
+  {
+    if (initialized_here_ && rclcpp::ok()) {
+      rclcpp::shutdown();
+    }
+  }
+
+  static inline bool initialized_here_{false};
+};
+
+TEST_F(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
+{
   const std::string path = "/tmp/gateway_stage_events_" +
     std::to_string(::getpid()) + ".jsonl";
   std::remove(path.c_str());
@@ -686,8 +711,8 @@ TEST(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
     executor.add_node(node);
     executor.add_node(orchestrator);
     std::thread spin([&executor]() {executor.spin();});
-    // ASSERT_* returns from the test body, so the thread must be joined by a
-    // guard: an unjoined std::thread terminates the process on destruction.
+    // Declared first so it is destroyed last: ASSERT_* returns from the body,
+    // and the spin thread must be joined before the nodes it touches go away.
     struct SpinGuard
     {
       rclcpp::executors::MultiThreadedExecutor & executor;
@@ -701,26 +726,28 @@ TEST(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
       }
     } spin_guard{executor, spin};
 
-    runtime_gateway::GatewayService service(*node, store);
-    runtime_gateway::LoopbackServer server(service, 0);
-    server.start();
-    auto stub = runtime_gateway::RobotRuntime::NewStub(
-      grpc::CreateChannel(server.address(), grpc::InsecureChannelCredentials()));
+    {
+      runtime_gateway::GatewayService service(*node, store);
+      runtime_gateway::LoopbackServer server(service, 0);
+      server.start();
+      auto stub = runtime_gateway::RobotRuntime::NewStub(
+        grpc::CreateChannel(server.address(), grpc::InsecureChannelCredentials()));
 
-    runtime_gateway::SubmitWorkflowRequest request;
-    request.set_request_id("request-stage");
-    request.set_workflow_id("single_task");
-    request.set_task_id("task-stage");
-    request.set_target_id("dock_a");
-    request.set_timeout_ms(3000);
-    runtime_gateway::SubmitWorkflowReply reply;
-    grpc::ClientContext context;
-    ASSERT_TRUE(stub->SubmitWorkflow(&context, request, &reply).ok());
-    // The two marks are written before the dispatch returns, so nothing here
-    // waits for the workflow itself. Finishing it keeps shutdown from waiting
-    // out the cancel path for a goal this test never intended to run.
-    ASSERT_TRUE(orchestrator->wait_for_goals(1));
-    orchestrator->complete("request-stage");
+      runtime_gateway::SubmitWorkflowRequest request;
+      request.set_request_id("request-stage");
+      request.set_workflow_id("single_task");
+      request.set_task_id("task-stage");
+      request.set_target_id("dock_a");
+      request.set_timeout_ms(3000);
+      runtime_gateway::SubmitWorkflowReply reply;
+      grpc::ClientContext context;
+      ASSERT_TRUE(stub->SubmitWorkflow(&context, request, &reply).ok());
+      // The marks are written before the dispatch returns. Finishing the goal
+      // keeps shutdown from waiting out the cancel path for work this test
+      // never intended to run.
+      ASSERT_TRUE(orchestrator->wait_for_goals(1));
+      orchestrator->complete("request-stage");
+    }
   }
 
   std::ifstream input(path);
