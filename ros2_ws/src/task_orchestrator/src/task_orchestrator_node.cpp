@@ -54,6 +54,9 @@ struct WorkflowState
 
   std::mutex mutex;
   std::condition_variable changed;
+  // Set by the executor thread on a cancel request or shutdown so the worker
+  // re-ticks the tree without waiting for its timed wake.
+  bool woken{false};
   ExecuteTask::Goal child_goal;
   ChildGoalHandle::SharedPtr child_handle;
   std::optional<ChildGoalHandle::WrappedResult> child_result;
@@ -342,11 +345,14 @@ public:
   {
     const auto ready_stale_ms = declare_parameter<int>("ready_stale_ms", 2000);
     const auto cancel_timeout_ms = declare_parameter<int>("cancel_timeout_ms", 1000);
-    if (ready_stale_ms <= 0 || cancel_timeout_ms <= 0) {
-      throw std::invalid_argument("ready_stale_ms and cancel_timeout_ms must be positive");
+    const auto tick_interval_ms = declare_parameter<int>("tick_interval_ms", 20);
+    if (ready_stale_ms <= 0 || cancel_timeout_ms <= 0 || tick_interval_ms <= 0) {
+      throw std::invalid_argument(
+        "ready_stale_ms, cancel_timeout_ms and tick_interval_ms must be positive");
     }
     ready_stale_ = std::chrono::milliseconds(ready_stale_ms);
     cancel_timeout_ = std::chrono::milliseconds(cancel_timeout_ms);
+    tick_interval_ = std::chrono::milliseconds(tick_interval_ms);
     workflow_xml_ = ament_index_cpp::get_package_share_directory("task_orchestrator") +
       "/config/workflows.xml";
 
@@ -373,6 +379,7 @@ public:
   {
     accepting_ = false;
     running_ = false;
+    wake_loop();
   }
 
   bool wait_drained_for(const std::chrono::milliseconds timeout)
@@ -453,11 +460,18 @@ private:
 
   rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<WorkflowGoalHandle>)
   {
-    std::lock_guard<std::mutex> lock(terminal_mutex_);
-    if (terminal_reserved_) {
-      return rclcpp_action::CancelResponse::REJECT;
+    {
+      std::lock_guard<std::mutex> lock(terminal_mutex_);
+      if (terminal_reserved_) {
+        return rclcpp_action::CancelResponse::REJECT;
+      }
+      cancel_accepted_ = true;
     }
-    cancel_accepted_ = true;
+    // rclcpp_action has no cancel notification, so this callback is it: it runs
+    // on the executor thread when the request arrives and ends the worker's
+    // timed wait instead of leaving the cancel to be noticed up to a tick
+    // later.
+    wake_loop();
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
@@ -480,6 +494,31 @@ private:
       active_.store(false);
       worker_changed_.notify_all();
     }
+  }
+
+  // Wakes the worker's tree-tick wait. Safe from the executor thread: the
+  // worker state is only read under its own mutex.
+  void wake_loop() noexcept
+  {
+    std::shared_ptr<WorkflowState> state;
+    {
+      const std::lock_guard<std::mutex> lock(worker_state_mutex_);
+      state = worker_state_.lock();
+    }
+    if (!state) {
+      return;
+    }
+    {
+      const std::lock_guard<std::mutex> lock(state->mutex);
+      state->woken = true;
+    }
+    state->changed.notify_all();
+  }
+
+  void set_worker_state(const std::shared_ptr<WorkflowState> & state)
+  {
+    const std::lock_guard<std::mutex> lock(worker_state_mutex_);
+    worker_state_ = state;
   }
 
   void finish_worker(const std::uint64_t generation) noexcept
@@ -523,6 +562,7 @@ private:
       deadline = active_deadline_;
     }
     auto state = std::make_shared<WorkflowState>(*goal_handle->get_goal(), deadline);
+    set_worker_state(state);
     BT::BehaviorTreeFactory factory;
     factory.registerNodeType<RuntimeReadyNode>("RuntimeReady", ready_, ready_stale_);
     factory.registerNodeType<RetryReadyNode>("RetryReady", ready_, ready_stale_);
@@ -557,7 +597,23 @@ private:
         finish(goal_handle, state);
         return;
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      // A stateful tree node that is waiting (RetryReady's delay_ms) only
+      // advances when it is ticked again, so the loop keeps a heartbeat. It no
+      // longer gates the cancel path: a cancel request wakes this immediately,
+      // and so does the child terminal result and shutdown. The deadline is
+      // computed per iteration so the tick lands on it rather than up to a
+      // heartbeat past it.
+      {
+        std::unique_lock<std::mutex> lock(state->mutex);
+        const auto now = std::chrono::steady_clock::now();
+        const auto wake_at = std::min(state->deadline, now + tick_interval_);
+        state->changed.wait_until(lock, wake_at, [&]() {
+          return state->child_result.has_value() || state->woken || !running_;
+        });
+        // Consume the wake so the loop re-ticks on a real condition, and let
+        // the heartbeat remain the floor between tree ticks.
+        state->woken = false;
+      }
     }
     tree.haltTree();
     (void)terminal(
@@ -762,6 +818,7 @@ private:
   std::shared_ptr<ReadyState> ready_;
   std::chrono::milliseconds ready_stale_{2000};
   std::chrono::milliseconds cancel_timeout_{1000};
+  std::chrono::milliseconds tick_interval_{20};
   std::string workflow_xml_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ready_subscription_;
   rclcpp_action::Client<ExecuteTask>::SharedPtr task_client_;
@@ -769,6 +826,10 @@ private:
   std::mutex worker_mutex_;
   std::condition_variable worker_changed_;
   std::thread worker_;
+  // The state of the running worker, so the cancel and shutdown callbacks on
+  // the executor thread can wake its tree-tick wait.
+  std::mutex worker_state_mutex_;
+  std::weak_ptr<WorkflowState> worker_state_;
   FaultHook fault_hook_;
 };
 
