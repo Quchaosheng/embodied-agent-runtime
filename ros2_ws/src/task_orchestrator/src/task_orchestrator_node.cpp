@@ -608,7 +608,7 @@ private:
         const auto now = std::chrono::steady_clock::now();
         const auto wake_at = std::min(state->deadline, now + tick_interval_);
         state->changed.wait_until(lock, wake_at, [&]() {
-          return state->child_result.has_value() || state->woken || !running_;
+            return state->child_result.has_value() || state->woken || !running_;
         });
         // Consume the wake so the loop re-ticks on a real condition, and let
         // the heartbeat remain the floor between tree ticks.

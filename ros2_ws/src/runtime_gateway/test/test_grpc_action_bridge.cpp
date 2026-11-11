@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -656,6 +657,97 @@ TEST_F(GrpcActionBridgeTest, TerminalRetryAfterRestartReplaysStoredResultWithout
   EXPECT_FALSE(reply.accepted());
   EXPECT_EQ(reply.state(), "COMPLETED");
   EXPECT_EQ(orchestrator_->goal_count(), completed);
+}
+
+// Admission and dispatch had no stage evidence at all, so the regression suite
+// had nothing to measure there. This pins the two marks it reads now, in the
+// same RuntimeEvent v2 shape the executor and the bridge already use.
+TEST(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
+{
+  if (!rclcpp::ok()) {
+    int argc = 1;
+    char name[] = "test_gateway_stage_evidence";
+    char * argv[] = {name, nullptr};
+    rclcpp::init(argc, argv);
+  }
+  const std::string path = "/tmp/gateway_stage_events_" +
+    std::to_string(::getpid()) + ".jsonl";
+  std::remove(path.c_str());
+  const std::string db_path = (std::filesystem::temp_directory_path() /
+    ("runtime_gateway_stage_" + std::to_string(::getpid()) + ".sqlite3")).string();
+
+  {
+    runtime_history::Store store(db_path);
+    rclcpp::NodeOptions options;
+    options.arguments({"--ros-args", "-p", "stage_event_log_path:=" + path});
+    auto node = std::make_shared<rclcpp::Node>("gateway_stage_evidence", options);
+    auto orchestrator = std::make_shared<FakeOrchestrator>(std::chrono::milliseconds(0));
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.add_node(orchestrator);
+    std::thread spin([&executor]() {executor.spin();});
+    // ASSERT_* returns from the test body, so the thread must be joined by a
+    // guard: an unjoined std::thread terminates the process on destruction.
+    struct SpinGuard
+    {
+      rclcpp::executors::MultiThreadedExecutor & executor;
+      std::thread & thread;
+      ~SpinGuard()
+      {
+        executor.cancel();
+        if (thread.joinable()) {
+          thread.join();
+        }
+      }
+    } spin_guard{executor, spin};
+
+    runtime_gateway::GatewayService service(*node, store);
+    runtime_gateway::LoopbackServer server(service, 0);
+    server.start();
+    auto stub = runtime_gateway::RobotRuntime::NewStub(
+      grpc::CreateChannel(server.address(), grpc::InsecureChannelCredentials()));
+
+    runtime_gateway::SubmitWorkflowRequest request;
+    request.set_request_id("request-stage");
+    request.set_workflow_id("single_task");
+    request.set_task_id("task-stage");
+    request.set_target_id("dock_a");
+    request.set_timeout_ms(3000);
+    runtime_gateway::SubmitWorkflowReply reply;
+    grpc::ClientContext context;
+    ASSERT_TRUE(stub->SubmitWorkflow(&context, request, &reply).ok());
+    // The two marks are written before the dispatch returns, so nothing here
+    // waits for the workflow itself. Finishing it keeps shutdown from waiting
+    // out the cancel path for a goal this test never intended to run.
+    ASSERT_TRUE(orchestrator->wait_for_goals(1));
+    orchestrator->complete("request-stage");
+  }
+
+  std::ifstream input(path);
+  ASSERT_TRUE(input.is_open()) << "gateway stage log was not created";
+  std::vector<std::string> lines;
+  for (std::string line; std::getline(input, line); ) {
+    if (!line.empty()) {
+      lines.push_back(line);
+    }
+  }
+  std::remove(path.c_str());
+  std::filesystem::remove(db_path);
+  std::filesystem::remove(db_path + "-wal");
+  std::filesystem::remove(db_path + "-shm");
+
+  ASSERT_EQ(lines.size(), 2U) << "expected exactly the admission and dispatch marks";
+  for (const auto & line : lines) {
+    EXPECT_NE(line.find("\"trace_id\":\"request-stage\""), std::string::npos) << line;
+    EXPECT_NE(line.find("\"source_node\":\"runtime_gateway\""), std::string::npos) << line;
+    EXPECT_NE(line.find("\"clock_id\":\"monotonic\""), std::string::npos) << line;
+  }
+  EXPECT_NE(lines[0].find("\"stage\":\"gateway_admission\""), std::string::npos) << lines[0];
+  EXPECT_NE(lines[1].find("\"stage\":\"gateway_dispatch\""), std::string::npos) << lines[1];
+  // Admission carries its own duration; dispatch is a mark the suite pairs with
+  // action_receive, so it stays at zero rather than claiming a duration.
+  EXPECT_EQ(lines[0].find("\"duration_ns\":0,"), std::string::npos) << lines[0];
+  EXPECT_NE(lines[1].find("\"duration_ns\":0,"), std::string::npos) << lines[1];
 }
 
 }  // namespace

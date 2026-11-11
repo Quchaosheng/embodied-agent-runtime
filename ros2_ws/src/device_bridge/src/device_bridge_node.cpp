@@ -414,6 +414,11 @@ private:
     RCLCPP_WARN(
       get_logger(), "STOP sent stop_command_id=%u original_command_id=%u",
       stop_command_id, original_command_id);
+    const std::string stop_extra =
+      "{\"stop_command_id\":" + std::to_string(stop_command_id) +
+      ",\"original_command_id\":" + std::to_string(original_command_id) + "}";
+    // The two STOP boundaries the cancel path is measured between.
+    emit_stage(goal_handle->get_goal(), "can_stop_sent", stop_extra);
     runtime_can::Response stop_response;
     std::string wait_error;
     const auto wait_result = receive_response(
@@ -421,6 +426,7 @@ private:
     if (wait_result == WaitResult::kResponse && stop_response.result_code == 0 &&
       stop_response.device_mode == DeviceState::STOPPED)
     {
+      emit_stage(goal_handle->get_goal(), "can_stop_acked", stop_extra);
       const auto stop_message = "device STOP acknowledged stop_command_id=" +
         std::to_string(stop_command_id);
       if (cancellation_requested) {
