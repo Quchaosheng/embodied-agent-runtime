@@ -84,17 +84,19 @@ IdempotencyOutcome DurableIdempotency::admit(
       existing->error_code, existing->message};
   }
 
+  // Retention runs on its own timer (`DurableIdempotency::prune`), not here:
+  // the delete scans the whole table and this call is on the dispatch path.
+  // Admission only needs to know whether the ledger is over its bound, and a
+  // row that expires after this check just makes the next admission cheaper.
+  // Refuse rather than delete an unexpired identity: a pending one would
+  // otherwise become re-dispatchable.
   try {
-    store_.prune_idempotency(horizon_start(now_ns), capacity_, reclaimable_states());
-    // Retention only limits what it keeps; it never refused anything. Enforce
-    // the bound here, and refuse rather than delete an unexpired identity: a
-    // pending one would otherwise become re-dispatchable.
     if (store_.count_idempotency(horizon_start(now_ns)) >= capacity_) {
       return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0, 429,
         "durable idempotency ledger is at capacity"};
     }
   } catch (const std::exception &) {
-    // Retention is best effort; admission below still fails closed.
+    // The bound is best effort; admission below still fails closed.
   }
   const runtime_history::IdempotencyRecord claimed{
     record.request_id, value, kAdmitted, 0, 0, "admitted", now_ns};

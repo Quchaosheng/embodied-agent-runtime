@@ -676,6 +676,11 @@ void GatewayService::stop_accepting()
   state_->stopping = true;
 }
 
+std::size_t GatewayService::prune_durable()
+{
+  return state_->durable.prune(now_ns());
+}
+
 void GatewayService::cancel_active()
 {
   std::vector<std::pair<std::string, GoalHandle::SharedPtr>> handles;

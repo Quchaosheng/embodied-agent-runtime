@@ -23,6 +23,7 @@ import sqlite3
 import statistics
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -55,6 +56,11 @@ STATS = ('SELECT COUNT(*),MAX(duration_ms) FROM task_runs',
 PRUNE = ('DELETE FROM request_idempotency WHERE updated_at_ns < ? AND state IN (?,?,?,?,?,?,?) '
          'AND request_id NOT IN (SELECT request_id FROM request_idempotency '
          'WHERE updated_at_ns >= ? ORDER BY updated_at_ns DESC LIMIT ?)')
+COUNT = 'SELECT COUNT(*) FROM request_idempotency WHERE updated_at_ns >= ?'
+CLAIM = ('INSERT INTO request_idempotency (request_id,fingerprint,state,outcome,error_code,'
+         'message,updated_at_ns) VALUES (?,?,?,?,?,?,?) ON CONFLICT(request_id) DO UPDATE '
+         'SET state=excluded.state,updated_at_ns=excluded.updated_at_ns '
+         'WHERE request_idempotency.fingerprint=excluded.fingerprint')
 
 
 def fill(database, rows):
@@ -93,6 +99,21 @@ def prune(database, rows):
     database.execute(PRUNE, parameters).rowcount
 
 
+def admission(database, rows):
+    """What `admit()` runs after retention moved off the dispatch path.
+
+    One bounded count over the unexpired window, then the claim write. The
+    retention delete is measured separately by `prune()` because it now runs on
+    a timer instead of on every admission.
+    """
+    horizon = 1000 + rows // 10
+    database.execute(COUNT, (horizon,)).fetchone()
+    database.execute('BEGIN IMMEDIATE')
+    database.execute(CLAIM, (f'claim-{rows}', 'fp', 'ADMITTED', 0, 0, 'admitted',
+                             1000 + rows))
+    database.execute('COMMIT')
+
+
 def measure(rows, repeat, with_indexes):
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / 'bench.sqlite3'
@@ -107,6 +128,11 @@ def measure(rows, repeat, with_indexes):
             started = time.perf_counter()
             prune(database, rows)
             prune_seconds = time.perf_counter() - started
+            admit_seconds = []
+            for _ in range(repeat):
+                started = time.perf_counter()
+                admission(database, rows)
+                admit_seconds.append((time.perf_counter() - started) * 1000)
             stats(database)  # warm-up, excluded from the samples
             samples = []
             for _ in range(repeat):
@@ -115,15 +141,73 @@ def measure(rows, repeat, with_indexes):
                 samples.append((time.perf_counter() - started) * 1000)
             return {'write_ms': round(write_seconds * 1000, 1),
                     'prune_ms': round(prune_seconds * 1000, 2),
+                    'admission_ms': round(statistics.median(admit_seconds), 3),
                     'stats_ms': round(statistics.median(samples), 3)}
         finally:
             database.close()
+
+
+def contention(rows, repeat, with_indexes):
+    """Admission latency while one thread holds the Store on a stats call.
+
+    In the runtime the gateway admission path and `stats()` share one mutex, so
+    an admission waits for the whole statistics call. Two connections on one
+    file model that: the writer measures latency, the reader runs `stats()` in a
+    loop. This is a mutex-wait proxy, not the runtime's own lock.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / 'bench.sqlite3'
+        writer = sqlite3.connect(path, isolation_level=None, timeout=30)
+        reader = sqlite3.connect(
+            path, isolation_level=None, timeout=30, check_same_thread=False)
+        try:
+            for connection in (writer, reader):
+                connection.execute('PRAGMA journal_mode=WAL')
+                connection.execute('PRAGMA synchronous=NORMAL')
+            writer.executescript(SCHEMA)
+            if with_indexes:
+                writer.executescript(INDEXES)
+            fill(writer, rows)
+
+            stop = threading.Event()
+            reader_errors = []
+
+            def stats_loop():
+                while not stop.is_set():
+                    try:
+                        stats(reader)
+                    except sqlite3.Error as error:  # pragma: no cover - diagnostics
+                        reader_errors.append(error)
+                        return
+
+            thread = threading.Thread(target=stats_loop, daemon=True)
+            thread.start()
+            samples = []
+            for index in range(repeat * 10):
+                started = time.perf_counter()
+                admission(writer, rows + index)
+                samples.append((time.perf_counter() - started) * 1000)
+            stop.set()
+            thread.join(timeout=10)
+            if reader_errors:
+                raise RuntimeError(f'stats reader failed: {reader_errors[0]}')
+            ordered = sorted(samples)
+            return {
+                'p50_ms': round(ordered[len(ordered) // 2], 3),
+                'p95_ms': round(ordered[(95 * len(ordered) + 99) // 100 - 1], 3),
+                'samples': len(ordered),
+            }
+        finally:
+            writer.close()
+            reader.close()
 
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rows', default='1000,10000')
     parser.add_argument('--repeat', type=int, default=6)
+    parser.add_argument('--contention', action='store_true',
+                        help='also measure admission latency during a stats call')
     parser.add_argument('--tolerance', type=float, default=50.0,
                         help='percent a stats_ms sample may exceed its baseline')
     parser.add_argument('--baseline', default=str(BASELINE),
@@ -139,6 +223,12 @@ def main(argv):
         results[str(rows)] = {'without_indexes': plain, 'with_indexes': indexed}
         print(f'{rows:>7} rows  without: {plain}')
         print(f'{rows:>7} rows  with:    {indexed}')
+        if options.contention:
+            for label, indexed_run in (('without', False), ('with', True)):
+                sampled = contention(rows, options.repeat, with_indexes=indexed_run)
+                results[str(rows)][
+                    f'contention_{label}_indexes'] = {'admission_ms': sampled}
+                print(f'{rows:>7} rows  admission during stats, {label} indexes: {sampled}')
 
     path = pathlib.Path(options.baseline)
     if options.write_baseline:

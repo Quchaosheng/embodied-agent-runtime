@@ -44,6 +44,9 @@ public:
 
   void stop_accepting();
   void cancel_active();
+  // Drops ledger rows past the retry horizon. Called on a timer, not on
+  // admission, so the dispatch path never pays for the retention scan.
+  std::size_t prune_durable();
   void clear();
   std::size_t active_request_count() const;
   std::size_t cancel_dispatch_count() const;
