@@ -146,7 +146,13 @@ public:
     }
   }
 
-  void request_shutdown() {running_ = false;}
+  void request_shutdown()
+  {
+    running_ = false;
+    // Shutdown has no notification either, but it is our own call: wake the
+    // worker so it stops waiting for the deadline.
+    wake_worker();
+  }
 
   void wait_for_shutdown()
   {
@@ -192,6 +198,9 @@ private:
   {
     std::mutex mutex;
     std::condition_variable changed;
+    // Set by the executor thread when a cancel request arrives, so the worker
+    // re-evaluates its conditions without a timed poll.
+    bool woken{false};
     bool dispatch_started{false};
     bool goal_response_received{false};
     DeviceGoalHandle::SharedPtr handle;
@@ -211,10 +220,35 @@ private:
   static constexpr std::uint16_t kErrorUnexpectedChildResult = 114;
   static constexpr std::uint16_t kMaxApplicationCommandId = 0x7FFF;
   static constexpr auto kLateGoalResponseGrace = std::chrono::milliseconds(2000);
-  // Cancel/deadline polling: start fine so a prompt cancel is seen quickly,
-  // then settle at the interval this code used before backoff existed.
-  static constexpr std::int64_t kFirstCancelPoll = 5;
-  static constexpr std::int64_t kMaxCancelPoll = 25;
+  // A cancel whose dispatch threw is retried on this interval until the drain
+  // bound. It is a retry backoff, not a polling cadence: the loop otherwise
+  // sleeps until a wake, a deadline, or this retry.
+  static constexpr auto kCancelRetryInterval = std::chrono::milliseconds(20);
+
+  // Remembers which execution a cancel or shutdown must wake. The cancel
+  // callback arrives on the executor thread while the worker owns the child
+  // state, so the pointer needs its own lock.
+  void set_active_child(const std::shared_ptr<ChildExecutionState> & child)
+  {
+    const std::lock_guard<std::mutex> lock(wake_mutex_);
+    active_child_ = child;
+  }
+
+  void wake_worker()
+  {
+    std::shared_ptr<ChildExecutionState> child;
+    {
+      const std::lock_guard<std::mutex> lock(wake_mutex_);
+      child = active_child_.lock();
+    }
+    if (child) {
+      {
+        const std::lock_guard<std::mutex> lock(child->mutex);
+        child->woken = true;
+      }
+      child->changed.notify_all();
+    }
+  }
 
   static bool duration_is_valid(const builtin_interfaces::msg::Duration & duration)
   {
@@ -285,6 +319,10 @@ private:
   {
     RCLCPP_INFO(
       get_logger(), "Accepting task cancel task_id=%s", goal_handle->get_goal()->task_id.c_str());
+    // rclcpp_action exposes no notification for a cancel request, so this
+    // callback is the notification: it runs on the executor thread the moment
+    // the request arrives, which lets the worker stop polling for it.
+    wake_worker();
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
@@ -346,6 +384,7 @@ private:
     ActiveGuard active_guard{active_goal_, parent_terminal_, goal_handle};
 
     const auto child = std::make_shared<ChildExecutionState>();
+    set_active_child(child);
 
     try {
       execute_worker(goal_handle, child);
@@ -354,6 +393,7 @@ private:
     } catch (...) {
       finish_worker_exception(goal_handle, child, "unknown exception");
     }
+    set_active_child(nullptr);
   }
 
   void execute_worker(
@@ -479,20 +519,21 @@ private:
     run_worker_hook(task_executor::WorkerPhase::kAfterSendGoal);
 
     StopCause stop_cause = StopCause::kNone;
-    // A child goal response wakes this wait directly. Cancellation and the
-    // deadline cannot: rclcpp_action offers no hook for them, so they are
-    // polled. Back off from the first poll to a 25 ms ceiling rather than
-    // spinning at the ceiling for the whole dispatch, which keeps the cancel
-    // detection bound unchanged while spending less CPU waiting.
-    std::chrono::milliseconds poll_interval{kFirstCancelPoll};
+    // A child goal response and a cancel request both wake this wait directly.
+    // Cancellation wakes through handle_cancel(), which runs on the executor
+    // thread; the deadline is the only condition without an event, so the wait
+    // is bounded by the deadline rather than by a fixed cadence.
     while (true) {
       bool goal_response_received = false;
       {
         std::unique_lock<std::mutex> lock(child->mutex);
-        goal_response_received = child->changed.wait_for(
-          lock, poll_interval,
-          [&]() {return child->goal_response_received;});
-        poll_interval = std::min(poll_interval * 2, std::chrono::milliseconds(kMaxCancelPoll));
+        child->changed.wait_until(lock, deadline, [&]() {
+            return child->woken || child->goal_response_received || child->terminal;
+        });
+        goal_response_received = child->goal_response_received;
+        // Consume the wake so the loop only spins when a condition below
+        // actually holds, not forever on a stale notification.
+        child->woken = false;
       }
       if (goal_response_received) {
         break;
@@ -571,23 +612,40 @@ private:
       publish_feedback(goal_handle, ExecuteTask::Feedback::WAITING_ACK, 0.5F);
     }
 
+    // Waiting for the child terminal. A result callback, a cancel request and
+    // shutdown all wake this directly. The two remaining timed wakes are real
+    // deadlines rather than a cadence: the cancel drain bound, and the retry
+    // interval when a cancel dispatch was not confirmed.
+    const auto cancel_drain = std::chrono::milliseconds(
+      std::max<std::int64_t>(cancel_timeout_ms_, 1000));
     while (true) {
+      const auto current_time = std::chrono::steady_clock::now();
+      bool cancel_retry_pending = false;
       {
         std::unique_lock<std::mutex> lock(child->mutex);
-        if (child->changed.wait_for(
-            lock, std::chrono::milliseconds(25), [&]() {return child->terminal;}))
-        {
-          break;
+        cancel_retry_pending = child->cancel_requested && !child->cancel_dispatched;
+        auto wake_at = std::min(deadline, current_time + cancel_drain);
+        if (cancel_retry_pending) {
+          // A dispatch that threw is retried, not abandoned: bound the wait by
+          // the retry interval so the retry is not delayed to the drain bound.
+          wake_at = std::min(wake_at, current_time + kCancelRetryInterval);
         }
+        if (child->changed.wait_until(
+            lock, wake_at, [&]() {return child->terminal || child->woken;}))
+        {
+          if (child->terminal) {
+            break;
+          }
+        }
+        child->woken = false;
       }
-      const auto current_time = std::chrono::steady_clock::now();
-      record_cancel_timeout(child, current_time);
+      const auto now = std::chrono::steady_clock::now();
+      record_cancel_timeout(child, now);
       bool cancel_drain_expired = false;
       {
         const std::lock_guard<std::mutex> lock(child->mutex);
         cancel_drain_expired = child->cancel_requested &&
-          current_time - child->cancel_requested_at >=
-          std::chrono::milliseconds(std::max<std::int64_t>(cancel_timeout_ms_, 1000));
+          now - child->cancel_requested_at >= cancel_drain;
       }
       if (cancel_drain_expired) {
         finish_aborted(
@@ -1057,6 +1115,10 @@ private:
   std::condition_variable workers_changed_;
   std::thread worker_;
   std::size_t workers_active_{0};
+  // The child state of the running execution, so a cancel request on the
+  // executor thread can wake the worker's wait.
+  std::mutex wake_mutex_;
+  std::weak_ptr<ChildExecutionState> active_child_;
   task_executor::WorkerHook worker_hook_;
 };
 

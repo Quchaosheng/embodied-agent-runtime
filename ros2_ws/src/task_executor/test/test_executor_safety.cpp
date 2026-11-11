@@ -135,7 +135,7 @@ public:
       if (cancel_count_ > 0) {
         return true;
       }
-      std::this_thread::sleep_for(2ms);
+      std::this_thread::sleep_for(200us);
     }
     return cancel_count_ > 0;
   }
@@ -832,6 +832,47 @@ TEST_F(ExecutorSafetyTest, CancelTimeoutStillDrainsChildAndReportsUnconfirmedSto
   ASSERT_EQ(events.size(), 1U);
   EXPECT_EQ(events.front().action_status, TaskEvent::ABORTED);
   EXPECT_EQ(events.front().error_code, 113);
+}
+
+// A cancel request must reach the child without waiting for a timed poll. The
+// wait is event-driven now, so the dispatch is observed almost immediately
+// rather than up to an interval later. The bound is loose enough to fail on a
+// cadence regression, not on host jitter.
+TEST_F(ExecutorSafetyTest, CancelReachesTheChildWithoutWaitingForAPollTick)
+{
+  std::promise<void> send_started;
+  start({0ms, true, false, true}, [&](const task_executor::WorkerPhase phase) {
+      if (phase == task_executor::WorkerPhase::kAfterSendGoal) {
+        send_started.set_value();
+      }
+  }, 2000);
+
+  const auto goal_handle = send_task("event-driven-cancel", 5000);
+  ASSERT_NE(goal_handle, nullptr);
+  ASSERT_EQ(send_started.get_future().wait_for(1s), std::future_status::ready);
+
+  // The child holds its terminal, so the executor is parked in the wait loop.
+  std::this_thread::sleep_for(100ms);
+  const auto cancel_sent_at = std::chrono::steady_clock::now();
+  const auto cancel_future = task_client_->async_cancel_goal(goal_handle);
+  ASSERT_EQ(cancel_future.wait_for(1s), std::future_status::ready);
+
+  ASSERT_TRUE(bridge_->wait_for_cancel(1s));
+  const auto observed = std::chrono::steady_clock::now() - cancel_sent_at;
+  // Comfortably under the 25 ms flat poll this replaced, with room for the
+  // client-side round trip that the measurement includes.
+  EXPECT_LT(observed, 15ms);
+
+  // The child must still reach a terminal state, and the parent must observe
+  // it, before the fixture tears the node down.
+  auto result_future = task_client_->async_get_result(goal_handle);
+  bridge_->release_terminal();
+  ASSERT_TRUE(bridge_->wait_for_terminal());
+  ASSERT_EQ(result_future.wait_for(2s), std::future_status::ready);
+  const auto result = result_future.get();
+  EXPECT_EQ(result.code, rclcpp_action::ResultCode::CANCELED);
+  ASSERT_NE(result.result, nullptr);
+  EXPECT_EQ(result.result->outcome, ExecuteTask::Result::CANCELED);
 }
 
 TEST_F(ExecutorSafetyTest, CancelDispatchExceptionIsRetriedBeforeParentTerminal)
