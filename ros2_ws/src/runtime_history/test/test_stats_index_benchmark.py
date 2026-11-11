@@ -61,6 +61,20 @@ class StatsIndexBenchmarkTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('REGRESSED', result.stdout)
 
+    def test_reports_the_admission_path_separately_from_retention(self):
+        # Retention moved off the admission path, so its cost is reported on
+        # its own and admission is measured without it.
+        result = run('--rows', '200', '--repeat', '2')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('admission_ms', result.stdout)
+        self.assertIn('prune_ms', result.stdout)
+
+    def test_contention_mode_reports_admission_latency_during_a_stats_call(self):
+        result = run('--rows', '200', '--repeat', '2', '--contention')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('admission during stats, without indexes', result.stdout)
+        self.assertIn('admission during stats, with indexes', result.stdout)
+
     def test_records_a_baseline_without_touching_the_committed_one(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / 'baseline.json'

@@ -157,14 +157,21 @@ TEST_F(DurableIdempotencyTest, ExpiredEntriesLeaveTheRetryHorizonAfterRetention)
     runtime_gateway::IdempotencyDecision::PROCEED);
   ASSERT_TRUE(ledger.complete(record("request-1"), "COMPLETED", 0, 0, "done", now()));
 
-  // Beyond the 24h horizon a retry is a fresh request, not a replay.
+  // Past the 24h horizon the row no longer occupies capacity, so a new request
+  // is admitted even though the expired row is still on disk.
   const std::int64_t far_future = now() + 48LL * 60 * 60 * 1000 * 1000 * 1000;
   EXPECT_EQ(ledger.admit(record("request-2"), far_future).decision,
     runtime_gateway::IdempotencyDecision::PROCEED);
+  // The maintenance pass is what removes it.
+  EXPECT_EQ(ledger.prune(far_future), 1U);
   EXPECT_FALSE(ledger.lookup("request-1").has_value());
 }
 
-TEST_F(DurableIdempotencyTest, CapacityExhaustionPrunesExpiredRowsAndAdmitsNewRequest)
+// Retention is a periodic maintenance step, so an expired row stays on disk
+// until `prune()` runs. Capacity is measured over the unexpired window only, so
+// moving the delete off the admission path changes when the row is reclaimed,
+// not whether a new request is admitted.
+TEST_F(DurableIdempotencyTest, ExpiredRowsLingerUntilPeriodicMaintenanceInsteadOfOnAdmission)
 {
   runtime_gateway::DurableIdempotency ledger(*store_, 2);
   for (int i = 0; i < 2; ++i) {
@@ -174,16 +181,17 @@ TEST_F(DurableIdempotencyTest, CapacityExhaustionPrunesExpiredRowsAndAdmitsNewRe
     ASSERT_TRUE(ledger.complete(value, "COMPLETED", 0, 0, "done", now()));
   }
 
-  // Both rows are past the horizon, so the bounded ledger reclaims them
-  // instead of growing without bound.
   const std::int64_t far_future = now() + 48LL * 60 * 60 * 1000 * 1000 * 1000;
+  // Both rows are expired, so they no longer count against capacity.
   EXPECT_EQ(
     ledger.admit(record("request-new"), far_future).decision,
     runtime_gateway::IdempotencyDecision::PROCEED);
+  // Admission no longer deletes them; they are still there for the maintenance
+  // pass, which is the behaviour change the move is worth reporting.
+  ASSERT_TRUE(ledger.lookup("request-0").has_value());
+  EXPECT_EQ(ledger.prune(far_future), 2U);
   EXPECT_FALSE(ledger.lookup("request-0").has_value());
   EXPECT_FALSE(ledger.lookup("request-1").has_value());
-  // Unrelated prune later reports zero removals, proving the ledger shrank.
-  EXPECT_EQ(ledger.prune(far_future), 0U);
 }
 
 // capacity used to limit only what retention kept, so an unexpired window could

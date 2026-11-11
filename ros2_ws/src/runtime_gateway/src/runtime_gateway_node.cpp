@@ -39,6 +39,23 @@ int main(int argc, char ** argv)
 
     runtime_history::Store store(database_path);
     runtime_gateway::GatewayService service(*node, store);
+    // Retention is periodic so a dispatch never pays for the delete scan. An
+    // expired identity stays replayable until this runs, which only makes the
+    // ledger refuse at capacity slightly longer, never re-dispatch early.
+    const auto prune_period_ms = node->declare_parameter<std::int64_t>(
+      "ledger_prune_period_ms", 60000);
+    if (prune_period_ms <= 0) {
+      throw std::invalid_argument("ledger_prune_period_ms must be positive");
+    }
+    auto prune_timer = node->create_wall_timer(
+      std::chrono::milliseconds(prune_period_ms),
+      [&service, logger = node->get_logger()]() {
+        try {
+          service.prune_durable();
+        } catch (const std::exception & error) {
+          RCLCPP_WARN(logger, "durable ledger prune failed: %s", error.what());
+        }
+      });
     runtime_gateway::LoopbackServer server(service, port);
     server.start();
     RCLCPP_INFO(node->get_logger(), "gRPC listening on %s", server.address().c_str());
