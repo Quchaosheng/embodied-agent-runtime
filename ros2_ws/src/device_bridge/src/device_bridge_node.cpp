@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -112,6 +113,18 @@ public:
     }
   }
 
+  // Stops accepting goals and lets the worker finish: a command already on the
+  // wire is stopped, and its result reported, before the process exits.
+  void request_shutdown()
+  {
+    running_ = false;
+  }
+
+  bool idle() const
+  {
+    return !active_goal_;
+  }
+
 private:
   enum class WaitResult
   {
@@ -129,6 +142,11 @@ private:
     std::shared_ptr<const ExecuteDeviceCommand::Goal> goal)
   {
     std::chrono::milliseconds ack_timeout;
+    if (!running_) {
+      RCLCPP_WARN(
+        get_logger(), "Rejecting command_id=%u: bridge is shutting down", goal->command_id);
+      return rclcpp_action::GoalResponse::REJECT;
+    }
     if (!device_bridge::application_command_id_in_range(goal->command_id)) {
       // IDs at or above kStopCommandIdMin are STOP's, so an ordinary command there
       // could share an identity with a STOP ACK.
@@ -197,17 +215,20 @@ private:
     }
   }
 
+  // `interruptible` is true for the command ACK wait, which gives way to a
+  // cancel or a shutdown. The STOP ACK wait passes false: shutdown is exactly
+  // when a STOP is sent, so that wait runs to its own deadline instead.
   WaitResult receive_response(
     const std::shared_ptr<GoalHandle> & goal_handle,
     const std::uint16_t expected_command_id,
     const std::chrono::milliseconds timeout,
-    const bool observe_cancel,
+    const bool interruptible,
     runtime_can::Response & response,
     std::string & error)
   {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (running_ && rclcpp::ok()) {
-      if (observe_cancel && goal_handle->is_canceling()) {
+    while (!interruptible || (running_ && rclcpp::ok())) {
+      if (interruptible && goal_handle->is_canceling()) {
         return WaitResult::kCanceled;
       }
 
@@ -277,6 +298,20 @@ private:
       ~ActiveGuard() {active = false;}
     } active_guard{active_goal_};
 
+    // An exception escaping a std::thread terminates the process. What can
+    // still throw here is a terminal Action transition, the last step of every
+    // path, so the device-side sequence including STOP has already run.
+    try {
+      execute_command(goal_handle);
+    } catch (const std::exception & error) {
+      RCLCPP_ERROR(get_logger(), "Device command worker failed: %s", error.what());
+    } catch (...) {
+      RCLCPP_ERROR(get_logger(), "Device command worker failed: unknown exception");
+    }
+  }
+
+  void execute_command(const std::shared_ptr<GoalHandle> & goal_handle)
+  {
     const auto goal = goal_handle->get_goal();
     std::chrono::milliseconds ack_timeout;
     if (!device_bridge::duration_to_milliseconds(
@@ -305,6 +340,14 @@ private:
           // "pretend it never happened".
           stop_and_finish(goal_handle, command.command_id, true, 0, "");
         }
+        return;
+      }
+      // A goal accepted just before shutdown was requested must not reach the
+      // wire. Once a command is sent, the ACK wait reports shutdown itself.
+      if (!running_ && !command_sent) {
+        finish_aborted(
+          goal_handle, ExecuteDeviceCommand::Result::SAFE_STOP,
+          device_bridge::kErrorShutdown, "bridge is shutting down before CAN send");
         return;
       }
 
@@ -617,7 +660,15 @@ private:
     feedback->state = state;
     feedback->retry_count = retry_count;
     feedback->completion = completion;
-    goal_handle->publish_feedback(feedback);
+    // Feedback is advisory and sits between a STOP and the wait for its ACK:
+    // a failed publish must not abandon that wait.
+    try {
+      goal_handle->publish_feedback(feedback);
+    } catch (const std::exception & error) {
+      RCLCPP_WARN(get_logger(), "Failed to publish feedback: %s", error.what());
+    } catch (...) {
+      RCLCPP_WARN(get_logger(), "Failed to publish feedback: unknown exception");
+    }
   }
 
   void publish_diagnostics()
@@ -688,11 +739,38 @@ private:
   std::thread worker_;
 };
 
+namespace
+{
+
+volatile std::sig_atomic_t stop_requested{};
+
+void request_stop(int) {stop_requested = 1;}
+
+}  // namespace
+
 int main(int argc, char ** argv)
 {
-  rclcpp::init(argc, argv);
+  // The default handler shuts the context down at once. A worker that is
+  // mid-command then cannot report the STOP it still has to send, and the
+  // exception from its next publish used to abort the process.
+  rclcpp::init(
+    argc, argv, rclcpp::InitOptions{}, rclcpp::SignalHandlerOptions::None);
+  std::signal(SIGINT, request_stop);
+  std::signal(SIGTERM, request_stop);
   try {
-    rclcpp::spin(std::make_shared<DeviceBridgeNode>());
+    const auto node = std::make_shared<DeviceBridgeNode>();
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
+    while (stop_requested == 0 && rclcpp::ok()) {
+      executor.spin_once(std::chrono::milliseconds(20));
+    }
+    // Keep serving until the worker has stopped the device and reported the
+    // result. The wait is bounded by the worker's own stop deadline.
+    node->request_shutdown();
+    while (!node->idle() && rclcpp::ok()) {
+      executor.spin_once(std::chrono::milliseconds(20));
+    }
+    executor.remove_node(node);
   } catch (const std::exception & error) {
     RCLCPP_FATAL(rclcpp::get_logger("device_bridge"), "%s", error.what());
     rclcpp::shutdown();
