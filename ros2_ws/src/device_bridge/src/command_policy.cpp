@@ -47,6 +47,23 @@ std::uint16_t device_error_code(const std::uint8_t result_code)
          std::numeric_limits<std::uint16_t>::max() : static_cast<std::uint16_t>(code);
 }
 
+std::uint16_t stop_command_id_from(const std::uint32_t entropy)
+{
+  constexpr std::uint32_t kStopIdCount =
+    std::numeric_limits<std::uint16_t>::max() - runtime_can::kStopCommandIdMin + 1U;
+  return static_cast<std::uint16_t>(runtime_can::kStopCommandIdMin + entropy % kStopIdCount);
+}
+
+std::uint16_t next_stop_command_id(const std::uint16_t current)
+{
+  if (current < runtime_can::kStopCommandIdMin ||
+    current == std::numeric_limits<std::uint16_t>::max())
+  {
+    return runtime_can::kStopCommandIdMin;
+  }
+  return static_cast<std::uint16_t>(current + 1U);
+}
+
 Acknowledgement classify_status(
   const std::optional<runtime_can::Completion> & status, const bool completion_reported)
 {

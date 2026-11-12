@@ -14,9 +14,9 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -532,33 +532,58 @@ private:
     using DeviceState = robot_task_interfaces::msg::DeviceState;
     diagnostic_state_.mark_stopping();
 
-    const auto stop_command_id = allocate_stop_command_id();
-    const runtime_can::Command stop_command{
-      stop_command_id, runtime_can::kStopOpcode,
-      static_cast<std::int32_t>(original_command_id)};
-    std::string send_error;
-    if (!socket_.send(runtime_can::encode_command(stop_command), send_error)) {
-      diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
-      publish_diagnostics();
-      finish_safe_stop(
-        goal_handle, device_bridge::kErrorTransport,
-        "STOP send failed: " + send_error);
-      return;
-    }
-    publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, 0);
-
-    RCLCPP_WARN(
-      get_logger(), "STOP sent stop_command_id=%u original_command_id=%u",
-      stop_command_id, original_command_id);
-    const std::string stop_extra =
-      "{\"stop_command_id\":" + std::to_string(stop_command_id) +
-      ",\"original_command_id\":" + std::to_string(original_command_id) + "}";
-    // The two STOP boundaries the cancel path is measured between.
-    emit_stage(goal_handle->get_goal(), "can_stop_sent", stop_extra);
+    // One deadline for the whole stop sequence: a refused STOP is retried with
+    // a fresh id, but never extends the bound the caller budgeted for.
+    const auto stop_deadline = std::chrono::steady_clock::now() + stop_timeout_ms_;
+    std::uint16_t stop_command_id = 0;
     runtime_can::Response stop_response;
+    WaitResult wait_result = WaitResult::kTimeout;
     std::string wait_error;
-    const auto wait_result = receive_response(
-      goal_handle, stop_command_id, stop_timeout_ms_, false, stop_response, wait_error);
+    std::string stop_extra;
+    for (std::uint8_t attempt = 1; attempt <= device_bridge::kMaxStopAttempts; ++attempt) {
+      stop_command_id = allocate_stop_command_id();
+      const runtime_can::Command stop_command{
+        stop_command_id, runtime_can::kStopOpcode,
+        static_cast<std::int32_t>(original_command_id)};
+      std::string send_error;
+      if (!socket_.send(runtime_can::encode_command(stop_command), send_error)) {
+        diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
+        publish_diagnostics();
+        finish_safe_stop(
+          goal_handle, device_bridge::kErrorTransport,
+          "STOP send failed: " + send_error);
+        return;
+      }
+      publish_feedback(goal_handle, ExecuteDeviceCommand::Feedback::STOPPING, 0);
+
+      RCLCPP_WARN(
+        get_logger(), "STOP sent stop_command_id=%u original_command_id=%u",
+        stop_command_id, original_command_id);
+      stop_extra =
+        "{\"stop_command_id\":" + std::to_string(stop_command_id) +
+        ",\"original_command_id\":" + std::to_string(original_command_id) + "}";
+      // The two STOP boundaries the cancel path is measured between.
+      emit_stage(goal_handle->get_goal(), "can_stop_sent", stop_extra);
+      const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(
+        stop_deadline - std::chrono::steady_clock::now());
+      wait_result = receive_response(
+        goal_handle, stop_command_id, std::max(remaining, std::chrono::milliseconds(0)), false,
+        stop_response, wait_error);
+      const bool refused = wait_result == WaitResult::kResponse &&
+        (stop_response.result_code != 0 || stop_response.device_mode != DeviceState::STOPPED);
+      if (!refused || attempt == device_bridge::kMaxStopAttempts ||
+        std::chrono::steady_clock::now() >= stop_deadline)
+      {
+        break;
+      }
+      // The device answered but refused this STOP. A device that kept its
+      // replay cache across a bridge restart refuses an id it has already
+      // seen, so ask again with an id drawn afresh instead of giving up.
+      RCLCPP_WARN(
+        get_logger(), "STOP refused stop_command_id=%u result_code=%u; retrying with a new id",
+        stop_command_id, stop_response.result_code);
+      next_stop_command_id_ = device_bridge::stop_command_id_from(std::random_device{}());
+    }
     if (wait_result == WaitResult::kResponse && stop_response.result_code == 0 &&
       stop_response.device_mode == DeviceState::STOPPED)
     {
@@ -599,11 +624,7 @@ private:
   std::uint16_t allocate_stop_command_id()
   {
     const auto command_id = next_stop_command_id_;
-    if (next_stop_command_id_ == std::numeric_limits<std::uint16_t>::max()) {
-      next_stop_command_id_ = runtime_can::kStopCommandIdMin;
-    } else {
-      ++next_stop_command_id_;
-    }
+    next_stop_command_id_ = device_bridge::next_stop_command_id(command_id);
     return command_id;
   }
 
@@ -675,7 +696,10 @@ private:
   std::chrono::milliseconds stop_timeout_ms_{500};
   std::chrono::milliseconds completion_timeout_{30000};
   bool completion_states_enabled_{false};
-  std::uint16_t next_stop_command_id_{runtime_can::kStopCommandIdMin};
+  // Not a fixed start: the device's replay cache can outlive this process and
+  // would refuse a STOP id it has already seen.
+  std::uint16_t next_stop_command_id_{
+    device_bridge::stop_command_id_from(std::random_device{}())};
   std::atomic_bool running_{true};
   std::atomic_bool active_goal_{false};
   runtime_can::SocketCan socket_;

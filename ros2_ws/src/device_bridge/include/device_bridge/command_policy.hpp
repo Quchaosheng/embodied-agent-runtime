@@ -35,6 +35,20 @@ bool application_command_id_in_range(std::uint32_t command_id);
 
 std::uint16_t device_error_code(std::uint8_t result_code);
 
+// A device may keep its command replay cache across a bridge restart, so STOP
+// ids cannot start over at a fixed value: the device would answer a new STOP
+// from a stale entry and refuse it as a conflict. Kept here so the id rules
+// are testable without a CAN interface.
+
+// How many STOP ids one stop sequence may try when the device refuses them.
+constexpr std::uint8_t kMaxStopAttempts = 3;
+
+// Maps any entropy value to a STOP command id.
+std::uint16_t stop_command_id_from(std::uint32_t entropy);
+
+// The id after `current`, wrapping inside the STOP range.
+std::uint16_t next_stop_command_id(std::uint16_t current);
+
 // What an acknowledged command settles as. This is the state machine the node
 // follows, kept here so the decision is testable without a CAN interface.
 enum class Acknowledgement
