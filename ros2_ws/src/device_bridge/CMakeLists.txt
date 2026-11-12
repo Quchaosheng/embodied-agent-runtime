@@ -21,7 +21,7 @@ target_compile_features(device_bridge_policy PUBLIC cxx_std_17)
 target_include_directories(device_bridge_policy PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(device_bridge_policy builtin_interfaces)
+ament_target_dependencies(device_bridge_policy builtin_interfaces runtime_can)
 
 add_library(device_bridge_diagnostics src/diagnostic_state.cpp)
 target_compile_features(device_bridge_diagnostics PUBLIC cxx_std_17)

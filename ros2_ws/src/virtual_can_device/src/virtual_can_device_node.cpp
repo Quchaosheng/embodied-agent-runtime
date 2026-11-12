@@ -76,7 +76,11 @@ private:
   static bool is_supported_mode(const std::string & mode)
   {
     return mode == "normal" || mode == "delay_ack" || mode == "drop_ack" ||
-           mode == "drop_stop_ack" || mode == "reject" || mode == "fault";
+           mode == "drop_stop_ack" || mode == "reject" || mode == "fault" ||
+           // Reports execution separately: ACK, then accepted/executing, then
+           // a terminal status. The ACK-only modes above never emit a status.
+           mode == "completion" || mode == "completion_fault" ||
+           mode == "completion_never_finishes";
   }
 
   void receive_loop()
@@ -172,6 +176,53 @@ private:
     publish_state(
       command.command_id, response.device_mode,
       response.result_code == 2 ? 1 : 0);
+    if (response.result_code == 0) {
+      publish_completion(command.command_id);
+    }
+  }
+
+  // The ACK above only says the command arrived. These modes then report what
+  // the device does with it, on the separate status frame, so a test can tell
+  // "acknowledged" from "finished" instead of conflating them.
+  void publish_completion(const std::uint16_t command_id)
+  {
+    using runtime_can::Completion;
+    if (mode_ == "completion_never_finishes") {
+      send_status(command_id, Completion::kAccepted, 0);
+      send_status(command_id, Completion::kExecuting, 0);
+      return;
+    }
+    if (mode_ == "completion_fault") {
+      send_status(command_id, Completion::kAccepted, 0);
+      send_status(command_id, Completion::kFaulted, 1);
+      return;
+    }
+    if (mode_ != "completion") {
+      return;
+    }
+    send_status(command_id, Completion::kAccepted, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms_, 0)));
+    send_status(command_id, Completion::kExecuting, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms_, 0)));
+    send_status(command_id, Completion::kCompleted, 0);
+  }
+
+  void send_status(
+    const std::uint16_t command_id, const runtime_can::Completion completion,
+    const std::uint8_t fault_code)
+  {
+    runtime_can::StatusFrame status;
+    status.command_id = command_id;
+    status.completion = completion;
+    status.fault_code = fault_code;
+    std::string error;
+    if (!socket_.send(runtime_can::encode_status(status), error)) {
+      RCLCPP_ERROR(get_logger(), "CAN status send failed: %s", error.c_str());
+      return;
+    }
+    RCLCPP_INFO(
+      get_logger(), "Status command_id=%u state=%s fault_code=%u",
+      command_id, runtime_can::to_string(completion).data(), fault_code);
   }
 
   void cache_command(

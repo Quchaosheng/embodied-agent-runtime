@@ -5,3 +5,8 @@ device_bridge:
     stop_timeout_ms: 500
     receive_poll_ms: 25
     diagnostic_period_ms: 1000
+    # Off by default: most devices only acknowledge a command, and waiting for a
+    # status that never arrives would turn every command into a timeout. Enable
+    # only for a device whose protocol reports execution separately.
+    completion_states_enabled: false
+    completion_timeout_ms: 30000

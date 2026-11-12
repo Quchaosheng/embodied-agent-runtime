@@ -18,5 +18,17 @@ uint8 SENDING=1
 uint8 WAITING_ACK=2
 uint8 RETRYING=3
 uint8 STOPPING=4
+# The command is on the wire and the device reported it is still moving. Only
+# sent for devices whose protocol distinguishes execution from the ACK.
+uint8 EXECUTING=5
 uint8 state
 uint8 retry_count
+# The device's own completion state, when it reports one. ACK_ONLY means the
+# protocol only acknowledges, so the result means "acknowledged", not "finished".
+uint8 COMPLETION_UNKNOWN=0
+uint8 COMPLETION_ACK_ONLY=1
+uint8 COMPLETION_ACCEPTED=2
+uint8 COMPLETION_EXECUTING=3
+uint8 COMPLETION_COMPLETED=4
+uint8 COMPLETION_FAULTED=5
+uint8 completion

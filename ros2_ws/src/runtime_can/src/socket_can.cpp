@@ -65,6 +65,21 @@ bool SocketCan::set_filter(std::uint32_t frame_id, std::string & error)
   return true;
 }
 
+bool SocketCan::set_filter(
+  std::uint32_t first_frame_id, std::uint32_t second_frame_id, std::string & error)
+{
+  can_filter filters[2]{};
+  filters[0].can_id = first_frame_id;
+  filters[0].can_mask = CAN_SFF_MASK;
+  filters[1].can_id = second_frame_id;
+  filters[1].can_mask = CAN_SFF_MASK;
+  if (::setsockopt(socket_fd_, SOL_CAN_RAW, CAN_RAW_FILTER, filters, sizeof(filters)) < 0) {
+    error = std::strerror(errno);
+    return false;
+  }
+  return true;
+}
+
 bool SocketCan::send(const RawFrame & frame, std::string & error) const
 {
   if (!is_open()) {

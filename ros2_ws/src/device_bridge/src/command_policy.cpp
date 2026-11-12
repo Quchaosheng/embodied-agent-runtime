@@ -39,4 +39,27 @@ std::uint16_t device_error_code(const std::uint8_t result_code)
          std::numeric_limits<std::uint16_t>::max() : static_cast<std::uint16_t>(code);
 }
 
+Acknowledgement classify_status(
+  const std::optional<runtime_can::Completion> & status, const bool completion_reported)
+{
+  if (!completion_reported) {
+    // Nothing more will arrive: the ACK is all this protocol offers.
+    return Acknowledgement::kAckOnlyCompleted;
+  }
+  if (!status) {
+    return Acknowledgement::kTimedOut;
+  }
+  switch (*status) {
+    case runtime_can::Completion::kAccepted:
+      return Acknowledgement::kAccepted;
+    case runtime_can::Completion::kExecuting:
+      return Acknowledgement::kExecuting;
+    case runtime_can::Completion::kCompleted:
+      return Acknowledgement::kCompleted;
+    case runtime_can::Completion::kFaulted:
+      return Acknowledgement::kFaulted;
+  }
+  return Acknowledgement::kTimedOut;
+}
+
 }
