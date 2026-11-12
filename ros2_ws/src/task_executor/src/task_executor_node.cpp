@@ -8,6 +8,7 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
 #include "robot_task_interfaces/action/execute_task.hpp"
+#include "robot_task_interfaces/srv/reset_fault.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -122,6 +123,15 @@ public:
         std::placeholders::_2),
       std::bind(&TaskExecutorNode::handle_cancel, this, std::placeholders::_1),
       std::bind(&TaskExecutorNode::handle_accepted, this, std::placeholders::_1));
+
+    // A latched failure takes the whole runtime out of ready until a restart.
+    // This is the declared way back; see the bridge's ~/reset_fault for the
+    // device-level latch.
+    reset_fault_service_ = create_service<robot_task_interfaces::srv::ResetFault>(
+      "~/reset_fault",
+      std::bind(
+        &TaskExecutorNode::handle_reset_fault, this, std::placeholders::_1,
+        std::placeholders::_2));
 
     RCLCPP_INFO(
       get_logger(),
@@ -875,6 +885,46 @@ private:
     }
   }
 
+  void handle_reset_fault(
+    const std::shared_ptr<robot_task_interfaces::srv::ResetFault::Request> request,
+    const std::shared_ptr<robot_task_interfaces::srv::ResetFault::Response> response)
+  {
+    // Same rule as the bridge: a reset while a task is running would clear the
+    // latch of the very failure being reported.
+    if (active_goal_.load() || workers_active_ != 0) {
+      response->accepted = false;
+      response->message = "executor is busy; reset when idle";
+      RCLCPP_WARN(get_logger(), "ResetFault refused: a task is still running");
+      return;
+    }
+    // The executor has no device of its own; a non-empty id here is a caller
+    // aiming at the wrong node.
+    if (!request->device_id.empty()) {
+      response->accepted = false;
+      response->message = "this service resets the task runtime, not a device";
+      RCLCPP_WARN(
+        get_logger(), "ResetFault refused: device_id=%s is not the executor's",
+        request->device_id.c_str());
+      return;
+    }
+    const bool was_latched = diagnostic_state_.failure_latched();
+    if (!request->clear_latched_fault) {
+      response->accepted = false;
+      response->message = was_latched ?
+        "a failure is latched; set clear_latched_fault to clear it" :
+        "no failure is latched";
+      RCLCPP_INFO(get_logger(), "ResetFault probe: latched=%s", was_latched ? "true" : "false");
+      return;
+    }
+
+    const bool cleared = diagnostic_state_.clear_latched_failure();
+    publish_diagnostics();
+    response->accepted = true;
+    response->message = cleared ? "latched failure cleared" : "no failure was latched";
+    RCLCPP_INFO(
+      get_logger(), "ResetFault: %s", cleared ? "cleared a latched failure" : "nothing latched");
+  }
+
   void publish_diagnostics()
   {
     try {
@@ -1130,6 +1180,7 @@ private:
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Client<ExecuteDeviceCommand>::SharedPtr device_client_;
   rclcpp_action::Server<ExecuteTask>::SharedPtr action_server_;
+  rclcpp::Service<robot_task_interfaces::srv::ResetFault>::SharedPtr reset_fault_service_;
   std::mutex workers_mutex_;
   std::condition_variable workers_changed_;
   std::thread worker_;

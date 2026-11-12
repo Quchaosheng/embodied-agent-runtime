@@ -22,6 +22,12 @@ public:
   void record_device_fault(std::uint16_t error_code);
   void record_stop_failure(std::uint16_t error_code);
   void record_transport_error(std::uint16_t error_code);
+  // Clears the latched error so the bridge can report ready again. Only the
+  // latch and the sticky error code are cleared: the cumulative counters are
+  // the evidence of what happened and are kept. Returns false when nothing was
+  // latched, so a caller can tell a real reset from a no-op.
+  bool clear_latched_error();
+  bool error_latched() const;
   diagnostic_msgs::msg::DiagnosticStatus snapshot(bool socket_ready) const;
 
 private:

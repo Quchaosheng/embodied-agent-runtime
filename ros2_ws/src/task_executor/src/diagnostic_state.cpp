@@ -86,6 +86,20 @@ void TaskDiagnosticState::record_failure(
   failure_latched_ = true;
 }
 
+bool TaskDiagnosticState::failure_latched() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return failure_latched_;
+}
+
+bool TaskDiagnosticState::clear_latched_failure()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  const bool was_latched = failure_latched_;
+  failure_latched_ = false;
+  return was_latched;
+}
+
 diagnostic_msgs::msg::DiagnosticStatus TaskDiagnosticState::snapshot() const
 {
   TaskPhase phase;

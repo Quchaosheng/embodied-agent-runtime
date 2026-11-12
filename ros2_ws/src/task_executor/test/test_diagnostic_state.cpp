@@ -53,6 +53,33 @@ TEST(TaskDiagnosticStateTest, FailureClearsOnlyAfterSuccessfulTask)
   EXPECT_EQ(value(state.snapshot(), "last_error_code"), "0");
 }
 
+TEST(TaskDiagnosticStateTest, ResetClearsTheLatchAndKeepsTheLastOutcome)
+{
+  task_executor::TaskDiagnosticState state;
+  state.set_bridge_ready(true);
+  state.begin_task("task-6");
+  state.record_failure("SAFE_STOP", 204);
+  EXPECT_TRUE(state.failure_latched());
+  EXPECT_EQ(state.snapshot().level, diagnostic_msgs::msg::DiagnosticStatus::ERROR);
+
+  EXPECT_TRUE(state.clear_latched_failure());
+  EXPECT_FALSE(state.failure_latched());
+  const auto status = state.snapshot();
+  EXPECT_EQ(status.level, diagnostic_msgs::msg::DiagnosticStatus::OK);
+  // What failed is the evidence; a reset clears the latch, not the record.
+  EXPECT_EQ(value(status, "last_outcome"), "SAFE_STOP");
+  EXPECT_EQ(value(status, "last_error_code"), "204");
+}
+
+TEST(TaskDiagnosticStateTest, ResetReportsWhetherAnythingWasLatched)
+{
+  task_executor::TaskDiagnosticState state;
+  state.set_bridge_ready(true);
+  EXPECT_FALSE(state.failure_latched());
+  EXPECT_FALSE(state.clear_latched_failure());
+  EXPECT_EQ(state.snapshot().level, diagnostic_msgs::msg::DiagnosticStatus::OK);
+}
+
 TEST(TaskDiagnosticStateTest, SnapshotExposesStableIdentityPhasesAndKeys)
 {
   task_executor::TaskDiagnosticState state;

@@ -21,6 +21,11 @@ public:
   void record_success(const std::string & outcome);
   void record_canceled();
   void record_failure(const std::string & outcome, std::uint16_t error_code);
+  // Clears the latched failure so the runtime can report ready again. The last
+  // outcome and error code stay: they are what the failure was, and erasing
+  // them would make a reset look like a task that never failed.
+  bool clear_latched_failure();
+  bool failure_latched() const;
   diagnostic_msgs::msg::DiagnosticStatus snapshot() const;
 
 private:
