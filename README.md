@@ -249,9 +249,11 @@ contention on small boards.
 ### Text Input
 
 `ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
-The existing C++ node is a rule-based offline adapter. The optional
-`ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions or
-Responses endpoint,
+The existing C++ node is a rule-based offline adapter and submits through
+`ExecuteWorkflow` like the model and perception adapters do, so the workflow
+allowlist, the ready precondition and the reused-`task_id` check apply to it
+too. The optional `ai_model_adapter_node.py` calls an OpenAI-compatible Chat
+Completions or Responses endpoint,
 strictly accepts only `workflow_id`, `target_id`, and `duration_ms`, then submits
 the validated result through `ExecuteWorkflow`. It is disabled by default and
 cannot emit a CAN frame or device command directly.

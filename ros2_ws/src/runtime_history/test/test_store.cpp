@@ -316,6 +316,21 @@ TEST(StoreTest, ReaderSeesRowsCommittedAfterItOpened)
   EXPECT_EQ(reader.stats().sample_count, 1U);
 }
 
+TEST(StoreTest, ReaderReportsWhichTaskIdsAreRecorded)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  runtime_history::Store::Reader reader(store.path());
+  EXPECT_FALSE(reader.has_task("task-1"));
+
+  ASSERT_TRUE(store.insert(record("task-1", 5)));
+  EXPECT_TRUE(reader.has_task("task-1"));
+  EXPECT_FALSE(reader.has_task("task-2"));
+  // A different task must not be reported as taken just because one row exists.
+  ASSERT_TRUE(store.insert(record("task-2", 6)));
+  EXPECT_TRUE(reader.has_task("task-2"));
+}
+
 TEST(StoreTest, ReaderRejectsAPathThatDoesNotExist)
 {
   TemporaryDatabase database;

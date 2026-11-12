@@ -87,6 +87,10 @@ public:
     Reader & operator=(const Reader &) = delete;
 
     RuntimeStats stats() const;
+    // Whether a terminal record for this task_id exists. Read-only: it answers
+    // "has this identity already been used", which is what an entry point needs
+    // before accepting a second task under the same id.
+    bool has_task(const std::string & task_id) const;
 
 private:
     sqlite3 * db_{};

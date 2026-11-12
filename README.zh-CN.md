@@ -191,9 +191,10 @@ ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和�
 
 ### 文本输入
 
-原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配。新增的
-`ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 或 Responses
-接口，但默认禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
+原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配，但它现在也通过
+`ExecuteWorkflow` 提交，因此工作流白名单、ready 前置和重复 `task_id` 检查对它
+同样生效。新增的 `ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat
+Completions 或 Responses 接口，但默认禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
 并通过白名单和时限校验后才能提交 `ExecuteWorkflow`；模型不能直接发送 CAN 或设备
 命令。
 
