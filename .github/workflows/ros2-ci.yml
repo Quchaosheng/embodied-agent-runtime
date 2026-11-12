@@ -85,7 +85,7 @@ jobs:
       - name: Test ARM64 configuration behavior
         run: bash scripts/test_arm64_configuration.sh
 
-      - name: Build eleven packages
+      - name: Build twelve packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -94,10 +94,10 @@ jobs:
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
               task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter perception_task_adapter \
+              runtime_gateway ai_task_adapter perception_task_adapter runtime_bringup \
             --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
-      - name: Test eleven packages
+      - name: Test twelve packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -109,7 +109,7 @@ jobs:
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
               task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter perception_task_adapter \
+              runtime_gateway ai_task_adapter perception_task_adapter runtime_bringup \
             --return-code-on-test-failure
           test_status=$?
           result_file="$(mktemp)"
