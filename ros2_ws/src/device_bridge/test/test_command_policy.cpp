@@ -60,6 +60,28 @@ TEST(CommandPolicyTest, MapsDeviceResultToStableErrorNamespace)
   EXPECT_EQ(device_bridge::device_error_code(2), 302);
 }
 
+// A device that keeps its replay cache across a bridge restart refuses a STOP
+// id it has already seen, so the first id must not be a fixed value.
+TEST(CommandPolicyTest, StopCommandIdIsDerivedFromEntropyInsideTheStopRange)
+{
+  for (const std::uint32_t entropy : {0U, 1U, 0x7FFFU, 0x8000U, 0x12345678U, 0xFFFFFFFFU}) {
+    EXPECT_GE(device_bridge::stop_command_id_from(entropy), runtime_can::kStopCommandIdMin) <<
+      entropy;
+  }
+  EXPECT_EQ(device_bridge::stop_command_id_from(0U), runtime_can::kStopCommandIdMin);
+  EXPECT_EQ(device_bridge::stop_command_id_from(0x7FFFU), 0xFFFFU);
+  EXPECT_EQ(device_bridge::stop_command_id_from(0x8000U), runtime_can::kStopCommandIdMin);
+  EXPECT_NE(device_bridge::stop_command_id_from(1U), device_bridge::stop_command_id_from(2U));
+}
+
+TEST(CommandPolicyTest, NextStopCommandIdWrapsInsideTheStopRange)
+{
+  EXPECT_EQ(device_bridge::next_stop_command_id(0x8000U), 0x8001U);
+  EXPECT_EQ(device_bridge::next_stop_command_id(0xFFFFU), runtime_can::kStopCommandIdMin);
+  // An application-range id is never continued as a STOP id.
+  EXPECT_EQ(device_bridge::next_stop_command_id(0x7FFFU), runtime_can::kStopCommandIdMin);
+}
+
 // The ACK-only path must stay available for devices that only acknowledge, and
 // must be distinguishable from a device that actually reported completion.
 TEST(CommandPolicyTest, AckOnlyCompletionIsLabelledNotAssumed)
