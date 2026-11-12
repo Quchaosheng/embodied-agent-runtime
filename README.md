@@ -61,6 +61,7 @@ protocol response rather than proof of physical actuator motion.
 | `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and `ExecuteWorkflow` Action bridge |
 | `ai_task_adapter` | Rule-based text adapter plus an optional, default-disabled OpenAI-compatible model adapter |
 | `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
+| `runtime_bringup` | One launch description for the whole stack, with the shared database and stage-log paths |
 
 ### Action Layers and Task Events
 

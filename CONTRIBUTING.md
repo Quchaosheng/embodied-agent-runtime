@@ -17,7 +17,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\windows_wsl.ps1 -Mode Check
 ```
 
-Run the complete eleven-package WSL2 build and test in isolated directories:
+Run the complete twelve-package WSL2 build and test in isolated directories:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
