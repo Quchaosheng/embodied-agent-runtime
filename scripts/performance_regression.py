@@ -194,6 +194,8 @@ def main(argv):
     parser.add_argument('--json', action='store_true')
     parser.add_argument('--write-baseline', action='store_true',
                         help='record this run as the baseline instead of comparing')
+    parser.add_argument('--gate', action='store_true',
+                        help='require a baseline and exit 1 on a regression')
     options = parser.parse_args(argv[1:])
 
     try:
@@ -216,11 +218,19 @@ def main(argv):
 
     baseline_path = pathlib.Path(options.baseline)
     if not baseline_path.is_file():
-        print(f'no baseline at {baseline_path}; record one with --write-baseline',
+        # Trend mode without a recorded baseline still has to publish the
+        # numbers: refusing to print them is how a run ends up "green" with an
+        # empty report. The comparison is skipped, and that is said out loud.
+        if options.gate:
+            print(f'no baseline at {baseline_path}; --gate needs one',
+                  file=sys.stderr)
+            return 2
+        print(f'no baseline at {baseline_path}; reporting trend only',
               file=sys.stderr)
-        return 2
-    regressions = compare(report, json.loads(
-        baseline_path.read_text(encoding='utf-8')), options.tolerance)
+        regressions = []
+    else:
+        regressions = compare(report, json.loads(
+            baseline_path.read_text(encoding='utf-8')), options.tolerance)
 
     if options.json:
         print(json.dumps({'label': options.label, 'report': report,

@@ -765,7 +765,14 @@ TEST_F(GatewayStageEvidenceTest, EmitsAdmissionAndDispatchMarksForARequest)
 
   ASSERT_EQ(lines.size(), 2U) << "expected exactly the admission and dispatch marks";
   for (const auto & line : lines) {
-    EXPECT_NE(line.find("\"trace_id\":\"request-stage\""), std::string::npos) << line;
+    // task_id is the cross-layer trace key: the executor and the bridge both
+    // use it, so a request_id key here would never pair with their marks.
+    EXPECT_NE(line.find("\"trace_id\":\"task-stage\""), std::string::npos) << line;
+    EXPECT_EQ(line.find("\"trace_id\":\"request-stage\""), std::string::npos) << line;
+    // The request identity is still recoverable for correlation. extra_json is
+    // a JSON string field, so its quotes arrive escaped in the line.
+    EXPECT_NE(
+      line.find("\\\"request_id\\\":\\\"request-stage\\\""), std::string::npos) << line;
     EXPECT_NE(line.find("\"source_node\":\"runtime_gateway\""), std::string::npos) << line;
     EXPECT_NE(line.find("\"clock_id\":\"monotonic\""), std::string::npos) << line;
   }

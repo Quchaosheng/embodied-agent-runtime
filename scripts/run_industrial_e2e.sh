@@ -720,28 +720,33 @@ record "PASS: seven industrial E2E scenarios"
 
 # Percentiles over the same stage log this run already wrote, with the CPU and
 # peak RSS of the runtime processes that produced it. Trend only by default:
-# the committed baseline is not a portable threshold, so a regression is
-# reported and recorded rather than failing the run. Set
-# PERFORMANCE_REGRESSION_GATE=1 to make it fail instead.
+# the numbers are always written, and a regression is recorded rather than
+# failing the run. PERFORMANCE_REGRESSION_GATE=1 requires a committed baseline
+# and makes a regression fail instead.
 PERF_REPORT="$EVIDENCE/performance.json"
 PERF_ARGS=(--log "$STAGE_EVENTS" --json --label
   "$(uname -srm) load=$(cut -d' ' -f1-3 /proc/loadavg)"
   --pid "$GATEWAY_PID" --pid "$EXECUTOR_PID" --pid "$BRIDGE_PID")
 if [[ ${PERFORMANCE_REGRESSION_GATE:-0} == 1 ]]; then
-  /usr/bin/python3 "$WORKSPACE/../scripts/performance_regression.py" \
-    "${PERF_ARGS[@]}" > "$PERF_REPORT" 2> "$EVIDENCE/performance.stderr" ||
-    { cat "$EVIDENCE/performance.stderr" >&2
-      cat "$PERF_REPORT" >&2
-      fail "performance regression past the configured tolerance"; }
-else
-  /usr/bin/python3 "$WORKSPACE/../scripts/performance_regression.py" \
-    "${PERF_ARGS[@]}" > "$PERF_REPORT" 2> "$EVIDENCE/performance.stderr" || {
-      # Exit 2 means the capture had no measurable interval; exit 1 means a
-      # regression was recorded. Neither stops a trend-only run, but both are
-      # printed so a silent empty report is not mistaken for a clean one.
-      printf 'performance report status %s:\n' "$?" >&2
-      cat "$EVIDENCE/performance.stderr" >&2
-    }
+  PERF_ARGS+=(--gate)
 fi
-[[ -s "$PERF_REPORT" ]] || printf 'performance report empty\n' >&2
-record "PASS: performance report written to $PERF_REPORT"
+perf_status=0
+/usr/bin/python3 "$WORKSPACE/../scripts/performance_regression.py" \
+  "${PERF_ARGS[@]}" > "$PERF_REPORT" 2> "$EVIDENCE/performance.stderr" || perf_status=$?
+case $perf_status in
+  0) record "PASS: performance report written to $PERF_REPORT" ;;
+  1) cat "$EVIDENCE/performance.stderr" >&2
+     if [[ ${PERFORMANCE_REGRESSION_GATE:-0} == 1 ]]; then
+       cat "$PERF_REPORT" >&2
+       fail "performance regression past the configured tolerance"
+     fi
+     # Trend-only: a recorded regression never fails the run, but it is stated.
+     record "PASS: performance regression recorded in $PERF_REPORT" ;;
+  *)
+     # 2 means no baseline under --gate, or a capture with no measurable
+     # interval. Neither is a clean result, so the reason is printed rather
+     # than leaving an empty report that looks like a pass.
+     printf 'performance report status %s:\n' "$perf_status" >&2
+     cat "$EVIDENCE/performance.stderr" >&2
+     fail "performance report could not be produced" ;;
+esac

@@ -140,11 +140,36 @@ class PerformanceRegressionTest(unittest.TestCase):
             recorded = json.loads(path.read_text(encoding='utf-8'))
             self.assertGreater(recorded['cancel_total_ms']['percentiles_ms']['p50'], 0)
 
-    def test_reports_a_missing_baseline_instead_of_passing_silently(self):
+    def test_gate_without_a_baseline_refuses_instead_of_passing(self):
         result = self.run_suite(
-            self.cancel_trace(1_000_000_000), '--baseline', '/nonexistent/baseline.json')
+            self.cancel_trace(1_000_000_000), '--baseline', '/nonexistent/baseline.json',
+            '--gate')
         self.assertEqual(result.returncode, 2)
         self.assertIn('no baseline', result.stderr)
+
+    def test_trend_mode_still_publishes_numbers_without_a_baseline(self):
+        # The E2E runs trend-only and has no committed baseline. Refusing to
+        # print would leave an empty report that reads as a clean run.
+        result = self.run_suite(
+            self.cancel_trace(1_000_000_000), '--json',
+            '--baseline', '/nonexistent/baseline.json')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)['report']
+        self.assertIn('cancel_total_ms', report)
+        self.assertIn('trend only', result.stderr)
+
+    def test_pairs_across_layers_on_the_shared_trace_key(self):
+        # The gateway, the executor and the bridge all trace a task on task_id.
+        # A gateway mark under request_id would leave dispatch_ms unpaired.
+        step = 1_000_000
+        lines = [
+            stage_line('gateway_dispatch', 1_000_000_000, trace='task-1'),
+            stage_line('action_receive', 1_000_000_000 + 3 * step, trace='task-1'),
+        ]
+        result = self.run_suite(lines, '--json', '--write-baseline')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)['report']
+        self.assertEqual(report['dispatch_ms']['percentiles_ms']['p50'], 3.0)
 
     def test_reports_process_resources_when_given_a_pid(self):
         result = self.run_suite(

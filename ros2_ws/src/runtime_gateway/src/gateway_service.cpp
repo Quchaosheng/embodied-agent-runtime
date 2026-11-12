@@ -171,9 +171,14 @@ struct GatewayService::State
   {
     const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::steady_clock::now() - started).count();
+    // The trace key is task_id, not request_id: task_executor and device_bridge
+    // both trace on task_id, so any other key would leave the admission,
+    // dispatch and ACK marks in different traces and the report would have
+    // nothing to pair. request_id stays in extra_json for correlation.
     emit_stage(
-      request.request_id(), "gateway_admission", static_cast<std::uint64_t>(elapsed),
-      "{\"workflow_id\":" + runtime_history::json_quote(request.workflow_id()) + "}");
+      request.task_id(), "gateway_admission", static_cast<std::uint64_t>(elapsed),
+      "{\"workflow_id\":" + runtime_history::json_quote(request.workflow_id()) +
+      ",\"request_id\":" + runtime_history::json_quote(request.request_id()) + "}");
   }
 
   struct ResolveResult
@@ -517,8 +522,9 @@ grpc::Status GatewayService::SubmitWorkflow(
     // dispatch starts now. The stage separates the two for the report.
     state_->emit_admission_stage(*request, admission_started);
     state_->emit_stage(
-      request->request_id(), "gateway_dispatch",
-      0, "{\"workflow_id\":" + runtime_history::json_quote(request->workflow_id()) + "}");
+      request->task_id(), "gateway_dispatch", 0,
+      "{\"workflow_id\":" + runtime_history::json_quote(request->workflow_id()) +
+      ",\"request_id\":" + runtime_history::json_quote(request->request_id()) + "}");
     future = state_->action_client->async_send_goal(goal, options);
   } catch (const std::exception & error) {
     {
