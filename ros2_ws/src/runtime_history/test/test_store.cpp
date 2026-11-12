@@ -280,6 +280,50 @@ TEST(StoreTest, SerializesConcurrentInsertsOnOneStore)
   EXPECT_EQ(store.stats().sample_count, thread_count);
 }
 
+TEST(StoreTest, ReaderAnswersTheSameStatisticsAsTheStore)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  const std::array<std::uint64_t, 5> durations{10, 20, 30, 40, 100};
+  for (std::size_t i = 0; i < durations.size(); ++i) {
+    ASSERT_TRUE(store.insert(record("task-" + std::to_string(i), durations[i], i % 4)));
+  }
+
+  runtime_history::Store::Reader reader(store.path());
+  const auto from_store = store.stats();
+  const auto from_reader = reader.stats();
+
+  EXPECT_EQ(from_reader.has_data, from_store.has_data);
+  EXPECT_EQ(from_reader.sample_count, from_store.sample_count);
+  EXPECT_EQ(from_reader.outcome_counts, from_store.outcome_counts);
+  EXPECT_EQ(from_reader.p50_ms, from_store.p50_ms);
+  EXPECT_EQ(from_reader.p95_ms, from_store.p95_ms);
+  EXPECT_EQ(from_reader.p99_ms, from_store.p99_ms);
+  EXPECT_EQ(from_reader.max_ms, from_store.max_ms);
+}
+
+TEST(StoreTest, ReaderSeesRowsCommittedAfterItOpened)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  runtime_history::Store::Reader reader(store.path());
+  EXPECT_FALSE(reader.stats().has_data);
+
+  // WAL: the reader must observe a commit made by the writer's connection,
+  // otherwise statistics would freeze at whatever the file held at open time.
+  ASSERT_TRUE(store.insert(record("task-late", 7)));
+  EXPECT_TRUE(reader.stats().has_data);
+  EXPECT_EQ(reader.stats().sample_count, 1U);
+}
+
+TEST(StoreTest, ReaderRejectsAPathThatDoesNotExist)
+{
+  TemporaryDatabase database;
+  // No CREATE: a typo must fail loudly instead of reporting an empty history.
+  EXPECT_THROW(runtime_history::Store::Reader(database.path()), std::runtime_error);
+  EXPECT_THROW(runtime_history::Store::Reader(":memory:"), std::runtime_error);
+}
+
 TEST(StoreTest, ThrowsWhenTaskRunsSchemaIsMissing)
 {
   TemporaryDatabase database;
