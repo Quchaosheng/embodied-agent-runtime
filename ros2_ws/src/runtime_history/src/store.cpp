@@ -125,9 +125,48 @@ std::uint64_t duration_at_offset(sqlite3 * db, const std::uint64_t offset)
   return static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
 }
 
+// Shared by both connections: the statistics are a property of the file, so the
+// writer and the read-only reader must not answer it differently.
+RuntimeStats stats_on(sqlite3 * db)
+{
+  RuntimeStats result{};
+  Statement summary(db, "SELECT COUNT(*),MAX(duration_ms) FROM task_runs");
+  if (sqlite3_step(summary.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db));
+  }
+  const auto count = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 0));
+  if (count == 0) {
+    return result;
+  }
+
+  result.has_data = true;
+  result.sample_count = count;
+  result.max_ms = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 1));
+  Statement outcomes(db, "SELECT outcome,COUNT(*) FROM task_runs GROUP BY outcome");
+  while (true) {
+    const auto step = sqlite3_step(outcomes.get());
+    if (step == SQLITE_DONE) {
+      break;
+    }
+    if (step != SQLITE_ROW) {
+      throw std::runtime_error(sqlite3_errmsg(db));
+    }
+    const auto outcome = sqlite3_column_int(outcomes.get(), 0);
+    if (outcome >= 0 && outcome < static_cast<int>(result.outcome_counts.size())) {
+      result.outcome_counts[static_cast<std::size_t>(outcome)] +=
+        static_cast<std::uint64_t>(sqlite3_column_int64(outcomes.get(), 1));
+    }
+  }
+  result.p50_ms = duration_at_offset(db, nearest_rank_offset(count, 50));
+  result.p95_ms = duration_at_offset(db, nearest_rank_offset(count, 95));
+  result.p99_ms = duration_at_offset(db, nearest_rank_offset(count, 99));
+  return result;
+}
+
 }  // namespace
 
 Store::Store(const std::string & path)
+: path_(path)
 {
   const int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX;
   if (sqlite3_open_v2(path.c_str(), &db_, flags, nullptr) != SQLITE_OK) {
@@ -378,38 +417,45 @@ std::size_t Store::count_idempotency(const std::int64_t not_older_than_ns) const
 RuntimeStats Store::stats() const
 {
   const std::lock_guard<std::mutex> lock(mutex_);
-  RuntimeStats result{};
-  Statement summary(db_, "SELECT COUNT(*),MAX(duration_ms) FROM task_runs");
-  if (sqlite3_step(summary.get()) != SQLITE_ROW) {
-    throw std::runtime_error(sqlite3_errmsg(db_));
-  }
-  const auto count = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 0));
-  if (count == 0) {
-    return result;
-  }
+  return stats_on(db_);
+}
 
-  result.has_data = true;
-  result.sample_count = count;
-  result.max_ms = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 1));
-  Statement outcomes(db_, "SELECT outcome,COUNT(*) FROM task_runs GROUP BY outcome");
-  while (true) {
-    const auto step = sqlite3_step(outcomes.get());
-    if (step == SQLITE_DONE) {
-      break;
-    }
-    if (step != SQLITE_ROW) {
-      throw std::runtime_error(sqlite3_errmsg(db_));
-    }
-    const auto outcome = sqlite3_column_int(outcomes.get(), 0);
-    if (outcome >= 0 && outcome < static_cast<int>(result.outcome_counts.size())) {
-      result.outcome_counts[static_cast<std::size_t>(outcome)] +=
-        static_cast<std::uint64_t>(sqlite3_column_int64(outcomes.get(), 1));
-    }
+Store::Reader::Reader(const std::string & path)
+{
+  // Read-only, and no CREATE: a mistyped path must fail rather than leave an
+  // empty database that answers every query with "no data".
+  const int flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX;
+  if (sqlite3_open_v2(path.c_str(), &db_, flags, nullptr) != SQLITE_OK) {
+    const std::string message = db_ ==
+      nullptr ? "failed to open SQLite database read-only" : sqlite3_errmsg(db_);
+    sqlite3_close(db_);
+    db_ = nullptr;
+    throw std::runtime_error(message);
   }
-  result.p50_ms = duration_at_offset(db_, nearest_rank_offset(count, 50));
-  result.p95_ms = duration_at_offset(db_, nearest_rank_offset(count, 95));
-  result.p99_ms = duration_at_offset(db_, nearest_rank_offset(count, 99));
-  return result;
+  try {
+    execute(db_, "PRAGMA busy_timeout=1000");
+    // Not a durability change: the writer already set WAL, and WAL is a
+    // persistent property of the file. Re-reading it here only confirms the
+    // reader can see the file it was pointed at.
+    if (enable_wal(db_) != "wal") {
+      throw std::runtime_error("SQLite database does not support WAL mode");
+    }
+  } catch (...) {
+    sqlite3_close(db_);
+    db_ = nullptr;
+    throw;
+  }
+}
+
+Store::Reader::~Reader()
+{
+  sqlite3_close(db_);
+}
+
+RuntimeStats Store::Reader::stats() const
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return stats_on(db_);
 }
 
 }  // namespace runtime_history

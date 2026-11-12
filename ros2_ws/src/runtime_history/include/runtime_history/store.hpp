@@ -64,9 +64,34 @@ public:
   Store(const Store &) = delete;
   Store & operator=(const Store &) = delete;
 
+  // The file this store was opened on, so a read-only Reader can be pointed at
+  // the same one instead of trusting a second copy of the path.
+  const std::string & path() const {return path_;}
+
   bool insert(const TaskRecord & record);
   std::optional<TaskRecord> get(const std::string & task_id) const;
   RuntimeStats stats() const;
+
+  // Opens a second read-only connection to the same file, for queries whose
+  // cost grows with the table. WAL lets a reader run while the writer commits,
+  // so a large statistics query stops holding the lock admission needs.
+  // Throws when the path cannot be opened: stats over a silent empty database
+  // would be worse than a failed call.
+  class Reader
+  {
+public:
+    explicit Reader(const std::string & path);
+    ~Reader();
+
+    Reader(const Reader &) = delete;
+    Reader & operator=(const Reader &) = delete;
+
+    RuntimeStats stats() const;
+
+private:
+    sqlite3 * db_{};
+    mutable std::mutex mutex_;
+  };
 
   // Idempotency rows survive restart. ADMITTED is written before dispatch so a
   // crash mid-dispatch is recoverable as uncertain instead of a silent re-run.
@@ -85,6 +110,7 @@ public:
 private:
   std::optional<TaskRecord> get_unlocked(const std::string & task_id) const;
 
+  std::string path_;
   sqlite3 * db_{};
   mutable std::mutex mutex_;
 };
