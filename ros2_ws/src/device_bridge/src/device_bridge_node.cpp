@@ -6,6 +6,7 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
 #include "robot_task_interfaces/msg/device_state.hpp"
+#include "runtime_capabilities/manifest.hpp"
 #include "runtime_can/protocol.hpp"
 #include "runtime_can/socket_can.hpp"
 
@@ -17,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -35,6 +37,10 @@ public:
   : Node("device_bridge")
   {
     interface_name_ = declare_parameter<std::string>("interface_name", "vcan0");
+    const auto capabilities_path = declare_parameter<std::string>("capabilities_file", "");
+    if (!capabilities_path.empty()) {
+      capabilities_ = runtime_capabilities::Manifest::load(capabilities_path);
+    }
     const auto configured_max_timeout = declare_parameter<std::int64_t>(
       "max_ack_timeout_ms", 5000);
     const auto configured_poll = declare_parameter<std::int64_t>("receive_poll_ms", 25);
@@ -152,6 +158,21 @@ private:
         get_logger(), "Rejecting command_id=%u: CAN socket is not ready",
         goal->command_id);
       return rclcpp_action::GoalResponse::REJECT;
+    }
+    // The innermost layer is where a constraint that must hold for every
+    // command belongs: everything above can be bypassed by another DDS
+    // participant, and this node previously forwarded any opcode and any int32
+    // argument straight to the bus.
+    if (capabilities_.has_value()) {
+      const auto requested_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(ack_timeout).count();
+      if (!capabilities_->allows_command(goal->opcode, goal->argument, requested_ms)) {
+        RCLCPP_WARN(
+          get_logger(),
+          "Rejecting command_id=%u: opcode=%u argument=%d ack_timeout_ms=%ld is not in the "
+          "capability manifest", goal->command_id, goal->opcode, goal->argument, requested_ms);
+        return rclcpp_action::GoalResponse::REJECT;
+      }
     }
 
     bool expected = false;
@@ -669,6 +690,7 @@ private:
   }
 
   std::string interface_name_;
+  std::optional<runtime_capabilities::Manifest> capabilities_;
   std::int64_t max_ack_timeout_ms_{5000};
   std::int64_t diagnostic_period_ms_{1000};
   std::chrono::milliseconds receive_poll_ms_{25};

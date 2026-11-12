@@ -61,6 +61,8 @@ protocol response rather than proof of physical actuator motion.
 | `runtime_gateway` | Loopback gRPC API, request identity, duplicate suppression, and `ExecuteWorkflow` Action bridge |
 | `ai_task_adapter` | Rule-based text adapter plus an optional, default-disabled OpenAI-compatible model adapter |
 | `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
+| `runtime_bringup` | One launch description for the whole stack, with the shared database and stage-log paths |
+| `runtime_capabilities` | One manifest of the workflows, targets and device commands the runtime may use |
 
 ### Action Layers and Task Events
 
@@ -249,9 +251,11 @@ contention on small boards.
 ### Text Input
 
 `ai_task_adapter` maps controlled text patterns to allowlisted workflow goals.
-The existing C++ node is a rule-based offline adapter. The optional
-`ai_model_adapter_node.py` calls an OpenAI-compatible Chat Completions or
-Responses endpoint,
+The existing C++ node is a rule-based offline adapter and submits through
+`ExecuteWorkflow` like the model and perception adapters do, so the workflow
+allowlist, the ready precondition and the reused-`task_id` check apply to it
+too. The optional `ai_model_adapter_node.py` calls an OpenAI-compatible Chat
+Completions or Responses endpoint,
 strictly accepts only `workflow_id`, `target_id`, and `duration_ms`, then submits
 the validated result through `ExecuteWorkflow`. It is disabled by default and
 cannot emit a CAN frame or device command directly.

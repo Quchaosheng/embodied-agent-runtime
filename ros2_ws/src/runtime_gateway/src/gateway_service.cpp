@@ -2,6 +2,7 @@
 
 #include "runtime_gateway/durable_idempotency.hpp"
 
+#include "runtime_capabilities/manifest.hpp"
 #include "runtime_history/stage_event_log.hpp"
 #include "runtime_history/store.hpp"
 
@@ -11,6 +12,7 @@
 #include <condition_variable>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,9 +39,15 @@ bool valid(const SubmitWorkflowRequest & request)
          request.timeout_ms() > 0 && request.timeout_ms() <= max_duration_ms;
 }
 
-bool allowed(const std::string & workflow_id)
+// The built-in list is what a deployment without a manifest has always used.
+bool workflow_allowed(
+  const std::optional<runtime_capabilities::Manifest> & capabilities,
+  const std::string & workflow_id)
 {
-  return workflow_id == "single_task" || workflow_id == "ready_then_task";
+  if (!capabilities.has_value()) {
+    return workflow_id == "single_task" || workflow_id == "ready_then_task";
+  }
+  return capabilities->has_workflow(workflow_id);
 }
 
 bool active(const RequestRecord & record)
@@ -124,6 +132,13 @@ struct GatewayService::State
     std::function<void()> before_cancel_lookup_value,
     std::function<void()> before_cancel_dispatch_value)
   : store(value),
+    // A second read-only connection: GetStats scans the whole table, and doing
+    // it on the writer's lock stalls admission for as long as the scan takes.
+    reader(value.path()),
+    // One shared description of what may run. When the parameter is empty the
+    // gateway keeps the previous hard-coded allowlist, so an existing
+    // deployment without a manifest behaves exactly as before.
+    capabilities(read_capabilities(node)),
     durable(store),
     action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
     before_send(std::move(before_send_value)),
@@ -134,6 +149,18 @@ struct GatewayService::State
     // without re-declaring when the node already has it.
     stage_log(read_parameter(node, "stage_event_log_path"))
   {}
+
+  static std::optional<runtime_capabilities::Manifest> read_capabilities(
+    rclcpp::Node & node)
+  {
+    const auto path = read_parameter(node, "capabilities_file");
+    if (path.empty()) {
+      // No manifest configured: keep the built-in list rather than refusing
+      // every workflow, which is what an empty manifest would do.
+      return std::nullopt;
+    }
+    return runtime_capabilities::Manifest::load(path);
+  }
 
   static std::string read_parameter(rclcpp::Node & node, const std::string & name)
   {
@@ -280,6 +307,8 @@ struct GatewayService::State
   }
 
   runtime_history::Store & store;
+  runtime_history::Store::Reader reader;
+  std::optional<runtime_capabilities::Manifest> capabilities;
   DurableIdempotency durable;
   RequestRegistry registry;
   rclcpp_action::Client<ExecuteWorkflow>::SharedPtr action_client;
@@ -393,7 +422,7 @@ grpc::Status GatewayService::SubmitWorkflow(
     return grpc::Status::OK;
   }
 
-  if (!allowed(request->workflow_id())) {
+  if (!workflow_allowed(state_->capabilities, request->workflow_id())) {
     state_->reject(initial, "REJECTED", 400, "workflow is not allowlisted");
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
@@ -713,7 +742,7 @@ grpc::Status GatewayService::GetStats(
   grpc::ServerContext *, const GetStatsRequest *, RuntimeStats * reply)
 {
   try {
-    const auto stats = state_->store.stats();
+    const auto stats = state_->reader.stats();
     reply->set_has_data(stats.has_data);
     reply->set_sample_count(stats.sample_count);
     for (const auto count : stats.outcome_counts) {

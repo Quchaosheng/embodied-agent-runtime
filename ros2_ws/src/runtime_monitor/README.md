@@ -91,6 +91,7 @@ BRIDGE_EXE="$(ros2 pkg prefix device_bridge)/lib/device_bridge/device_bridge_nod
 EXECUTOR_EXE="$(ros2 pkg prefix task_executor)/lib/task_executor/task_executor_node"
 VIRTUAL_EXE="$(ros2 pkg prefix virtual_can_device)/lib/virtual_can_device/virtual_can_device_node"
 ADAPTER_EXE="$(ros2 pkg prefix ai_task_adapter)/lib/ai_task_adapter/ai_task_adapter_node"
+ORCHESTRATOR_EXE="$(ros2 pkg prefix task_orchestrator)/lib/task_orchestrator/task_orchestrator_node"
 ```
 
 In a new diagnostics observer terminal, run this complete block:
@@ -140,8 +141,12 @@ MONITOR_PID=$!
 timeout 5s ros2 topic echo /runtime/ready std_msgs/msg/Bool --once
 ```
 
-Then start the two core sources. These parameters are also used by scenarios
-2-6, so Bridge and Executor can remain alive through scenario 5.
+Then start the three core sources. These parameters are also used by scenarios
+2-6, so Bridge, Executor and Orchestrator can remain alive through scenario 5.
+
+The rule-based adapter submits through `ExecuteWorkflow`, so the Orchestrator is
+required from scenario 2 on. Without it the adapter reports
+`ExecuteWorkflow server not available after 5 seconds`.
 
 ```bash
 "$BRIDGE_EXE" --ros-args \
@@ -151,6 +156,8 @@ BRIDGE_PID=$!
   --params-file src/task_executor/config/targets.yaml \
   -p ack_timeout_ms:=200 -p validation_delay_ms:=50 &
 EXECUTOR_PID=$!
+"$ORCHESTRATOR_EXE" &
+ORCHESTRATOR_PID=$!
 sleep 3
 timeout 5s ros2 topic echo /runtime/ready std_msgs/msg/Bool --once
 ```
@@ -280,9 +287,9 @@ process; Bridge counters remain because Bridge was not restarted.
 Stop only the PIDs started by the commands above:
 
 ```bash
-kill -TERM "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID"
-wait "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID"
-pgrep -af 'runtime_monitor_node|device_bridge_node|task_executor_node|virtual_can_device_node'
+kill -TERM "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID" "$ORCHESTRATOR_PID"
+wait "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID" "$ORCHESTRATOR_PID"
+pgrep -af 'runtime_monitor_node|device_bridge_node|task_executor_node|virtual_can_device_node|task_orchestrator_node'
 ```
 
 This runbook covers local standard diagnostics, freshness, recovery, and

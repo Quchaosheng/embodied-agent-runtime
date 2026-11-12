@@ -61,6 +61,7 @@ BRIDGE_EXE="$(ros2 pkg prefix device_bridge)/lib/device_bridge/device_bridge_nod
 EXECUTOR_EXE="$(ros2 pkg prefix task_executor)/lib/task_executor/task_executor_node"
 VIRTUAL_EXE="$(ros2 pkg prefix virtual_can_device)/lib/virtual_can_device/virtual_can_device_node"
 ADAPTER_EXE="$(ros2 pkg prefix ai_task_adapter)/lib/ai_task_adapter/ai_task_adapter_node"
+ORCHESTRATOR_EXE="$(ros2 pkg prefix task_orchestrator)/lib/task_orchestrator/task_orchestrator_node"
 ```
 
 分别观察 `/diagnostics` 和 `/runtime/ready`：
@@ -72,8 +73,11 @@ timeout 120s ros2 topic echo /runtime/ready std_msgs/msg/Bool
 
 ## 场景 1：来源缺失与核心启动
 
-先只启动 Monitor，预期 `runtime/system=STALE` 且 Ready=false；再启动 Bridge 和
-Executor，等待 3 秒后，两个组件和系统都应为 `OK`，Ready=true。
+先只启动 Monitor，预期 `runtime/system=STALE` 且 Ready=false；再启动 Bridge、
+Executor 和 Orchestrator，等待 3 秒后，两个组件和系统都应为 `OK`，Ready=true。
+
+规则适配器通过 `ExecuteWorkflow` 提交，所以从场景 2 起必须有 Orchestrator；
+缺了它适配器会报 `ExecuteWorkflow server not available after 5 seconds`。
 
 ```bash
 "$MONITOR_EXE" --ros-args --params-file src/runtime_monitor/config/runtime_monitor.yaml &
@@ -83,6 +87,8 @@ BRIDGE_PID=$!
 "$EXECUTOR_EXE" --ros-args --params-file src/task_executor/config/targets.yaml \
   -p ack_timeout_ms:=200 -p validation_delay_ms:=50 &
 EXECUTOR_PID=$!
+"$ORCHESTRATOR_EXE" &
+ORCHESTRATOR_PID=$!
 ```
 
 ## 场景 2：ACK 延迟重试与恢复
@@ -126,9 +132,9 @@ Executor 变为 ERROR，`ack_timeout_count` 增加，Ready=false。随后换回 
 只终止本手册启动的 PID：
 
 ```bash
-kill -TERM "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID"
-wait "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID"
-pgrep -af 'runtime_monitor_node|device_bridge_node|task_executor_node|virtual_can_device_node'
+kill -TERM "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID" "$ORCHESTRATOR_PID"
+wait "$VIRTUAL_PID" "$EXECUTOR_PID" "$BRIDGE_PID" "$MONITOR_PID" "$ORCHESTRATOR_PID"
+pgrep -af 'runtime_monitor_node|device_bridge_node|task_executor_node|virtual_can_device_node|task_orchestrator_node'
 ```
 
 本手册覆盖本地标准诊断、新鲜度、恢复和聚合 readiness，不提供 Dashboard、

@@ -8,6 +8,7 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
 #include "robot_task_interfaces/action/execute_task.hpp"
+#include "runtime_capabilities/manifest.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -52,6 +53,11 @@ public:
       "targets", {"dock_a", "home"});
     const auto target_arguments = declare_parameter<std::vector<std::int64_t>>(
       "target_arguments", {42, 0});
+    // The manifest is the shared description of what may run. When configured
+    // it decides the target set and the opcode, so the executor cannot disagree
+    // with the gateway about either; the parameters remain the fallback for a
+    // deployment that has no manifest.
+    const auto capabilities_path = declare_parameter<std::string>("capabilities_file", "");
     const auto configured_opcode = declare_parameter<std::int64_t>("device_opcode", 1);
     const auto configured_ack_timeout = declare_parameter<std::int64_t>("ack_timeout_ms", 500);
     const auto configured_cancel_timeout = declare_parameter<std::int64_t>(
@@ -69,6 +75,9 @@ public:
     if (targets.size() != target_arguments.size() || targets.empty()) {
       throw std::invalid_argument("targets and target_arguments must be non-empty and aligned");
     }
+    // The parameters are still declared and validated above so a manifest-less
+    // deployment fails the same way it always did; when a manifest is present
+    // its target set replaces them below.
     if (configured_opcode < 0 || configured_opcode > 255) {
       throw std::invalid_argument("device_opcode must be in [0, 255]");
     }
@@ -84,17 +93,40 @@ public:
       throw std::invalid_argument("task_event_history_depth must be in [1, 1000]");
     }
 
-    for (std::size_t index = 0; index < targets.size(); ++index) {
-      if (target_arguments[index] < std::numeric_limits<std::int32_t>::min() ||
-        target_arguments[index] > std::numeric_limits<std::int32_t>::max())
-      {
-        throw std::invalid_argument("target argument exceeds int32 range");
+    if (!capabilities_path.empty()) {
+      capabilities_ = runtime_capabilities::Manifest::load(capabilities_path);
+      if (capabilities_->target_ids().empty() || capabilities_->commands().empty()) {
+        throw std::invalid_argument("capability manifest declares no targets or no commands");
       }
-      target_arguments_.emplace(
-        targets[index], static_cast<std::int32_t>(target_arguments[index]));
+      // One opcode per executor: the device protocol carries a single opcode per
+      // command, and a node that silently picked one of several would be a
+      // routing decision this layer does not make.
+      if (capabilities_->commands().size() != 1) {
+        throw std::invalid_argument(
+                "capability manifest declares " +
+                std::to_string(capabilities_->commands().size()) +
+                " device commands; the executor handles exactly one");
+      }
+      device_opcode_ = capabilities_->commands().front().opcode;
+      for (const auto & target_id : capabilities_->target_ids()) {
+        target_arguments_.emplace(target_id, *capabilities_->target_argument(target_id));
+      }
+      validator_ = std::make_unique<task_executor::TargetValidator>(
+        capabilities_->target_ids());
     }
 
-    device_opcode_ = static_cast<std::uint8_t>(configured_opcode);
+    if (!capabilities_.has_value()) {
+      for (std::size_t index = 0; index < targets.size(); ++index) {
+        if (target_arguments[index] < std::numeric_limits<std::int32_t>::min() ||
+          target_arguments[index] > std::numeric_limits<std::int32_t>::max())
+        {
+          throw std::invalid_argument("target argument exceeds int32 range");
+        }
+        target_arguments_.emplace(
+          targets[index], static_cast<std::int32_t>(target_arguments[index]));
+      }
+      device_opcode_ = static_cast<std::uint8_t>(configured_opcode);
+    }
     ack_timeout_ms_ = configured_ack_timeout;
     cancel_timeout_ms_ = configured_cancel_timeout;
     task_event_history_depth_ = static_cast<std::size_t>(configured_event_history_depth);
@@ -102,7 +134,9 @@ public:
     // handle_goal, so the paced feedback loop is a test aid, not validation.
     validation_delay_ms_ = static_cast<int>(
       std::clamp<std::int64_t>(configured_validation_delay, 0, 60000));
-    validator_ = std::make_unique<task_executor::TargetValidator>(targets);
+    if (!capabilities_.has_value()) {
+      validator_ = std::make_unique<task_executor::TargetValidator>(targets);
+    }
     device_client_ = rclcpp_action::create_client<ExecuteDeviceCommand>(
       this, "execute_device_command");
 
@@ -1116,6 +1150,7 @@ private:
   std::uint8_t device_opcode_{1};
   std::uint16_t next_command_id_{initial_command_id()};
   std::unique_ptr<task_executor::TargetValidator> validator_;
+  std::optional<runtime_capabilities::Manifest> capabilities_;
   std::unique_ptr<runtime_history::StageEventLog> stage_log_;
   std::unique_ptr<task_executor::TaskEventCapture> task_event_capture_;
   std::unordered_map<std::string, std::int32_t> target_arguments_;

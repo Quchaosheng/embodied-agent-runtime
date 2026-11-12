@@ -26,6 +26,7 @@ endif()
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
+find_package(runtime_capabilities REQUIRED)
 find_package(runtime_history REQUIRED)
 
 set(PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/proto/robot_runtime.proto)
@@ -67,6 +68,7 @@ target_include_directories(gateway_service PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(gateway_service
   request_registry durable_idempotency runtime_gateway_proto
+  runtime_capabilities::runtime_capabilities_manifest
   runtime_history::runtime_history_store runtime_history::runtime_history_stage_events)
 ament_target_dependencies(gateway_service rclcpp rclcpp_action robot_task_interfaces)
 

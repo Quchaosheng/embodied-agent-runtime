@@ -52,6 +52,8 @@ flowchart LR
 | `runtime_gateway` | Loopback gRPC、请求身份、去重和 Action 桥接 |
 | `ai_task_adapter` | 确定性规则规划器和可选 OpenAI 兼容模型适配器 |
 | `perception_task_adapter` | 可选 ArUco 图像或 USB 相机触发器 |
+| `runtime_bringup` | 整个运行时的 launch 描述，统一数据库路径和 stage 日志路径 |
+| `runtime_capabilities` | 运行时允许使用的工作流、目标和设备命令，一份清单 |
 
 ### Action 分层与 TaskEvent
 
@@ -191,9 +193,10 @@ ARM smoke 会顺序执行各包测试，避免小型板卡上的 ROS 发现和�
 
 ### 文本输入
 
-原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配。新增的
-`ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat Completions 或 Responses
-接口，但默认禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
+原有 C++ `ai_task_adapter` 继续提供离线、确定性的规则匹配，但它现在也通过
+`ExecuteWorkflow` 提交，因此工作流白名单、ready 前置和重复 `task_id` 检查对它
+同样生效。新增的 `ai_model_adapter_node.py` 可以调用 OpenAI 兼容的 Chat
+Completions 或 Responses 接口，但默认禁用。模型输出必须严格只含 `workflow_id`、`target_id`、`duration_ms` 三个字段，
 并通过白名单和时限校验后才能提交 `ExecuteWorkflow`；模型不能直接发送 CAN 或设备
 命令。
 

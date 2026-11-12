@@ -11,6 +11,8 @@ find_package(behaviortree_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
+find_package(runtime_capabilities REQUIRED)
+find_package(runtime_history REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_library(ready_state src/ready_state.cpp)
@@ -21,7 +23,8 @@ target_include_directories(ready_state PUBLIC
 
 add_executable(task_orchestrator_node src/task_orchestrator_node.cpp)
 target_compile_features(task_orchestrator_node PUBLIC cxx_std_17)
-target_link_libraries(task_orchestrator_node ready_state)
+target_link_libraries(task_orchestrator_node ready_state runtime_history::runtime_history_store
+  runtime_capabilities::runtime_capabilities_manifest)
 ament_target_dependencies(task_orchestrator_node
   ament_index_cpp
   behaviortree_cpp
@@ -52,9 +55,21 @@ if(BUILD_TESTING)
   target_compile_definitions(task_orchestrator_node_test_lib PRIVATE TASK_ORCHESTRATOR_NO_MAIN)
   target_compile_features(task_orchestrator_node_test_lib PUBLIC cxx_std_17)
   target_include_directories(task_orchestrator_node_test_lib PRIVATE src)
-  target_link_libraries(task_orchestrator_node_test_lib ready_state)
+  target_link_libraries(task_orchestrator_node_test_lib ready_state
+    runtime_history::runtime_history_store runtime_capabilities::runtime_capabilities_manifest)
   ament_target_dependencies(task_orchestrator_node_test_lib
-    ament_index_cpp behaviortree_cpp rclcpp rclcpp_action robot_task_interfaces std_msgs)
+    ament_index_cpp behaviortree_cpp rclcpp rclcpp_action robot_task_interfaces
+    std_msgs)
+
+  # A recorded task_id, an empty task_id, and the no-database case at the
+  # workflow entry point. Uses a real SQLite file, not a stub.
+  ament_add_gtest(test_entry_validation test/test_entry_validation.cpp)
+  target_include_directories(test_entry_validation PRIVATE src)
+  target_link_libraries(test_entry_validation task_orchestrator_node_test_lib)
+  ament_target_dependencies(test_entry_validation
+    rclcpp rclcpp_action robot_task_interfaces std_msgs)
+  set_tests_properties(test_entry_validation PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=183;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST")
 
   ament_add_gtest(test_orchestrator_faults test/test_orchestrator_faults.cpp)
   target_include_directories(test_orchestrator_faults PRIVATE src)

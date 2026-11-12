@@ -56,7 +56,7 @@ done
 
 packages=(
   build-essential can-utils cmake libgrpc++-dev libopencv-dev
-  libprotobuf-dev libprotoc-dev libsqlite3-dev pkg-config
+  libprotobuf-dev libprotoc-dev libsqlite3-dev libyaml-cpp-dev pkg-config
   protobuf-compiler protobuf-compiler-grpc python3-colcon-common-extensions
   python3-rosdep ros-jazzy-behaviortree-cpp
 )
@@ -94,8 +94,8 @@ install="$isolation/install"
 log="$isolation/log"
 runtime_packages=(
   robot_task_interfaces runtime_can virtual_can_device device_bridge
-  task_executor runtime_monitor runtime_history task_orchestrator
-  runtime_gateway ai_task_adapter perception_task_adapter
+  task_executor runtime_monitor runtime_history runtime_capabilities
+  task_orchestrator runtime_gateway ai_task_adapter perception_task_adapter runtime_bringup
 )
 
 rm -rf "$native_root"
