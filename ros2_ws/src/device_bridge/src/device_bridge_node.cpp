@@ -6,6 +6,7 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
 #include "robot_task_interfaces/msg/device_state.hpp"
+#include "robot_task_interfaces/srv/reset_fault.hpp"
 #include "runtime_can/protocol.hpp"
 #include "runtime_can/socket_can.hpp"
 
@@ -35,6 +36,9 @@ public:
   : Node("device_bridge")
   {
     interface_name_ = declare_parameter<std::string>("interface_name", "vcan0");
+    // The bridge is the only participant that names the device on this bus, so
+    // a reset request can be checked against it instead of applied blindly.
+    device_id_ = declare_parameter<std::string>("device_id", "virtual_ecu_1");
     const auto configured_max_timeout = declare_parameter<std::int64_t>(
       "max_ack_timeout_ms", 5000);
     const auto configured_poll = declare_parameter<std::int64_t>("receive_poll_ms", 25);
@@ -90,6 +94,15 @@ public:
         std::placeholders::_2),
       std::bind(&DeviceBridgeNode::handle_cancel, this, std::placeholders::_1),
       std::bind(&DeviceBridgeNode::handle_accepted, this, std::placeholders::_1));
+
+    // The declared way back from a latched error. Without it the only recovery
+    // was restarting the process, which is exactly what a device with a
+    // surviving replay cache makes expensive.
+    reset_fault_service_ = create_service<robot_task_interfaces::srv::ResetFault>(
+      "~/reset_fault",
+      std::bind(
+        &DeviceBridgeNode::handle_reset_fault, this, std::placeholders::_1,
+        std::placeholders::_2));
 
     RCLCPP_INFO(
       get_logger(),
@@ -620,6 +633,48 @@ private:
     goal_handle->publish_feedback(feedback);
   }
 
+  void handle_reset_fault(
+    const std::shared_ptr<robot_task_interfaces::srv::ResetFault::Request> request,
+    const std::shared_ptr<robot_task_interfaces::srv::ResetFault::Response> response)
+  {
+    // Resetting mid-command would report ready while a STOP is still in flight
+    // or a command is still on the wire. Refuse instead of racing it.
+    if (active_goal_.load()) {
+      response->accepted = false;
+      response->message = "bridge is busy; reset when idle";
+      RCLCPP_WARN(get_logger(), "ResetFault refused: a command is still in flight");
+      return;
+    }
+    if (!request->device_id.empty() && request->device_id != device_id_) {
+      response->accepted = false;
+      response->message = "device_id does not match this bridge: " + device_id_;
+      RCLCPP_WARN(
+        get_logger(), "ResetFault refused: device_id=%s expected=%s",
+        request->device_id.c_str(), device_id_.c_str());
+      return;
+    }
+    // clear_latched_fault=false is a probe: it reports whether an error is
+    // latched without clearing it, which a supervising caller needs before it
+    // decides to reset.
+    const bool was_latched = diagnostic_state_.error_latched();
+    if (!request->clear_latched_fault) {
+      response->accepted = false;
+      response->message = was_latched ?
+        "a fault is latched; set clear_latched_fault to clear it" :
+        "no fault is latched";
+      RCLCPP_INFO(
+        get_logger(), "ResetFault probe: latched=%s", was_latched ? "true" : "false");
+      return;
+    }
+
+    const bool cleared = diagnostic_state_.clear_latched_error();
+    publish_diagnostics();
+    response->accepted = true;
+    response->message = cleared ? "latched fault cleared" : "no fault was latched";
+    RCLCPP_INFO(
+      get_logger(), "ResetFault: %s", cleared ? "cleared a latched fault" : "nothing latched");
+  }
+
   void publish_diagnostics()
   {
     try {
@@ -669,6 +724,7 @@ private:
   }
 
   std::string interface_name_;
+  std::string device_id_;
   std::int64_t max_ack_timeout_ms_{5000};
   std::int64_t diagnostic_period_ms_{1000};
   std::chrono::milliseconds receive_poll_ms_{25};
@@ -684,6 +740,7 @@ private:
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Server<ExecuteDeviceCommand>::SharedPtr action_server_;
+  rclcpp::Service<robot_task_interfaces::srv::ResetFault>::SharedPtr reset_fault_service_;
   std::mutex workers_mutex_;
   std::thread worker_;
 };

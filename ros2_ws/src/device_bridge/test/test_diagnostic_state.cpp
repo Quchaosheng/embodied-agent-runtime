@@ -36,6 +36,32 @@ TEST(DeviceDiagnosticStateTest, RetryWarnsThenSuccessPreservesCounter)
   EXPECT_EQ(value(status, "retry_count"), "1");
 }
 
+TEST(DeviceDiagnosticStateTest, ResetClearsTheLatchButKeepsTheCounters)
+{
+  device_bridge::DeviceDiagnosticState state;
+  EXPECT_FALSE(state.error_latched());
+  state.record_device_fault(302);
+  EXPECT_TRUE(state.error_latched());
+  EXPECT_EQ(state.snapshot(true).level, diagnostic_msgs::msg::DiagnosticStatus::ERROR);
+
+  EXPECT_TRUE(state.clear_latched_error());
+  EXPECT_FALSE(state.error_latched());
+  EXPECT_EQ(state.snapshot(true).level, diagnostic_msgs::msg::DiagnosticStatus::OK);
+
+  // The counters are the record of what happened; a reset must not erase them.
+  const auto status = state.snapshot(true);
+  EXPECT_EQ(value(status, "device_fault_count"), "1");
+  EXPECT_EQ(value(status, "last_error_code"), "302");
+}
+
+TEST(DeviceDiagnosticStateTest, ResetReportsWhetherAnythingWasLatched)
+{
+  device_bridge::DeviceDiagnosticState state;
+  // Nothing latched: a reset is a no-op that says so, not a silent success.
+  EXPECT_FALSE(state.clear_latched_error());
+  EXPECT_FALSE(state.error_latched());
+}
+
 TEST(DeviceDiagnosticStateTest, FailuresLatchUntilNewSuccess)
 {
   device_bridge::DeviceDiagnosticState state;

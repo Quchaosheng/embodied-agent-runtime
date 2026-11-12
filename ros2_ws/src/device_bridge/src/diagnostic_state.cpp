@@ -105,6 +105,20 @@ void DeviceDiagnosticState::record_transport_error(const std::uint16_t error_cod
   error_latched_ = true;
 }
 
+bool DeviceDiagnosticState::clear_latched_error()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  const bool was_latched = error_latched_;
+  error_latched_ = false;
+  return was_latched;
+}
+
+bool DeviceDiagnosticState::error_latched() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return error_latched_;
+}
+
 diagnostic_msgs::msg::DiagnosticStatus DeviceDiagnosticState::snapshot(
   const bool socket_ready) const
 {
