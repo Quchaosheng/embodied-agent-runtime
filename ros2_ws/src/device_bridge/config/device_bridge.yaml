@@ -3,7 +3,7 @@ device_bridge:
     interface_name: vcan0
     max_ack_timeout_ms: 5000
     stop_timeout_ms: 500
-    receive_poll_ms: 25
+    receive_poll_ms: 1
     diagnostic_period_ms: 1000
     # Off by default: most devices only acknowledge a command, and waiting for a
     # status that never arrives would turn every command into a timeout. Enable

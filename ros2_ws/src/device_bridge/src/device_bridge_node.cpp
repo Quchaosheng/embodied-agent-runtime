@@ -37,7 +37,12 @@ public:
     interface_name_ = declare_parameter<std::string>("interface_name", "vcan0");
     const auto configured_max_timeout = declare_parameter<std::int64_t>(
       "max_ack_timeout_ms", 5000);
-    const auto configured_poll = declare_parameter<std::int64_t>("receive_poll_ms", 25);
+    // Cancel is only noticed at the top of a receive slice, so this is the
+    // bound on cancel-to-STOP latency for a bridge that is merely waiting for
+    // an ACK. A frame arrival still wakes the wait immediately; the slice only
+    // matters when nothing arrives. 1 ms measured p50 0.89 ms against 13.1 ms
+    // at 25 ms, at the cost of one extra wakeup per millisecond while waiting.
+    const auto configured_poll = declare_parameter<std::int64_t>("receive_poll_ms", 1);
     const auto configured_stop_timeout = declare_parameter<std::int64_t>(
       "stop_timeout_ms", 500);
     diagnostic_period_ms_ = declare_parameter<std::int64_t>("diagnostic_period_ms", 1000);
@@ -671,7 +676,7 @@ private:
   std::string interface_name_;
   std::int64_t max_ack_timeout_ms_{5000};
   std::int64_t diagnostic_period_ms_{1000};
-  std::chrono::milliseconds receive_poll_ms_{25};
+  std::chrono::milliseconds receive_poll_ms_{1};
   std::chrono::milliseconds stop_timeout_ms_{500};
   std::chrono::milliseconds completion_timeout_{30000};
   bool completion_states_enabled_{false};
