@@ -2,6 +2,12 @@ ai_task_adapter:
   ros__parameters:
     request: go to dock_a
     task_id: ai_demo_1
+    # Empty means "use task_id". Supplying one separates "this request" from
+    # "this task", which is what the gateway deduplicates on.
+    request_id: ""
+    # Must be a workflow the orchestrator runs: single_task or ready_then_task.
+    # This adapter submits through ExecuteWorkflow, so it is checked there.
+    workflow_id: single_task
     allowed_duration_ms: 1000
     cancel_after_ms: -1
     targets:

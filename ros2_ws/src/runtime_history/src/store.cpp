@@ -458,4 +458,19 @@ RuntimeStats Store::Reader::stats() const
   return stats_on(db_);
 }
 
+bool Store::Reader::has_task(const std::string & task_id) const
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  Statement statement(db_, "SELECT 1 FROM task_runs WHERE task_id=?");
+  bind_text(db_, statement.get(), 1, task_id);
+  const int result = sqlite3_step(statement.get());
+  if (result == SQLITE_ROW) {
+    return true;
+  }
+  if (result != SQLITE_DONE) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  return false;
+}
+
 }  // namespace runtime_history
