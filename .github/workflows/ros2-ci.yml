@@ -68,6 +68,7 @@ jobs:
             libprotobuf-dev \
             libprotoc-dev \
             libsqlite3-dev \
+            libyaml-cpp-dev \
             pkg-config \
             protobuf-compiler \
             protobuf-compiler-grpc \
@@ -85,7 +86,7 @@ jobs:
       - name: Test ARM64 configuration behavior
         run: bash scripts/test_arm64_configuration.sh
 
-      - name: Build twelve packages
+      - name: Build thirteen packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -93,11 +94,12 @@ jobs:
           colcon build \
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
-              task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter perception_task_adapter runtime_bringup \
+              task_executor runtime_monitor runtime_history runtime_capabilities \
+              task_orchestrator runtime_gateway ai_task_adapter perception_task_adapter \
+              runtime_bringup \
             --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
-      - name: Test twelve packages
+      - name: Test thirteen packages
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -108,8 +110,9 @@ jobs:
             --executor sequential \
             --packages-select \
               robot_task_interfaces runtime_can virtual_can_device device_bridge \
-              task_executor runtime_monitor runtime_history task_orchestrator \
-              runtime_gateway ai_task_adapter perception_task_adapter runtime_bringup \
+              task_executor runtime_monitor runtime_history runtime_capabilities \
+              task_orchestrator runtime_gateway ai_task_adapter perception_task_adapter \
+              runtime_bringup \
             --return-code-on-test-failure
           test_status=$?
           result_file="$(mktemp)"

@@ -11,6 +11,7 @@ find_package(behaviortree_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
+find_package(runtime_capabilities REQUIRED)
 find_package(runtime_history REQUIRED)
 find_package(std_msgs REQUIRED)
 
@@ -22,7 +23,8 @@ target_include_directories(ready_state PUBLIC
 
 add_executable(task_orchestrator_node src/task_orchestrator_node.cpp)
 target_compile_features(task_orchestrator_node PUBLIC cxx_std_17)
-target_link_libraries(task_orchestrator_node ready_state runtime_history::runtime_history_store)
+target_link_libraries(task_orchestrator_node ready_state runtime_history::runtime_history_store
+  runtime_capabilities::runtime_capabilities_manifest)
 ament_target_dependencies(task_orchestrator_node
   ament_index_cpp
   behaviortree_cpp
@@ -54,7 +56,7 @@ if(BUILD_TESTING)
   target_compile_features(task_orchestrator_node_test_lib PUBLIC cxx_std_17)
   target_include_directories(task_orchestrator_node_test_lib PRIVATE src)
   target_link_libraries(task_orchestrator_node_test_lib ready_state
-    runtime_history::runtime_history_store)
+    runtime_history::runtime_history_store runtime_capabilities::runtime_capabilities_manifest)
   ament_target_dependencies(task_orchestrator_node_test_lib
     ament_index_cpp behaviortree_cpp rclcpp rclcpp_action robot_task_interfaces
     std_msgs)

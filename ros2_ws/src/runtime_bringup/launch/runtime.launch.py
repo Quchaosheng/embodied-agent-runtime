@@ -29,6 +29,20 @@ def _params(package, filename):
     return os.path.join(package, 'config', filename)
 
 
+def _capabilities(context):
+    """
+    Resolve the shared manifest path.
+
+    Defaults to the one runtime_capabilities installs, so a stack started by
+    this file cannot have two nodes reading two different capability sets.
+    """
+    configured = LaunchConfiguration('capabilities_file').perform(context)
+    if configured:
+        return os.path.abspath(configured)
+    share = FindPackageShare('runtime_capabilities').perform(context)
+    return os.path.join(share, 'config', 'capabilities.yaml')
+
+
 def _launch_setup(context):
     database_path = LaunchConfiguration('database_path').perform(context)
     stage_event_log_path = LaunchConfiguration('stage_event_log_path').perform(context)
@@ -37,6 +51,7 @@ def _launch_setup(context):
     device_mode = LaunchConfiguration('device_mode').perform(context)
     use_virtual_device = LaunchConfiguration('use_virtual_device').perform(context) == 'true'
     respawn = LaunchConfiguration('respawn').perform(context) == 'true'
+    capabilities_file = _capabilities(context)
 
     # SQLite will not create a directory, and a missing one turns into
     # "unable to open database file" at node startup. Create both parents here
@@ -75,7 +90,11 @@ def _launch_setup(context):
             name='device_bridge',
             parameters=[
                 _params(FindPackageShare('device_bridge').perform(context), 'device_bridge.yaml'),
-                {'interface_name': can_interface, 'stage_event_log_path': stage_event_log_path},
+                {
+                    'interface_name': can_interface,
+                    'stage_event_log_path': stage_event_log_path,
+                    'capabilities_file': capabilities_file,
+                },
             ],
             output='screen',
             respawn=respawn,
@@ -87,7 +106,10 @@ def _launch_setup(context):
             name='task_executor',
             parameters=[
                 _params(FindPackageShare('task_executor').perform(context), 'targets.yaml'),
-                {'stage_event_log_path': stage_event_log_path},
+                {
+                    'stage_event_log_path': stage_event_log_path,
+                    'capabilities_file': capabilities_file,
+                },
             ],
             output='screen',
             respawn=respawn,
@@ -117,10 +139,14 @@ def _launch_setup(context):
         ),
         # No params file: the orchestrator resolves workflows.xml from its own
         # share directory, so there is nothing here that can disagree with it.
+        # The manifest is passed explicitly because it is shared state.
         Node(
             package='task_orchestrator',
             executable='task_orchestrator_node',
             name='task_orchestrator',
+            parameters=[
+                {'capabilities_file': capabilities_file, 'database_path': database_path},
+            ],
             output='screen',
             respawn=respawn,
             respawn_delay=2.0,
@@ -134,6 +160,7 @@ def _launch_setup(context):
                     'port': gateway_port,
                     'database_path': database_path,
                     'stage_event_log_path': stage_event_log_path,
+                    'capabilities_file': capabilities_file,
                 },
             ],
             output='screen',
@@ -177,6 +204,12 @@ def generate_launch_description():
             'use_virtual_device',
             default_value='true',
             description='Start the software ECU. Set false when a real ECU is on the bus.',
+        ),
+        DeclareLaunchArgument(
+            'capabilities_file',
+            default_value='',
+            description='Capability manifest every node reads. Empty uses the one '
+                        'runtime_capabilities installs.',
         ),
         DeclareLaunchArgument(
             'respawn',

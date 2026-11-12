@@ -1,0 +1,46 @@
+# Everything the runtime is allowed to do, in one file.
+#
+# The same lists used to live in six places: the gateway's `allowed()`, the
+# orchestrator's workflow comparison, the executor's `targets` parameter, and
+# one parameter list each in the model, ArUco and rule adapters. Four of them
+# could disagree without anything reporting it.
+#
+# Read by: runtime_gateway, task_orchestrator, task_executor, device_bridge and
+# the three adapters. A node whose config file is missing or which is started
+# without `capabilities_file` falls back to its own parameters, and says so.
+version: 1
+
+# A workflow is what a caller may ask for. Its `steps` are what the orchestrator
+# runs; `requires_ready` is the precondition the behavior tree enforces.
+workflows:
+  single_task:
+    requires_ready: true
+    steps: [execute_task]
+  ready_then_task:
+    requires_ready: true
+    steps: [execute_task]
+
+# A target is a name a workflow may be sent to. `argument` is what the executor
+# turns into the device command's int32 argument, so an unknown target cannot be
+# smuggled in as a number.
+targets:
+  dock_a:
+    argument: 42
+  home:
+    argument: 0
+
+# What may be put on the bus. `arguments` is a closed set, not a range: a device
+# that accepts any int32 and a device that accepts two values look identical
+# until something sends the third.
+device_commands:
+  - opcode: 1
+    name: move_to
+    arguments: [42, 0]
+    max_duration_ms: 30000
+
+# Bounds every entry point applies before dispatching anything.
+limits:
+  max_duration_ms: 30000
+  # A workflow goal names one target; this is the ceiling on a future multi-step
+  # goal so the field exists before the feature does.
+  max_steps: 1

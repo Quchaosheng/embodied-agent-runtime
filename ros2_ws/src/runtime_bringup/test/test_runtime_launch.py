@@ -7,6 +7,7 @@ that the values that must agree across processes are actually shared instead of
 being repeated per node.
 """
 
+import os
 import pathlib
 import shutil
 import tempfile
@@ -143,6 +144,17 @@ class RuntimeLaunchTest(unittest.TestCase):
             'virtual_can_device',
             {node.node_package for node in self.render(use_virtual_device='false')},
         )
+
+    def test_every_manifest_reader_gets_one_path(self):
+        # Four nodes read the manifest. Two different paths would be the exact
+        # failure the manifest exists to remove, so it is passed from one place.
+        by_package = {node.node_package: parameters_of(node) for node in self.nodes}
+        readers = ('device_bridge', 'task_executor', 'task_orchestrator', 'runtime_gateway')
+        paths = {by_package[package]['capabilities_file'] for package in readers}
+        self.assertEqual(len(paths), 1, paths)
+        path = paths.pop()
+        self.assertTrue(path.endswith('capabilities.yaml'))
+        self.assertTrue(os.path.isabs(path), path)
 
     def test_respawn_stays_off_unless_asked_for(self):
         # ExecuteLocal keeps it as a mangled attribute; there is no accessor.

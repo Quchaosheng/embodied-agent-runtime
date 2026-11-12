@@ -14,6 +14,7 @@ RUN apt-get update \
     libopencv-dev \
     libprotobuf-dev \
     libsqlite3-dev \
+    libyaml-cpp-dev \
     pkg-config \
     protobuf-compiler \
     protobuf-compiler-grpc \

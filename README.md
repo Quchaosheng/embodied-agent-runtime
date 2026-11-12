@@ -62,6 +62,7 @@ protocol response rather than proof of physical actuator motion.
 | `ai_task_adapter` | Rule-based text adapter plus an optional, default-disabled OpenAI-compatible model adapter |
 | `perception_task_adapter` | Optional ArUco image or USB-camera workflow trigger |
 | `runtime_bringup` | One launch description for the whole stack, with the shared database and stage-log paths |
+| `runtime_capabilities` | One manifest of the workflows, targets and device commands the runtime may use |
 
 ### Action Layers and Task Events
 

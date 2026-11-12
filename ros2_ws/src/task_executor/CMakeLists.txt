@@ -10,6 +10,7 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
+find_package(runtime_capabilities REQUIRED)
 find_package(runtime_history REQUIRED)
 
 add_library(target_validator src/target_validator.cpp)
@@ -43,7 +44,8 @@ add_library(task_executor_node_lib src/task_executor_node.cpp)
 target_include_directories(task_executor_node_lib PRIVATE src)
 target_link_libraries(task_executor_node_lib target_validator task_executor_diagnostics task_event
   task_event_capture
-  runtime_history::runtime_history_stage_events)
+  runtime_history::runtime_history_stage_events
+  runtime_capabilities::runtime_capabilities_manifest)
 ament_target_dependencies(task_executor_node_lib
   rclcpp
   rclcpp_action

@@ -53,6 +53,7 @@ flowchart LR
 | `ai_task_adapter` | 确定性规则规划器和可选 OpenAI 兼容模型适配器 |
 | `perception_task_adapter` | 可选 ArUco 图像或 USB 相机触发器 |
 | `runtime_bringup` | 整个运行时的 launch 描述，统一数据库路径和 stage 日志路径 |
+| `runtime_capabilities` | 运行时允许使用的工作流、目标和设备命令，一份清单 |
 
 ### Action 分层与 TaskEvent
 
