@@ -26,8 +26,13 @@ public:
   {
     diagnostics_publisher_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
       "/diagnostics", rclcpp::QoS(10).reliable());
+    // The executor retains its terminal events (transient_local, 128 by
+    // default) for a subscriber that joins late. A volatile subscription never
+    // receives them, so a history node that starts or restarts after a task
+    // finished silently missed it. Redelivery is harmless: the insert is
+    // idempotent, and 128 fits inside the recorder queue.
     event_subscription_ = create_subscription<robot_task_interfaces::msg::TaskEvent>(
-      "/runtime/task_events", rclcpp::QoS(32).reliable(),
+      "/runtime/task_events", rclcpp::QoS(128).reliable().transient_local(),
       [this](const robot_task_interfaces::msg::TaskEvent::SharedPtr event) {
         runtime_history::TaskRecord record{
           event->task_id, event->request_id, event->workflow_id, event->goal_id,

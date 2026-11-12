@@ -84,6 +84,13 @@ if(BUILD_TESTING)
     NAME test_performance_regression
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/test/test_performance_regression.py)
+
+  # A history node that starts after a task finished still records it.
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_late_join_task_events test/test_late_join_task_events.py
+    TIMEOUT 30)
+  set_tests_properties(test_late_join_task_events PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=171;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST")
 endif()
 
 ament_export_targets(export_runtime_history HAS_LIBRARY_TARGET)
