@@ -7,6 +7,7 @@
 #include "behaviortree_cpp/condition_node.h"
 #include "robot_task_interfaces/action/execute_task.hpp"
 #include "robot_task_interfaces/action/execute_workflow.hpp"
+#include "runtime_history/store.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 #include <atomic>
@@ -356,6 +357,22 @@ public:
     workflow_xml_ = ament_index_cpp::get_package_share_directory("task_orchestrator") +
       "/config/workflows.xml";
 
+    // Every ExecuteWorkflow client converges here, so this is where a reused
+    // task_id has to be refused. The gateway already checks it for its own
+    // callers; the adapters submit over ROS and never went through it.
+    // Empty means "do not check", which keeps nodes that are started without a
+    // database working as before.
+    const auto database_path = declare_parameter<std::string>("database_path", "");
+    if (!database_path.empty()) {
+      task_reader_ = std::make_unique<runtime_history::Store::Reader>(database_path);
+      RCLCPP_INFO(
+        get_logger(), "Refusing a recorded task_id, checking %s", database_path.c_str());
+    } else {
+      RCLCPP_WARN(
+        get_logger(),
+        "database_path is empty: a reused task_id will not be refused at this entry point");
+    }
+
     ready_subscription_ = create_subscription<std_msgs::msg::Bool>(
       "/runtime/ready", 10,
       [this](const std_msgs::msg::Bool & message) {
@@ -429,6 +446,31 @@ private:
         get_logger(), "Rejecting workflow_id=%s: WORKFLOW_NOT_ALLOWLISTED",
         goal->workflow_id.c_str());
       return rclcpp_action::GoalResponse::REJECT;
+    }
+    // task_id is the history primary key. A second run under one that is
+    // already recorded would drop its terminal record and make GetTask answer
+    // with the older run, so it is refused here rather than at the store.
+    if (goal->task_id.empty()) {
+      RCLCPP_WARN(
+        get_logger(), "Rejecting workflow_id=%s: EMPTY_TASK_ID", goal->workflow_id.c_str());
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+    if (task_reader_ != nullptr) {
+      try {
+        if (task_reader_->has_task(goal->task_id)) {
+          RCLCPP_WARN(
+            get_logger(), "Rejecting task_id=%s: TASK_ID_ALREADY_RECORDED",
+            goal->task_id.c_str());
+          return rclcpp_action::GoalResponse::REJECT;
+        }
+      } catch (const std::exception & error) {
+        // Accepting on a failed check would be the silent re-run this is meant
+        // to prevent; refusing is the only safe answer.
+        RCLCPP_ERROR(
+          get_logger(), "Rejecting task_id=%s: task history unavailable: %s",
+          goal->task_id.c_str(), error.what());
+        return rclcpp_action::GoalResponse::REJECT;
+      }
     }
     bool expected = false;
     if (!active_.compare_exchange_strong(expected, true)) {
@@ -820,6 +862,7 @@ private:
   std::chrono::milliseconds cancel_timeout_{1000};
   std::chrono::milliseconds tick_interval_{20};
   std::string workflow_xml_;
+  std::unique_ptr<runtime_history::Store::Reader> task_reader_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ready_subscription_;
   rclcpp_action::Client<ExecuteTask>::SharedPtr task_client_;
   rclcpp_action::Server<ExecuteWorkflow>::SharedPtr workflow_server_;

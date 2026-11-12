@@ -124,6 +124,9 @@ struct GatewayService::State
     std::function<void()> before_cancel_lookup_value,
     std::function<void()> before_cancel_dispatch_value)
   : store(value),
+    // A second read-only connection: GetStats scans the whole table, and doing
+    // it on the writer's lock stalls admission for as long as the scan takes.
+    reader(value.path()),
     durable(store),
     action_client(rclcpp_action::create_client<ExecuteWorkflow>(&node, "execute_workflow")),
     before_send(std::move(before_send_value)),
@@ -280,6 +283,7 @@ struct GatewayService::State
   }
 
   runtime_history::Store & store;
+  runtime_history::Store::Reader reader;
   DurableIdempotency durable;
   RequestRegistry registry;
   rclcpp_action::Client<ExecuteWorkflow>::SharedPtr action_client;
@@ -713,7 +717,7 @@ grpc::Status GatewayService::GetStats(
   grpc::ServerContext *, const GetStatsRequest *, RuntimeStats * reply)
 {
   try {
-    const auto stats = state_->store.stats();
+    const auto stats = state_->reader.stats();
     reply->set_has_data(stats.has_data);
     reply->set_sample_count(stats.sample_count);
     for (const auto count : stats.outcome_counts) {
