@@ -227,7 +227,10 @@ register_process() {
 start_direct() {
   local label=$1 logfile=$2 executable=$3
   shift 3
-  "$executable" "$@" > "$logfile" 2>&1 &
+  # Line-buffered, because a node killed with SIGTERM otherwise loses its whole
+  # stdout buffer and the failure has no evidence at all - four of the eight log
+  # files in a failed run were empty for exactly this reason.
+  stdbuf -oL -eL "$executable" "$@" > "$logfile" 2>&1 &
   local pid=$!
   register_process "$label" "$pid" "$executable" "$logfile"
 }
