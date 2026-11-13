@@ -15,7 +15,7 @@ runtime_gateway::RequestRecord record(
   std::string target_id = "dock_a", std::uint64_t timeout_ms = 3000)
 {
   return {std::move(request_id), std::move(task_id), std::move(target_id), "single_task",
-    timeout_ms, "SUBMITTING", 0, 0, ""};
+    timeout_ms, runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
 }
 
 TEST(RequestRegistryTest, RejectsEmptyIdentifiers)
@@ -43,7 +43,8 @@ TEST(RequestRegistryTest, EvictsOldestTerminalRecordAtCapacity)
   runtime_gateway::RequestRegistry registry(2);
   ASSERT_EQ(registry.insert(record("request-1", "task-1")),
     runtime_gateway::InsertResult::INSERTED);
-  ASSERT_TRUE(registry.update_terminal("request-1", "COMPLETED", 0, 0, "done"));
+  ASSERT_TRUE(registry.settle(
+    "request-1", runtime_gateway::RequestState::kCompleted, 0, "done").applied);
   ASSERT_EQ(registry.insert(record("request-2", "task-2")),
     runtime_gateway::InsertResult::INSERTED);
 
@@ -126,14 +127,16 @@ TEST(RequestRegistryTest, MakesTerminalUpdateVisibleByBothIdentifiers)
 {
   runtime_gateway::RequestRegistry registry;
   ASSERT_EQ(registry.insert(record()), runtime_gateway::InsertResult::INSERTED);
-  ASSERT_TRUE(registry.update_terminal("request-1", "COMPLETED", 0, 0, "done"));
+  ASSERT_TRUE(registry.settle(
+    "request-1", runtime_gateway::RequestState::kCompleted, 0, "done").applied);
   const auto by_request = registry.get_by_request_id("request-1");
   const auto by_task = registry.get_by_task_id("task-1");
   ASSERT_TRUE(by_request.has_value());
   ASSERT_TRUE(by_task.has_value());
-  EXPECT_EQ(by_request->state, "COMPLETED");
+  EXPECT_EQ(by_request->state, runtime_gateway::RequestState::kCompleted);
   EXPECT_EQ(by_task->message, "done");
-  EXPECT_FALSE(registry.update_terminal("missing", "FAILED", 2, 1, "missing"));
+  EXPECT_FALSE(registry.settle(
+    "missing", runtime_gateway::RequestState::kAborted, 1, "missing").applied);
 }
 
 TEST(RequestRegistryTest, TreatsDifferentTimeoutAsConflictingRequest)
@@ -165,7 +168,7 @@ TEST(RequestRegistryTest, TreatsSemanticFieldChangeAsConflictAndIgnoresTransport
   EXPECT_EQ(registry.insert(other_workflow), runtime_gateway::InsertResult::CONFLICT);
 
   // Terminal result fields are transport-only and must not break a retry.
-  original.state = "COMPLETED";
+  original.state = runtime_gateway::RequestState::kCompleted;
   original.outcome = 1;
   original.error_code = 302;
   original.message = "done";
@@ -177,7 +180,8 @@ TEST(RequestRegistryTest, TerminalRetryStaysDuplicateAndIsNotRedispatched)
   runtime_gateway::RequestRegistry registry(1);
   const auto original = record();
   ASSERT_EQ(registry.insert(original), runtime_gateway::InsertResult::INSERTED);
-  ASSERT_TRUE(registry.update_terminal("request-1", "COMPLETED", 0, 0, "done"));
+  ASSERT_TRUE(registry.settle(
+    "request-1", runtime_gateway::RequestState::kCompleted, 0, "done").applied);
 
   EXPECT_EQ(registry.insert(original), runtime_gateway::InsertResult::DUPLICATE);
   EXPECT_EQ(

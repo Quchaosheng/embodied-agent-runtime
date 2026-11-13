@@ -47,7 +47,7 @@ add_library(runtime_gateway_proto ${PROTO_SRCS})
 target_include_directories(runtime_gateway_proto PUBLIC ${PROTO_DIR})
 target_link_libraries(runtime_gateway_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
-add_library(request_registry src/request_registry.cpp)
+add_library(request_registry src/request_registry.cpp src/request_state.cpp)
 target_compile_features(request_registry PUBLIC cxx_std_17)
 target_include_directories(request_registry PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -100,6 +100,9 @@ if(BUILD_TESTING)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+  ament_add_gtest(test_request_state test/test_request_state.cpp)
+  target_link_libraries(test_request_state request_registry)
+
   ament_add_gtest(test_request_registry test/test_request_registry.cpp)
   target_link_libraries(test_request_registry request_registry)
   ament_add_gtest(test_durable_idempotency test/test_durable_idempotency.cpp)

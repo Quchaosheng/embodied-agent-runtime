@@ -200,7 +200,7 @@ TEST_F(GrpcValidationTest, ConflictingReservationDoesNotBlockTheAuthoritativeRet
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
       request.request_id(), request.task_id(), request.target_id(), request.workflow_id(),
-      request.timeout_ms(), "SUBMITTING", 0, 0, ""};
+      request.timeout_ms(), runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     // Seed the authoritative identity, then a different payload under the same
     // request_id after the "restart" represented by a fresh registry.
     ASSERT_EQ(
@@ -231,7 +231,8 @@ TEST_F(GrpcValidationTest, ResolvesAnUncertainRequestWithoutDispatching)
   {
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
-      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+      "request-1", "task-1", "dock_a", "single_task", 3000,
+      runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     ASSERT_EQ(
       ledger.admit(admitted, 1).decision,
       runtime_gateway::IdempotencyDecision::PROCEED);
@@ -259,7 +260,8 @@ TEST_F(GrpcValidationTest, ResolveRejectsANonTerminalStateAndUnknownId)
   {
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
-      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+      "request-1", "task-1", "dock_a", "single_task", 3000,
+      runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     ASSERT_EQ(
       ledger.admit(admitted, 1).decision,
       runtime_gateway::IdempotencyDecision::PROCEED);

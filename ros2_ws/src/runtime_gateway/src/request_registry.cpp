@@ -8,11 +8,11 @@ namespace runtime_gateway
 namespace
 {
 
-bool is_terminal(const RequestRecord & record)
+bool record_is_terminal(const RequestRecord & record)
 {
-  return record.state == "COMPLETED" || record.state == "CANCELED" ||
-         record.state == "SAFE_STOP" || record.state == "DEVICE_FAULT" ||
-         record.state == "ABORTED" || record.state == "REJECTED";
+  // The one table, not a second list of literals: this used to enumerate six of
+  // the nine terminal states and silently treated the other three as active.
+  return is_terminal(record.state);
 }
 
 }  // namespace
@@ -63,7 +63,7 @@ InsertResult RequestRegistry::insert(const RequestRecord & record)
     const auto evictable = std::find_if(
       insertion_order_.begin(), insertion_order_.end(), [this](const std::string & request_id) {
         const auto value = records_.find(request_id);
-        return value != records_.end() && is_terminal(value->second);
+        return value != records_.end() && record_is_terminal(value->second);
       });
     if (evictable == insertion_order_.end()) {
       return InsertResult::CAPACITY;
@@ -96,20 +96,41 @@ std::optional<RequestRecord> RequestRegistry::get_by_task_id(const std::string &
   return std::nullopt;
 }
 
-bool RequestRegistry::update_terminal(
-  const std::string & request_id, const std::string & state, const std::uint8_t outcome,
+RequestState RequestRegistry::state_of(const std::string & request_id) const
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  const auto value = records_.find(request_id);
+  return value == records_.end() ? RequestState::kSubmitting : value->second.state;
+}
+
+Transition RequestRegistry::transition(
+  const std::string & request_id, const RequestState to, const std::uint8_t outcome,
   const std::uint16_t error_code, const std::string & message)
 {
   const std::lock_guard<std::mutex> lock(mutex_);
   const auto value = records_.find(request_id);
   if (value == records_.end()) {
-    return false;
+    return {false, "request is not registered"};
   }
-  value->second.state = state;
+  const auto from = value->second.state;
+  if (!is_legal_transition(from, to)) {
+    // Refused, not applied: this is the property the registry never had.
+    return {
+      false, "illegal transition " + std::string(to_string(from)) + " -> " +
+      std::string(to_string(to))};
+  }
+  value->second.state = to;
   value->second.outcome = outcome;
   value->second.error_code = error_code;
   value->second.message = message;
-  return true;
+  return {true, {}};
+}
+
+Transition RequestRegistry::settle(
+  const std::string & request_id, const RequestState to, const std::uint16_t error_code,
+  const std::string & message)
+{
+  return transition(request_id, to, outcome_for(to), error_code, message);
 }
 
 bool RequestRegistry::erase(const std::string & request_id)
