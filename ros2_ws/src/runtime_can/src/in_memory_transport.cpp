@@ -104,6 +104,14 @@ bool InMemoryTransport::set_filter(std::uint32_t, std::uint32_t, std::string & e
   return true;
 }
 
+bool InMemoryTransport::set_kind_filter(
+  const std::vector<std::uint32_t> &, std::uint32_t, std::string & error)
+{
+  // Filtering is the socket's job; a fake delivers what a test injects.
+  error.clear();
+  return true;
+}
+
 bool InMemoryTransport::send(const RawFrame & frame, std::string & error) const
 {
   Responder responder;

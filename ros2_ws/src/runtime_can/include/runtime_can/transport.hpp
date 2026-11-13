@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace runtime_can
 {
@@ -54,6 +55,12 @@ public:
   // the separate execution status.
   virtual bool set_filter(
     std::uint32_t first_frame_id, std::uint32_t second_frame_id, std::string & error) = 0;
+  // Matches one frame kind in every session. A device listens for commands from
+  // whichever session the bridge picked, so an exact id would filter them all out;
+  // the mask is what makes the session nibble a don't-care.
+  virtual bool set_kind_filter(
+    const std::vector<std::uint32_t> & frame_kinds, std::uint32_t kind_mask,
+    std::string & error) = 0;
   virtual bool send(const RawFrame & frame, std::string & error) const = 0;
   // `bus_state` is written only when the result is kBusState; a caller that does
   // not care about link state passes nullptr.

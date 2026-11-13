@@ -101,6 +101,31 @@ bool SocketCan::set_filter(
   return true;
 }
 
+bool SocketCan::set_kind_filter(
+  const std::vector<std::uint32_t> & frame_kinds, const std::uint32_t kind_mask,
+  std::string & error)
+{
+  if (frame_kinds.empty()) {
+    error = "at least one frame kind is required";
+    return false;
+  }
+  std::vector<can_filter> filters(frame_kinds.size());
+  for (std::size_t index = 0; index < frame_kinds.size(); ++index) {
+    filters[index].can_id = frame_kinds[index];
+    // Everything in kind_mask must match; the session nibble is outside it, so any
+    // session passes.
+    filters[index].can_mask = kind_mask;
+  }
+  if (::setsockopt(
+      socket_fd_, SOL_CAN_RAW, CAN_RAW_FILTER, filters.data(),
+      static_cast<socklen_t>(filters.size() * sizeof(can_filter))) < 0)
+  {
+    error = std::strerror(errno);
+    return false;
+  }
+  return true;
+}
+
 bool SocketCan::send(const RawFrame & frame, std::string & error) const
 {
   if (!is_open()) {

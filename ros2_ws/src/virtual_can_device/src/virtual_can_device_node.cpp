@@ -55,7 +55,14 @@ public:
     if (!socket_.open(interface_name_, error)) {
       throw std::runtime_error("failed to open " + interface_name_ + ": " + error);
     }
-    if (!socket_.set_filter(runtime_can::kCommandFrameId, error)) {
+    // A device does not know which session the bridge will pick, so it matches by
+    // frame kind in any session. An exact id would filter every command out as
+    // soon as the session nibble is non-zero.
+    if (!socket_.set_kind_filter(
+        {runtime_can::kCommandFrameId, runtime_can::kSessionStartFrameId,
+          runtime_can::kHeartbeatFrameId},
+        runtime_can::kFrameKindMask, error))
+    {
       throw std::runtime_error("failed to set command filter: " + error);
     }
 

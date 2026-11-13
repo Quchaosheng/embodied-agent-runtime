@@ -45,6 +45,9 @@ public:
   bool set_filter(std::uint32_t frame_id, std::string & error) override;
   bool set_filter(
     std::uint32_t first_frame_id, std::uint32_t second_frame_id, std::string & error) override;
+  bool set_kind_filter(
+    const std::vector<std::uint32_t> & frame_kinds, std::uint32_t kind_mask,
+    std::string & error) override;
   bool send(const RawFrame & frame, std::string & error) const override;
   ReceiveStatus receive(
     RawFrame & frame, std::chrono::milliseconds timeout, std::string & error,
