@@ -35,10 +35,25 @@ struct RuntimeStats
   bool has_data;
   std::uint64_t sample_count;
   std::array<std::uint64_t, 4> outcome_counts;
+  // Requests the gateway never dispatched. They are outside the four action
+  // outcomes because no action ever started, and they used to leave no row at
+  // all, which biased the success rate upward.
+  std::uint64_t rejected_count;
+  // Latency for successful runs only. A SAFE_STOP that took 30 s to time out
+  // moved p99 more than a fast completion did, so a mixed percentile described
+  // neither population.
   std::uint64_t p50_ms;
   std::uint64_t p95_ms;
   std::uint64_t p99_ms;
   std::uint64_t max_ms;
+  // The same percentiles over runs that did not succeed, reported separately
+  // rather than folded in. has_failure_data is false when there were none.
+  bool has_failure_data;
+  std::uint64_t failure_count;
+  std::uint64_t failure_p50_ms;
+  std::uint64_t failure_p95_ms;
+  std::uint64_t failure_p99_ms;
+  std::uint64_t failure_max_ms;
 };
 
 // Durable idempotency record for one admitted gateway request. `fingerprint`
@@ -67,6 +82,11 @@ public:
   bool insert(const TaskRecord & record);
   std::optional<TaskRecord> get(const std::string & task_id) const;
   RuntimeStats stats() const;
+
+  // Bounds task_runs the way request_idempotency is bounded: rows older than
+  // older_than_ns go, but never below keep_at_least rows. The table had no
+  // retention at all, so the sorted percentile scan grew without bound.
+  std::size_t prune_task_runs(std::int64_t older_than_ns, std::size_t keep_at_least);
 
   // Idempotency rows survive restart. ADMITTED is written before dispatch so a
   // crash mid-dispatch is recoverable as uncertain instead of a silent re-run.

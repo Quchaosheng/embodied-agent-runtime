@@ -104,6 +104,12 @@ void fill_durable(
   reply->set_message(known.message);
 }
 
+// A request the gateway never dispatched. It is not one of the four action
+// outcomes because no action ever started; keeping it distinct is what lets a
+// rejected request be counted and read back without being confused with a stop
+// the device actually performed.
+constexpr std::uint8_t kRejectedOutcome = 4;
+
 std::string state_for_outcome(const std::uint8_t outcome)
 {
   switch (outcome) {
@@ -111,6 +117,7 @@ std::string state_for_outcome(const std::uint8_t outcome)
     case ExecuteWorkflow::Result::CANCELED: return "CANCELED";
     case ExecuteWorkflow::Result::SAFE_STOP: return "SAFE_STOP";
     case ExecuteWorkflow::Result::DEVICE_FAULT: return "DEVICE_FAULT";
+    case kRejectedOutcome: return "REJECTED";
     default: return "ABORTED";
   }
 }
@@ -280,6 +287,42 @@ struct GatewayService::State
 
   // Records a terminal rejection in both the cache and the durable ledger, so
   // a rejected request is not admitted again after a restart.
+  // A request rejected here never reaches the executor, so it produced no
+  // TaskEvent and left no row: the success rate was computed over
+  // successful-to-start runs only and could only be biased upward. Recording the
+  // terminal outcome at the point of rejection is what closes that gap.
+  void record_rejected(
+    const RequestRecord & payload, const std::string & state,
+    const std::uint16_t error_code, const std::string & message)
+  {
+    runtime_history::TaskRecord record;
+    record.task_id = payload.task_id;
+    record.request_id = payload.request_id;
+    record.workflow_id = payload.workflow_id;
+    record.target_id = payload.target_id;
+    // ABORTED and outcome 4: the request ended without running. It uses a value
+    // outside the four action outcomes so GetTask can report REJECTED again
+    // rather than presenting a rejected request as a safe stop the device
+    // performed.
+    record.action_status = 2;
+    record.outcome = kRejectedOutcome;
+    record.error_code = error_code;
+    record.duration_ms = 0;
+    record.message = message;
+    record.completed_at_ns = now_ns();
+    try {
+      if (!store.insert(record)) {
+        RCLCPP_WARN(
+          logger, "rejected request %s already had a history row",
+          payload.request_id.c_str());
+      }
+    } catch (const std::exception & error) {
+      RCLCPP_ERROR(
+        logger, "failed to record rejected request %s: %s",
+        payload.request_id.c_str(), error.what());
+    }
+  }
+
   void reject(
     const RequestRecord & payload, const std::string & state, const std::uint16_t error_code,
     const std::string & message)
@@ -291,6 +334,7 @@ struct GatewayService::State
         logger, "failed to persist durable %s request_id=%s", state.c_str(),
         payload.request_id.c_str());
     }
+    record_rejected(payload, state, error_code, message);
   }
 
   runtime_history::Store & store;
@@ -757,6 +801,13 @@ grpc::Status GatewayService::GetStats(
     reply->set_p95_ms(stats.p95_ms);
     reply->set_p99_ms(stats.p99_ms);
     reply->set_max_ms(stats.max_ms);
+    reply->set_has_failure_data(stats.has_failure_data);
+    reply->set_failure_count(stats.failure_count);
+    reply->set_failure_p50_ms(stats.failure_p50_ms);
+    reply->set_failure_p95_ms(stats.failure_p95_ms);
+    reply->set_failure_p99_ms(stats.failure_p99_ms);
+    reply->set_failure_max_ms(stats.failure_max_ms);
+    reply->set_rejected_count(stats.rejected_count);
     reply->set_state(stats.has_data ? "AVAILABLE" : "EMPTY");
     return grpc::Status::OK;
   } catch (const std::exception & error) {

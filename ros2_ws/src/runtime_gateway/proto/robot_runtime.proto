@@ -87,6 +87,8 @@ message RuntimeStats {
   bool has_data = 1;
   uint64 sample_count = 2;
   repeated uint64 outcome_counts = 3;
+  // Latency over successful runs only. A failed run that spent 30 s timing out
+  // moved p99 more than a fast completion did, so these are no longer mixed.
   uint64 p50_ms = 4;
   uint64 p95_ms = 5;
   uint64 p99_ms = 6;
@@ -94,4 +96,15 @@ message RuntimeStats {
   string state = 8;
   uint32 error_code = 9;
   string message = 10;
+  // The same percentiles over runs that did not succeed, reported separately.
+  // has_failure_data is false when there were none.
+  bool has_failure_data = 11;
+  uint64 failure_count = 12;
+  uint64 failure_p50_ms = 13;
+  uint64 failure_p95_ms = 14;
+  uint64 failure_p99_ms = 15;
+  uint64 failure_max_ms = 16;
+  // Requests the gateway rejected before any action started. They left no row at
+  // all before this field existed, so the success rate could only be biased up.
+  uint64 rejected_count = 17;
 }
