@@ -709,11 +709,17 @@ printf 'duplicate\tPASS\tone Gateway dispatch one workflow Goal one ExecuteTask 
 import json, pathlib, sys
 grpc = json.loads(pathlib.Path(sys.argv[1]).read_text())
 sqlite = json.loads(pathlib.Path(sys.argv[2]).read_text())
-fields = ("has_data", "sample_count", "outcome_counts", "p50_ms", "p95_ms", "p99_ms", "max_ms")
-assert all(grpc[field] == sqlite[field] for field in fields), (grpc, sqlite)
+# Percentiles are per population now (#87): the success set covers the two
+# completed runs, the failure set covers the four that did not. Comparing a single
+# mixed p99 is what this assertion used to do, and it described neither.
+shared = ("has_data", "sample_count", "outcome_counts", "p50_ms", "p95_ms", "p99_ms",
+          "max_ms", "has_failure_data", "failure_count", "failure_p50_ms",
+          "failure_p95_ms", "failure_p99_ms", "failure_max_ms")
+assert all(grpc[field] == sqlite[field] for field in shared), (grpc, sqlite)
 assert grpc["has_data"] is True and grpc["sample_count"] == 6, grpc
 assert grpc["outcome_counts"] == [2, 1, 2, 1], grpc
-assert all(isinstance(grpc[field], int) and grpc[field] > 0 for field in fields[3:]), grpc
+assert grpc["has_failure_data"] is True and grpc["failure_count"] == 4, grpc
+assert grpc["p50_ms"] > 0 and grpc["failure_p50_ms"] > 0, grpc
 PY
 printf 'stats\tPASS\t6 samples [2,1,2,1] percentiles agree\n' >> "$EVIDENCE/summary.tsv"
 
