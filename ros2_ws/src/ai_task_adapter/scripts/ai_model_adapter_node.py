@@ -36,6 +36,16 @@ from rclpy.action import ActionClient  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from robot_task_interfaces.action import ExecuteWorkflow  # noqa: E402
 
+# The exit status distinguishes the three ways a dispatch can end, because they
+# call for different operator action: a rejected request is a client mistake, a
+# cancelled one is known to be stopped, and an unconfirmed one may still be
+# running on the device.
+EXIT_OK = 0
+EXIT_REJECTED = 2
+EXIT_FAILED = 4
+EXIT_ACCEPTANCE_CANCELED = 5
+EXIT_ACCEPTANCE_UNCONFIRMED = 6
+
 
 class AiModelAdapterNode(Node):
 
@@ -111,8 +121,18 @@ class AiModelAdapterNode(Node):
         self._targets = list(
             self.declare_parameter('targets', ['dock_a', 'home']).value
         )
+        self._late_acceptance_grace_sec = float(
+            self.declare_parameter('late_acceptance_grace_sec', 3.0).value
+        )
+        if (
+            not math.isfinite(self._late_acceptance_grace_sec)
+            or self._late_acceptance_grace_sec < 0
+            or self._late_acceptance_grace_sec > 60
+        ):
+            raise ValueError('late_acceptance_grace_sec must be in [0, 60]')
         self._client = ActionClient(self, ExecuteWorkflow, 'execute_workflow')
         self._awaiting_acceptance = False
+        self._late_acceptance_handled = False
 
     def run(self) -> int:
         if self._mode not in {'openai_compatible', 'mock', 'replay'}:
@@ -269,15 +289,60 @@ class AiModelAdapterNode(Node):
         send_future.add_done_callback(self._cancel_on_late_acceptance)
         rclpy.spin_until_future_complete(self, send_future, timeout_sec=5.0)
         if not send_future.done():
-            # Only now is an acceptance "late"; anything arriving before this
-            # point is handled normally below.
+            # The old code armed the callback and returned here. main() destroyed
+            # the node and shut rclpy down immediately afterwards, so nothing was
+            # spinning and the callback could never fire: the server accepted the
+            # goal seconds later and ran it to completion while the caller had
+            # been told the request failed. The grace window below is the work
+            # that was missing - the process stays alive long enough for a late
+            # acceptance to arrive and be cancelled.
             self._awaiting_acceptance = True
             self.get_logger().error(
-                'ExecuteWorkflow goal response timed out; a late acceptance will '
-                'be cancelled instead of leaving the goal unattended'
+                'ExecuteWorkflow goal response timed out; waiting '
+                f'{self._late_acceptance_grace_sec:.1f} s for a late acceptance to '
+                'cancel instead of leaving the goal unattended'
             )
+            # Disarm before spinning: the done-callback runs inside the spin that
+            # completes the future, and both paths would otherwise cancel the same
+            # goal.
+            self._awaiting_acceptance = False
+            rclpy.spin_until_future_complete(
+                self, send_future, timeout_sec=self._late_acceptance_grace_sec
+            )
+            if not send_future.done():
+                # Nothing arrived inside the window either. The goal may still be
+                # accepted after this process exits, so this is not a clean
+                # failure and must not be reported as one.
+                self.get_logger().error(
+                    'ExecuteWorkflow acceptance is unconfirmed: no response inside '
+                    'the grace window, so a goal may still be accepted and run '
+                    'unattended'
+                )
+                self._metrics.note_task(False)
+                return EXIT_ACCEPTANCE_UNCONFIRMED
+            self._awaiting_acceptance = False
+            self._late_acceptance_handled = True
+            handle = send_future.result()
+            if handle is not None and handle.accepted:
+                # Accepted late, inside the window: cancel it and say so, which is
+                # a different outcome from "the server refused it".
+                self.get_logger().error(
+                    'ExecuteWorkflow accepted the goal after the response timeout; '
+                    'cancelling it'
+                )
+                try:
+                    handle.cancel_goal_async()
+                except Exception as error:
+                    self.get_logger().error(
+                        f'late ExecuteWorkflow cancellation failed: {error}; '
+                        'the goal outcome is unconfirmed'
+                    )
+                    self._metrics.note_task(False)
+                    return EXIT_ACCEPTANCE_UNCONFIRMED
+                self._metrics.note_task(False)
+                return EXIT_ACCEPTANCE_CANCELED
             self._metrics.note_task(False)
-            return 4
+            return 2
         try:
             goal_handle = send_future.result()
         except Exception as error:
@@ -331,8 +396,14 @@ class AiModelAdapterNode(Node):
         return min(limit_sec, remaining_ns / 1_000_000_000)
 
     def _cancel_on_late_acceptance(self, future) -> None:
-        """Cancel a goal accepted after the caller already reported a timeout."""
-        if not self._awaiting_acceptance:
+        """Cancel a goal accepted after the caller already reported a timeout.
+
+        run() also spins a bounded grace window after the timeout, and handles a
+        late acceptance itself so it can report which of the three outcomes
+        happened. This callback is the backstop for an acceptance that arrives
+        after that window, when run() is no longer waiting.
+        """
+        if not self._awaiting_acceptance or self._late_acceptance_handled:
             return
         # run() arms this flag only after the wait has already timed out, so a
         # callback firing here is by definition late.
@@ -340,7 +411,7 @@ class AiModelAdapterNode(Node):
             handle = future.result() if future.done() else None
         except Exception:
             return
-        self._awaiting_acceptance = False
+        self._late_acceptance_handled = True
         if handle is None or not handle.accepted:
             return
         self.get_logger().error(

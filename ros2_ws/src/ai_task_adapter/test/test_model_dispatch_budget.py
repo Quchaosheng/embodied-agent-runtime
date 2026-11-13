@@ -186,6 +186,8 @@ def build_node(**overrides):
     node._metrics = adapter_module.ModelRuntimeMetrics()
     node._client = FakeActionClient()
     node._awaiting_acceptance = False
+    node._late_acceptance_handled = False
+    node._late_acceptance_grace_sec = 3.0
     node.get_logger = lambda: FakeLogger()
     for key, value in overrides.items():
         setattr(node, key, value)
@@ -233,51 +235,142 @@ class ModelDispatchBudgetTest(unittest.TestCase):
         self.assertEqual(client.sent, 0)
 
 
+class PumpedSpin:
+    """A stand-in for rclpy.spin_until_future_complete that pumps for real.
+
+    The old tests resolved the fake future by hand after run() returned, which is
+    precisely the work no live node was doing - so they passed while the shipped
+    process could never deliver the cancel. This pump delivers an acceptance
+    during the spin the production code performs, and fails the case if nothing
+    is spinning to receive it.
+    """
+
+    def __init__(self, future=None, handle_factory=None, grace_timeout_sec=None):
+        self.future = future
+        self.handle_factory = handle_factory
+        # The acceptance is delivered only on the spin that runs the grace window,
+        # which is the bounded wait the production code added. Delivering it on the
+        # first spin would mean the acceptance was not late at all.
+        self.grace_timeout_sec = grace_timeout_sec
+        self.calls = 0
+        self.pumped_while_pending = 0
+
+    def __call__(self, node, future, timeout_sec=None):
+        self.calls += 1
+        if future is not self.future or future.done():
+            return None
+        if self.grace_timeout_sec is not None and timeout_sec != self.grace_timeout_sec:
+            return None
+        self.pumped_while_pending += 1
+        future.resolve(self.handle_factory())
+        return None
+
+
 class ModelLateAcceptanceTest(unittest.TestCase):
     """A goal accepted after the response timeout must not run unattended."""
 
     def setUp(self):
         self._patches = [
             mock.patch.object(adapter_module.time, 'monotonic_ns', clock.monotonic_ns),
-            mock.patch.object(adapter_module.rclpy, 'spin_until_future_complete',
-                              lambda *args, **kwargs: None),
         ]
         for patch in self._patches:
             patch.start()
         clock.now_ns = 0
+        self._pump = None
 
     def tearDown(self):
         for patch in reversed(self._patches):
             patch.stop()
 
-    def test_late_acceptance_after_response_timeout_is_cancelled(self):
+    def _install_pump(self, **kwargs):
+        self._pump = PumpedSpin(**kwargs)
+        patcher = mock.patch.object(
+            adapter_module.rclpy, 'spin_until_future_complete', self._pump
+        )
+        patcher.start()
+        self._patches.append(patcher)
+
+    def test_acceptance_inside_the_grace_window_is_cancelled(self):
         client = FakeActionClient(send_done=False)
         node = build_node(_client=client)
+        self._install_pump(
+            future=None, handle_factory=FakeGoalHandle,
+            grace_timeout_sec=node._late_acceptance_grace_sec,
+        )
+        # The pump needs the future, which only exists once send_goal_async runs,
+        # so bind it after construction.
+        node._client = client
+        original = client.send_goal_async
+
+        def send(goal):
+            future = original(goal)
+            self._pump.future = future
+            return future
+
+        client.send_goal_async = send
         exit_code = node.run()
-        self.assertEqual(exit_code, 4)
+
+        # The acceptance arrived while the process was still spinning, and was
+        # cancelled: that is the outcome the issue asked for.
+        self.assertEqual(exit_code, adapter_module.EXIT_ACCEPTANCE_CANCELED)
+        self.assertEqual(client.sent, 1)
+        self.assertEqual(client.pending_future.result().cancelled, 1)
+        self.assertGreater(self._pump.pumped_while_pending, 0)
+
+    def test_no_acceptance_inside_the_window_is_reported_unconfirmed(self):
+        client = FakeActionClient(send_done=False)
+        node = build_node(_client=client)
+
+        # Never resolves: the grace window expires with the outcome unknown.
+        class SilentPump:
+            calls = 0
+
+            def __call__(self, _node, future, timeout_sec=None):
+                self.calls += 1
+                return None
+
+        pump = SilentPump()
+        patcher = mock.patch.object(
+            adapter_module.rclpy, 'spin_until_future_complete', pump
+        )
+        patcher.start()
+        self._patches.append(patcher)
+
+        exit_code = node.run()
+        # Not a clean failure: the goal may still be accepted after exit.
+        self.assertEqual(exit_code, adapter_module.EXIT_ACCEPTANCE_UNCONFIRMED)
         self.assertEqual(client.sent, 1)
 
-        # The server accepts after run() already reported the timeout.
-        accepted = FakeGoalHandle()
-        client.pending_future.resolve(accepted)
-        self.assertEqual(accepted.cancelled, 1)
-
-    def test_acceptance_before_the_timeout_is_not_cancelled(self):
-        client = FakeActionClient()
-        node = build_node(_client=client)
-        node.run()
-        self.assertEqual(client.last_handle.cancelled, 0)
-
-    def test_rejected_late_response_is_not_cancelled(self):
+    def test_rejection_inside_the_window_is_not_cancelled(self):
         class RejectedHandle(FakeGoalHandle):
             accepted = False
 
         client = FakeActionClient(send_done=False)
         node = build_node(_client=client)
+        self._install_pump(future=None, handle_factory=RejectedHandle)
+        original = client.send_goal_async
+
+        def send(goal):
+            future = original(goal)
+            self._pump.future = future
+            return future
+
+        client.send_goal_async = send
+        exit_code = node.run()
+
+        self.assertEqual(exit_code, adapter_module.EXIT_REJECTED)
+        self.assertEqual(client.pending_future.result().cancelled, 0)
+
+    def test_acceptance_before_the_timeout_is_not_cancelled(self):
+        client = FakeActionClient()
+        node = build_node(_client=client)
+        patcher = mock.patch.object(
+            adapter_module.rclpy, 'spin_until_future_complete', lambda *a, **k: None
+        )
+        patcher.start()
+        self._patches.append(patcher)
         node.run()
-        rejected = RejectedHandle()
-        client.pending_future.resolve(rejected)
-        self.assertEqual(rejected.cancelled, 0)
+        self.assertEqual(client.last_handle.cancelled, 0)
 
 
 if __name__ == '__main__':
