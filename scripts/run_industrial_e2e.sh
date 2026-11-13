@@ -659,11 +659,15 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
     match = re.search(r"\s([0-9A-Fa-f]+)#([0-9A-Fa-f]{16})$", line)
     assert match, line
     frames.append((int(match.group(1), 16), bytes.fromhex(match.group(2))))
-stops = [data for frame_id, data in frames if frame_id == 0x100 and data[3] == 0xFF]
+# The frame kind lives in bits 7..4 and the session in bits 10..8, so a v2 id is
+# not the v1 constant. Matching the kind rather than the whole id is what makes
+# this independent of which session the bridge happened to pick.
+stops = [data for frame_id, data in frames
+         if (frame_id & 0xF0) == 0x00 and data[3] == 0xFF]
 assert len(stops) == 1, frames
 stop_id = int.from_bytes(stops[0][1:3], "big")
 responses = [data for frame_id, data in frames
-             if frame_id == 0x101 and int.from_bytes(data[1:3], "big") == stop_id]
+             if (frame_id & 0xF0) == 0x10 and int.from_bytes(data[1:3], "big") == stop_id]
 if sys.argv[2] == "present":
     assert len(responses) == 1 and responses[0][4] == 3, responses
 else:
