@@ -214,6 +214,18 @@ jobs:
           WORKSPACE="$GITHUB_WORKSPACE/ros2_ws" SETUP_VCAN=0 \
             bash scripts/run_industrial_e2e.sh
 
+      # A failure in the step above is otherwise a single line with no evidence.
+      - name: Upload the E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          path: |
+            **/e2e-evidence/**
+            **/evidence/**
+          if-no-files-found: ignore
+          retention-days: 7
+
       # Unstable tests are hunted here rather than by re-running CI: a case that
       # only fails under load is a property of the test, and repeating it is the
       # only way to see it.

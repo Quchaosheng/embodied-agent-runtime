@@ -58,7 +58,25 @@ EXECUTOR_LOG="$EVIDENCE/executor.log"
 OBSERVER_PID=""
 
 record() { printf '%s\n' "$*" | tee -a "$EVIDENCE/assertions.log"; }
-fail() { record "FAIL: $*" >&2; return 1; }
+# Dumps the logs a failure needs to be diagnosable. Without this a CI failure
+# was one line with no evidence, and the evidence directory was never uploaded.
+dump_context() {
+  local file
+  for file in monitor.log bridge.log executor.log history.log orchestrator.log \
+              gateway.log virtual.log can.log; do
+    [[ -f "$EVIDENCE/$file" ]] || continue
+    printf '\n===== %s (last 40 lines) =====\n' "$file" >&2
+    tail -n 40 "$EVIDENCE/$file" >&2 || true
+  done
+}
+
+fail() {
+  record "FAIL: $*" >&2
+  if [[ "${E2E_DUMP_CONTEXT:-1}" == 1 ]]; then
+    dump_context
+  fi
+  return 1
+}
 
 process_is_running() {
   local pid=$1 state
