@@ -1,6 +1,7 @@
 #include "robot_task_interfaces/msg/device_state.hpp"
 #include "runtime_can/protocol.hpp"
 #include "runtime_can/socket_can.hpp"
+#include "virtual_can_device/device_modes.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -75,12 +76,9 @@ private:
 
   static bool is_supported_mode(const std::string & mode)
   {
-    return mode == "normal" || mode == "delay_ack" || mode == "drop_ack" ||
-           mode == "drop_stop_ack" || mode == "reject" || mode == "fault" ||
-           // Reports execution separately: ACK, then accepted/executing, then
-           // a terminal status. The ACK-only modes above never emit a status.
-           mode == "completion" || mode == "completion_fault" ||
-           mode == "completion_never_finishes";
+    // The list lives in virtual_can_device/device_modes.hpp so a launch file can
+    // generate its help text from it instead of restating it and drifting.
+    return virtual_can_device::is_supported(mode);
   }
 
   void receive_loop()

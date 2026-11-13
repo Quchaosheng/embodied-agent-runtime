@@ -166,6 +166,11 @@ baseline. The X5 evidence below was collected separately on Ubuntu 22.04 with
 ROS 2 Humble; it is not a claim that the X5 was validated on Jazzy, and the
 two distributions must not be mixed in one environment.
 
+CI builds and tests **Jazzy on Ubuntu 24.04 only**. Humble is a supported
+*board* profile, exercised by the ARM64 smoke scripts on the target image, not a
+CI job: nothing in this repository's CI compiles against Humble, so a Humble
+regression would not be caught here.
+
 This path assumes a working Ubuntu 24.04 installation with ROS 2 Jazzy and the
 standard ROS development tools already installed. A fresh machine must first
 install ROS 2 Jazzy, `colcon`, `rosdep`, a C/C++ toolchain, Python 3, Git,
