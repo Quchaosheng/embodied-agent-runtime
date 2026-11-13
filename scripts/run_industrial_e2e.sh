@@ -230,7 +230,11 @@ start_direct() {
   # Line-buffered, because a node killed with SIGTERM otherwise loses its whole
   # stdout buffer and the failure has no evidence at all - four of the eight log
   # files in a failed run were empty for exactly this reason.
-  stdbuf -oL -eL "$executable" "$@" > "$logfile" 2>&1 &
+  #
+  # `exec` so stdbuf is replaced by the node: the E2E asserts that /proc/PID/exe is
+  # the node itself, and without it every startup check failed with
+  # "PID ... is not the direct executable".
+  ( exec stdbuf -oL -eL "$executable" "$@" > "$logfile" 2>&1 ) &
   local pid=$!
   register_process "$label" "$pid" "$executable" "$logfile"
 }
