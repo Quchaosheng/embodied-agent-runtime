@@ -60,7 +60,13 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source ros2_ws/install/setup.bash
-          export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1"
+          # The suppression file covers one third-party pattern only: Fast DDS
+          # reuses a topic payload buffer between the CDR serializer and
+          # deserializer, and the happens-before edge lives in the transport's
+          # shared-memory handshake, which TSan cannot model. Everything else in
+          # the stack stays instrumented - this job found a real race of ours on
+          # its first run.
+          export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 suppressions=$GITHUB_WORKSPACE/scripts/tsan_suppressions.txt"
           export ASAN_OPTIONS="detect_leaks=0 halt_on_error=1"
           # TSan refuses to start under the runner's ASLR layout ("unexpected
           # memory mapping"), so it is run with randomization disabled. ASan does

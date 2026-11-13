@@ -1,0 +1,13 @@
+# ThreadSanitizer suppressions for races that are not in this repository.
+#
+# Fast DDS reuses one topic payload pool between an Action client's feedback
+# subscription and the Action server's feedback publication, so the CDR serializer
+# and deserializer touch the same buffer. The happens-before edge between them
+# lives in the DDS transport's shared-memory handshake, which TSan does not model:
+# it reports the pair itself as "As if synchronized via sleep".
+#
+# Suppressing by function keeps the rest of the transport stack instrumented. The
+# first TSan run found a real race of ours (process_shutdown_requested), so the job
+# stays on; this only removes a third-party pattern we cannot fix here.
+race:eprosima::fastcdr::Cdr::serialize_array
+race:eprosima::fastcdr::Cdr::deserialize_array
