@@ -35,7 +35,12 @@
 
 namespace
 {
-volatile std::sig_atomic_t process_shutdown_requested{};
+// Read by the run loop and written from the signal handler and from a test's spin
+// hook, so it needs to be atomic: `volatile sig_atomic_t` is the right type for a
+// handler on its own, but it says nothing about two threads, and TSan reports the
+// pair as a data race. std::atomic on an integer is lock-free, so it stays
+// signal-safe.
+std::atomic<std::sig_atomic_t> process_shutdown_requested{0};
 }  // namespace
 
 class TaskExecutorNode : public rclcpp::Node
@@ -1207,11 +1212,11 @@ int run_task_executor_node(
       }
       spin_finished = true;
     });
-  while (process_shutdown_requested == 0 && !spin_finished) {
+  while (process_shutdown_requested.load() == 0 && !spin_finished) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
-  if (process_shutdown_requested != 0) {
+  if (process_shutdown_requested.load() != 0) {
     request_task_executor_shutdown(node);
     while (!wait_for_task_executor_shutdown_for(node, std::chrono::milliseconds(25))) {
       if (spin_finished) {
