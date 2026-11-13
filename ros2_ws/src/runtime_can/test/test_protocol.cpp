@@ -126,3 +126,53 @@ TEST(ProtocolTest, RejectsAStatusFrameWithTheWrongId)
   EXPECT_FALSE(runtime_can::decode_status(frame, error).has_value());
   EXPECT_EQ(error, runtime_can::DecodeError::kWrongFrameId);
 }
+
+// Every frame id must fit the 11-bit standard-frame mask. SocketCan ANDs each id
+// with CAN_SFF_MASK, so a session nibble placed above bit 10 was silently
+// truncated to the frame kind alone and the device never saw the command. No unit
+// test caught it because InMemoryTransport does not mask; the vcan E2E did.
+TEST(ProtocolTest, EverySessionFrameIdFitsTheStandardFrameMask)
+{
+  constexpr std::uint32_t kCanSffMask = 0x7FF;
+  for (std::uint32_t session = 0; session <= runtime_can::kMaxSession; ++session) {
+    const auto typed = static_cast<std::uint8_t>(session);
+    for (const auto kind : {
+      runtime_can::kCommandFrameKind, runtime_can::kResponseFrameKind,
+      runtime_can::kStatusFrameKind, runtime_can::kSessionStartFrameKind,
+      runtime_can::kHeartbeatFrameKind})
+    {
+      const auto id = runtime_can::frame_id(typed, kind);
+      EXPECT_LE(id, kCanSffMask)
+        << "session " << session << " kind " << kind << " produced 0x" << std::hex << id;
+      // Truncation is the failure mode: the masked id must still be this frame.
+      EXPECT_EQ(id & kCanSffMask, id);
+      EXPECT_EQ(id >> runtime_can::kSessionShift & runtime_can::kMaxSession, session);
+      EXPECT_EQ(runtime_can::kind_of(id), kind << runtime_can::kFrameKindShift);
+    }
+  }
+}
+
+// Round-trip through the exact mask SocketCan applies, so a regression here fails
+// without needing a vcan interface.
+TEST(ProtocolTest, CommandsSurviveTheSocketCanMask)
+{
+  constexpr std::uint32_t kCanSffMask = 0x7FF;
+  for (std::uint8_t session = 1; session <= runtime_can::kMaxSession; ++session) {
+    const runtime_can::Command command{5, 1, 42, session};
+    auto frame = runtime_can::encode_command(command);
+    frame.id &= kCanSffMask;  // what the socket does on send
+
+    runtime_can::DecodeError error;
+    const auto decoded = runtime_can::decode_command(frame, error);
+    ASSERT_TRUE(decoded.has_value()) << "session " << static_cast<int>(session);
+    EXPECT_EQ(decoded->session, session);
+    EXPECT_EQ(decoded->command_id, 5u);
+
+    runtime_can::Response response{5, 0, 1, {0, 0, 0}, session};
+    auto response_frame = runtime_can::encode_response(response);
+    response_frame.id &= kCanSffMask;
+    const auto decoded_response = runtime_can::decode_response(response_frame, error);
+    ASSERT_TRUE(decoded_response.has_value());
+    EXPECT_EQ(decoded_response->session, session);
+  }
+}

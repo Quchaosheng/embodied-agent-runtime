@@ -13,17 +13,19 @@ namespace runtime_can
 // replay-cache collision: a device cannot serve an id from a previous process
 // because the session differs.
 //
-//   bits 15..12 session, 0-15  (the bridge picks one at startup)
-//   bits 11..8  frame kind     0 command, 1 response, 2 status,
+//   bits 10..8  session, 0-7   (the bridge picks one at startup)
+//   bits  7..4  frame kind     0 command, 1 response, 2 status,
 //                              3 session-start, 4 heartbeat
-//   bits  7..0  unused, zero
+//   bits  3..0  unused, zero
 //
-// A v1 peer used 0x100-0x102, so v2 ids sit in the same 11-bit SFF space and do
-// not collide with them; the session nibble is what a v1 peer ignores.
-constexpr std::uint32_t kSessionShift = 12;
-constexpr std::uint8_t kMaxSession = 15;
-constexpr std::uint32_t kFrameKindShift = 8;
-constexpr std::uint32_t kFrameKindMask = 0x0F00;
+// The whole id must fit the 11-bit standard-frame mask (0x7FF): SocketCan ANDs
+// every id with CAN_SFF_MASK, so a session above bit 10 was silently truncated to
+// the frame kind alone and the device never saw the command. v1 used 0x100-0x102,
+// which is kind 0x10-0x12 in this layout, so the two never collide.
+constexpr std::uint32_t kSessionShift = 8;
+constexpr std::uint8_t kMaxSession = 7;
+constexpr std::uint32_t kFrameKindShift = 4;
+constexpr std::uint32_t kFrameKindMask = 0x00F0;
 constexpr std::uint32_t kCommandFrameKind = 0;
 constexpr std::uint32_t kResponseFrameKind = 1;
 constexpr std::uint32_t kStatusFrameKind = 2;
