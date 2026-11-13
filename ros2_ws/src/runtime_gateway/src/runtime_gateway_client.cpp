@@ -219,6 +219,16 @@ int get_stats(runtime_gateway::RobotRuntime::Stub & stub, const int argc)
             << ",\"p95_ms\":" << reply.p95_ms()
             << ",\"p99_ms\":" << reply.p99_ms()
             << ",\"max_ms\":" << reply.max_ms()
+            // The per-population fields added in #87; the E2E compares them against
+            // the history report, so a client that omitted them made the comparison
+            // impossible rather than wrong.
+            << ",\"has_failure_data\":" << (reply.has_failure_data() ? "true" : "false")
+            << ",\"failure_count\":" << reply.failure_count()
+            << ",\"failure_p50_ms\":" << reply.failure_p50_ms()
+            << ",\"failure_p95_ms\":" << reply.failure_p95_ms()
+            << ",\"failure_p99_ms\":" << reply.failure_p99_ms()
+            << ",\"failure_max_ms\":" << reply.failure_max_ms()
+            << ",\"rejected_count\":" << reply.rejected_count()
             << ",\"state\":" << quote(reply.state())
             << ",\"error_code\":" << reply.error_code()
             << ",\"message\":" << quote(reply.message()) << "}\n";
