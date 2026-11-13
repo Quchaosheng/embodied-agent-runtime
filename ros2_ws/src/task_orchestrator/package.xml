@@ -11,6 +11,7 @@
 
   <depend>ament_index_cpp</depend>
   <depend>behaviortree_cpp</depend>
+  <depend>diagnostic_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>robot_task_interfaces</depend>

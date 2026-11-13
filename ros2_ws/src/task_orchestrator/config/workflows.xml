@@ -1,8 +1,14 @@
 <root BTCPP_format="4">
+  <!-- ReactiveSequence, not Sequence: a plain Sequence ticks RuntimeReady once and
+       remembers SUCCESS, so readiness lost during ExecuteTask is never observed and
+       the running task is not stopped. ReactiveSequence re-ticks the condition on
+       every tick, so a latched bridge fault or a false /runtime/ready halts
+       ExecuteTask, which cancels the child instead of letting it run to its own
+       timeout. -->
   <BehaviorTree ID="single_task">
-    <Sequence><RuntimeReady/><ExecuteTask/></Sequence>
+    <ReactiveSequence><RuntimeReady/><ExecuteTask/></ReactiveSequence>
   </BehaviorTree>
   <BehaviorTree ID="ready_then_task">
-    <Sequence><RetryReady attempts="2" delay_ms="100"/><ExecuteTask/></Sequence>
+    <ReactiveSequence><RetryReady attempts="2" delay_ms="100"/><ExecuteTask/></ReactiveSequence>
   </BehaviorTree>
 </root>

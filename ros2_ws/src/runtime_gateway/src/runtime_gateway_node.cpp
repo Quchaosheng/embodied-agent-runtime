@@ -13,6 +13,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+
 namespace
 {
 
@@ -56,9 +58,39 @@ int main(int argc, char ** argv)
           RCLCPP_WARN(logger, "durable ledger prune failed: %s", error.what());
         }
       });
+    // The monitor's readiness is defined against a component list that includes
+    // this node, so it has to report itself: a gateway that is up but unable to
+    // take requests used to look identical to one that was fine.
+    auto diagnostics = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
+      "/diagnostics", rclcpp::QoS(10).reliable());
+    auto publish_health = [&node, &diagnostics, &service](const std::string & message) {
+        diagnostic_msgs::msg::DiagnosticStatus status;
+        status.name = "runtime/gateway";
+        status.hardware_id = "robot_runtime";
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+        status.message = message;
+        diagnostic_msgs::msg::KeyValue inflight;
+        inflight.key = "in_flight";
+        inflight.value = std::to_string(service.active_request_count());
+        status.values.push_back(inflight);
+        diagnostic_msgs::msg::DiagnosticArray array;
+        array.header.stamp = node->now();
+        array.status.push_back(std::move(status));
+        diagnostics->publish(array);
+      };
+
     runtime_gateway::LoopbackServer server(service, port);
     server.start();
     RCLCPP_INFO(node->get_logger(), "gRPC listening on %s", server.address().c_str());
+
+    const auto health_period_ms = node->declare_parameter<std::int64_t>(
+      "diagnostic_period_ms", 1000);
+    if (health_period_ms <= 0 || health_period_ms > 60000) {
+      throw std::invalid_argument("diagnostic_period_ms must be in [1, 60000]");
+    }
+    auto health_timer = node->create_wall_timer(
+      std::chrono::milliseconds(health_period_ms),
+      [&publish_health, &server]() {publish_health("serving on " + server.address());});
 
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(node);

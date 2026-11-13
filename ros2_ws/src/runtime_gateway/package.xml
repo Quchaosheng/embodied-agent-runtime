@@ -12,6 +12,7 @@
   <build_depend>libgrpc</build_depend>
   <build_depend>protobuf-dev</build_depend>
   <build_depend>protobuf-compiler-grpc</build_depend>
+  <depend>diagnostic_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>robot_task_interfaces</depend>
