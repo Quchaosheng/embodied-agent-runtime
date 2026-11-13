@@ -37,6 +37,11 @@ install(TARGETS robot_task_interfaces_error_code
   LIBRARY DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
 
+# Lets the shell scripts read a code instead of restating it.
+add_executable(print_error_code scripts/print_error_code.cpp)
+target_link_libraries(print_error_code robot_task_interfaces_error_code)
+install(TARGETS print_error_code RUNTIME DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # The project has no license headers yet.

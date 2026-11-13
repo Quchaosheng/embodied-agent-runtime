@@ -72,6 +72,12 @@ dump_context() {
   done
 }
 
+# Reads a code from the one table instead of restating the number here.
+ERROR_CODE_TOOL="$WORKSPACE/install/robot_task_interfaces/lib/robot_task_interfaces/print_error_code"
+error_code() {
+  "$ERROR_CODE_TOOL" "$1"
+}
+
 fail() {
   record "FAIL: $*" >&2
   if [[ "${E2E_DUMP_CONTEXT:-1}" == 1 ]]; then
@@ -664,24 +670,31 @@ PY
 
 assert_task normal COMPLETED 0 0; assert_event normal 0 0
 printf 'normal\tPASS\tCOMPLETED/0\n' >> "$EVIDENCE/summary.tsv"
-assert_task fault302 DEVICE_FAULT 3 302; assert_event fault302 3 302
-printf 'fault302\tPASS\tDEVICE_FAULT/302\n' >> "$EVIDENCE/summary.tsv"
+# The codes come from robot_task_interfaces/error_code.hpp, not from literals:
+# restating them is how this script drifted from the table when it was repartitioned.
+assert_task fault302 DEVICE_FAULT 3 "$(error_code device_rejected:2)"
+assert_event fault302 3 "$(error_code device_rejected:2)"
+printf 'fault302\tPASS\tDEVICE_FAULT/%s\n' "$(error_code device_rejected:2)" >> "$EVIDENCE/summary.tsv"
 assert_task cancel CANCELED 1 0; assert_event cancel 1 0
 assert_stop_can cancel present
 grep -Fq 'STOP acknowledged' "$EVIDENCE/cancel/virtual.log" || fail "cancel did not observe STOPPED"
 printf 'cancel\tPASS\tCANCELED/0 STOPPED\n' >> "$EVIDENCE/summary.tsv"
-assert_task drop_stop_ack SAFE_STOP 2 204; assert_event drop_stop_ack 2 204
+assert_task drop_stop_ack SAFE_STOP 2 "$(error_code kDeviceStopTimeout)"
+assert_event drop_stop_ack 2 "$(error_code kDeviceStopTimeout)"
 assert_stop_can drop_stop_ack absent
 grep -Fq 'Dropping STOP ACK' "$EVIDENCE/drop_stop_ack/virtual.log" ||
   fail "drop_stop_ack did not drop STOP response"
 ! grep -Fq 'STOP acknowledged' "$EVIDENCE/drop_stop_ack/virtual.log" ||
   fail "drop_stop_ack unexpectedly received STOP response"
-printf 'drop_stop_ack\tPASS\tSAFE_STOP/204 no STOP response\n' >> "$EVIDENCE/summary.tsv"
-assert_task ack_timeout SAFE_STOP 2 201; assert_event ack_timeout 2 201
+printf 'drop_stop_ack\tPASS\tSAFE_STOP/%s no STOP response\n' \
+  "$(error_code kDeviceStopTimeout)" >> "$EVIDENCE/summary.tsv"
+assert_task ack_timeout SAFE_STOP 2 "$(error_code kDeviceAckTimeout)"
+assert_event ack_timeout 2 "$(error_code kDeviceAckTimeout)"
 assert_stop_can ack_timeout present
 grep -Fq 'STOP acknowledged' "$EVIDENCE/ack_timeout/virtual.log" ||
   fail "ACK timeout did not observe STOPPED"
-printf 'ack_timeout\tPASS\tSAFE_STOP/201 STOP acknowledged\n' >> "$EVIDENCE/summary.tsv"
+printf 'ack_timeout\tPASS\tSAFE_STOP/%s STOP acknowledged\n' \
+  "$(error_code kDeviceAckTimeout)" >> "$EVIDENCE/summary.tsv"
 /usr/bin/python3 - "$EVIDENCE/duplicate/assertions.json" <<'PY'
 import json, pathlib, sys
 assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
