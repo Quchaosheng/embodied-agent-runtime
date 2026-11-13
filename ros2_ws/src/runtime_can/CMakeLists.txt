@@ -9,7 +9,9 @@ find_package(ament_cmake REQUIRED)
 
 add_library(runtime_can
   src/protocol.cpp
-  src/socket_can.cpp)
+  src/socket_can.cpp
+  src/in_memory_transport.cpp
+  src/can_link.cpp)
 target_compile_features(runtime_can PUBLIC cxx_std_17)
 target_include_directories(runtime_can PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -31,6 +33,12 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_protocol test/test_protocol.cpp)
   target_link_libraries(test_protocol runtime_can)
+
+  ament_add_gtest(test_in_memory_transport test/test_in_memory_transport.cpp)
+  target_link_libraries(test_in_memory_transport runtime_can)
+
+  ament_add_gtest(test_can_link test/test_can_link.cpp)
+  target_link_libraries(test_can_link runtime_can)
 endif()
 
 ament_export_targets(export_runtime_can HAS_LIBRARY_TARGET)

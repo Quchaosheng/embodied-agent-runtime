@@ -33,13 +33,28 @@ target_include_directories(device_bridge_diagnostics PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(device_bridge_diagnostics diagnostic_msgs)
 
-add_executable(device_bridge_node src/device_bridge_node.cpp)
-target_compile_features(device_bridge_node PUBLIC cxx_std_17)
-target_link_libraries(device_bridge_node
+# The node is a library so a test can construct it with an injected transport;
+# the executable is only the entry point.
+add_library(device_bridge_node_lib src/device_bridge_node.cpp)
+target_compile_features(device_bridge_node_lib PUBLIC cxx_std_17)
+target_include_directories(device_bridge_node_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(device_bridge_node_lib
   device_bridge_diagnostics
   device_bridge_policy
   runtime_can::runtime_can
   runtime_history::runtime_history_stage_events)
+ament_target_dependencies(device_bridge_node_lib
+  builtin_interfaces
+  diagnostic_msgs
+  rclcpp
+  rclcpp_action
+  robot_task_interfaces)
+
+add_executable(device_bridge_node src/device_bridge_main.cpp)
+target_compile_features(device_bridge_node PUBLIC cxx_std_17)
+target_link_libraries(device_bridge_node device_bridge_node_lib)
 ament_target_dependencies(device_bridge_node
   builtin_interfaces
   diagnostic_msgs
@@ -57,6 +72,7 @@ ament_target_dependencies(device_bridge_client
 
 install(TARGETS
   device_bridge_diagnostics
+  device_bridge_node_lib
   device_bridge_policy
   device_bridge_node
   device_bridge_client
@@ -80,6 +96,13 @@ if(BUILD_TESTING)
   ament_add_gtest(test_diagnostic_state test/test_diagnostic_state.cpp)
   target_link_libraries(test_diagnostic_state device_bridge_diagnostics)
   ament_target_dependencies(test_diagnostic_state diagnostic_msgs)
+
+  # Node-level tests: a real Action client against an injected transport, so the
+  # command path runs in colcon test without vcan.
+  ament_add_gtest(test_device_bridge_node test/test_device_bridge_node.cpp)
+  target_link_libraries(test_device_bridge_node device_bridge_node_lib)
+  ament_target_dependencies(test_device_bridge_node
+    builtin_interfaces rclcpp rclcpp_action robot_task_interfaces)
 endif()
 
 ament_export_targets(export_device_bridge HAS_LIBRARY_TARGET)

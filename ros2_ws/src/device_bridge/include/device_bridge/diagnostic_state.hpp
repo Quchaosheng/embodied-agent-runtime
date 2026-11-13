@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <mutex>
+#include <string>
 
 namespace device_bridge
 {
@@ -22,7 +23,16 @@ public:
   void record_device_fault(std::uint16_t error_code);
   void record_stop_failure(std::uint16_t error_code);
   void record_transport_error(std::uint16_t error_code);
+  // Bus-off arrives from the controller, not from a command, so it is its own
+  // latch rather than another transport error: only re-opening the interface
+  // clears it.
+  void record_bus_off();
   diagnostic_msgs::msg::DiagnosticStatus snapshot(bool socket_ready) const;
+  // The link counters have no home in the phase machine, so they are passed in
+  // rather than duplicated in another member.
+  diagnostic_msgs::msg::DiagnosticStatus snapshot(
+    bool socket_ready, std::uint64_t unmatched_frames, std::uint64_t overflow_frames,
+    std::uint64_t reconnects) const;
 
 private:
   enum class DevicePhase
@@ -42,6 +52,7 @@ private:
   std::uint64_t ack_timeout_count_{0};
   std::uint64_t device_fault_count_{0};
   std::uint64_t stop_failure_count_{0};
+  std::uint64_t bus_off_count_{0};
   bool error_latched_{false};
 };
 
