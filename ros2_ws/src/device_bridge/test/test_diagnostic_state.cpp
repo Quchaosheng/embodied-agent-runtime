@@ -88,7 +88,36 @@ TEST(DeviceDiagnosticStateTest, SnapshotExposesStableIdentityPhasesAndKeys)
   EXPECT_EQ(value(status, "device_fault_count"), "0");
   EXPECT_EQ(value(status, "stop_failure_count"), "0");
   EXPECT_EQ(value(status, "last_error_code"), "0");
-  EXPECT_EQ(status.values.size(), 8U);
+  EXPECT_EQ(value(status, "bus_off_count"), "0");
+  EXPECT_EQ(status.values.size(), 9U);
+}
+
+TEST(DeviceDiagnosticStateTest, LinkCountersExtendTheSnapshotWithoutReplacingIt)
+{
+  device_bridge::DeviceDiagnosticState state;
+  const auto base = state.snapshot(true);
+  const auto extended = state.snapshot(true, 4, 2, 1);
+
+  EXPECT_EQ(extended.values.size(), base.values.size() + 3U);
+  EXPECT_EQ(value(extended, "unmatched_frames"), "4");
+  EXPECT_EQ(value(extended, "overflow_frames"), "2");
+  EXPECT_EQ(value(extended, "reconnects"), "1");
+  // The keys a consumer already reads are unchanged.
+  EXPECT_EQ(value(extended, "ready"), "true");
+  EXPECT_EQ(value(extended, "state"), "IDLE");
+}
+
+TEST(DeviceDiagnosticStateTest, BusOffIsLatchedAndCounted)
+{
+  device_bridge::DeviceDiagnosticState state;
+  state.begin_command(31);
+  state.record_bus_off();
+  const auto status = state.snapshot(true);
+
+  EXPECT_EQ(status.level, diagnostic_msgs::msg::DiagnosticStatus::ERROR);
+  EXPECT_EQ(value(status, "bus_off_count"), "1");
+  EXPECT_EQ(value(status, "state"), "IDLE");
+  EXPECT_EQ(value(status, "active_command_id"), "0");
 }
 
 TEST(DeviceDiagnosticStateTest, FaultsAreCumulativeAndTransportDoesNotChangeCounters)

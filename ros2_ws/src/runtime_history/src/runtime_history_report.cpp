@@ -37,7 +37,16 @@ void print_stats(runtime_history::Store & store)
             << ",\"p50_ms\":" << stats.p50_ms
             << ",\"p95_ms\":" << stats.p95_ms
             << ",\"p99_ms\":" << stats.p99_ms
-            << ",\"max_ms\":" << stats.max_ms << "}\n";
+            << ",\"max_ms\":" << stats.max_ms
+            // Percentiles are per population now (#87); the report exposes both so
+            // a consumer is not silently handed a mixed number.
+            << ",\"has_failure_data\":" << (stats.has_failure_data ? "true" : "false")
+            << ",\"failure_count\":" << stats.failure_count
+            << ",\"failure_p50_ms\":" << stats.failure_p50_ms
+            << ",\"failure_p95_ms\":" << stats.failure_p95_ms
+            << ",\"failure_p99_ms\":" << stats.failure_p99_ms
+            << ",\"failure_max_ms\":" << stats.failure_max_ms
+            << ",\"rejected_count\":" << stats.rejected_count << "}\n";
 }
 
 }  // namespace

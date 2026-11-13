@@ -101,6 +101,39 @@ TEST_F(GrpcValidationTest, RejectsMissingRequiredFieldAsInvalidArgument)
   EXPECT_EQ(service_->active_request_count(), 0U);
 }
 
+// A request rejected at the gateway never reaches the executor, so it produced no
+// TaskEvent and left no row: the success rate was computed over
+// successful-to-start runs only. It now leaves a history row.
+TEST_F(GrpcValidationTest, RejectedRequestIsCountedInHistoryAndStats)
+{
+  auto request = valid_request();
+  request.set_workflow_id("uploaded_xml");
+  runtime_gateway::SubmitWorkflowReply reply;
+  grpc::ClientContext context;
+  ASSERT_TRUE(stub_->SubmitWorkflow(&context, request, &reply).ok());
+  EXPECT_EQ(reply.state(), "REJECTED");
+  EXPECT_EQ(reply.error_layer(), 4U);  // gateway
+
+  // The row exists, with the rejection's own error code.
+  runtime_gateway::GetTaskRequest get_request;
+  get_request.set_task_id("task-1");
+  runtime_gateway::TaskRecord task;
+  grpc::ClientContext get_context;
+  ASSERT_TRUE(stub_->GetTask(&get_context, get_request, &task).ok());
+  EXPECT_TRUE(task.found());
+  EXPECT_EQ(task.error_code(), 400U);
+
+  // And it is counted, which is what makes the success rate honest.
+  runtime_gateway::GetStatsRequest stats_request;
+  runtime_gateway::RuntimeStats stats;
+  grpc::ClientContext stats_context;
+  ASSERT_TRUE(stub_->GetStats(&stats_context, stats_request, &stats).ok());
+  EXPECT_EQ(stats.sample_count(), 1U);
+  // Counted as its own population: no action ever started, so it is not one of
+  // the four action outcomes, and before this it was not counted at all.
+  EXPECT_EQ(stats.rejected_count(), 1U);
+}
+
 TEST_F(GrpcValidationTest, RejectsUnknownWorkflowWithoutActionSubmission)
 {
   auto request = valid_request();
@@ -167,7 +200,7 @@ TEST_F(GrpcValidationTest, ConflictingReservationDoesNotBlockTheAuthoritativeRet
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
       request.request_id(), request.task_id(), request.target_id(), request.workflow_id(),
-      request.timeout_ms(), "SUBMITTING", 0, 0, ""};
+      request.timeout_ms(), runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     // Seed the authoritative identity, then a different payload under the same
     // request_id after the "restart" represented by a fresh registry.
     ASSERT_EQ(
@@ -198,7 +231,8 @@ TEST_F(GrpcValidationTest, ResolvesAnUncertainRequestWithoutDispatching)
   {
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
-      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+      "request-1", "task-1", "dock_a", "single_task", 3000,
+      runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     ASSERT_EQ(
       ledger.admit(admitted, 1).decision,
       runtime_gateway::IdempotencyDecision::PROCEED);
@@ -226,7 +260,8 @@ TEST_F(GrpcValidationTest, ResolveRejectsANonTerminalStateAndUnknownId)
   {
     runtime_gateway::DurableIdempotency ledger(*store_);
     runtime_gateway::RequestRecord admitted{
-      "request-1", "task-1", "dock_a", "single_task", 3000, "SUBMITTING", 0, 0, ""};
+      "request-1", "task-1", "dock_a", "single_task", 3000,
+      runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
     ASSERT_EQ(
       ledger.admit(admitted, 1).decision,
       runtime_gateway::IdempotencyDecision::PROCEED);
@@ -296,10 +331,16 @@ TEST_F(GrpcValidationTest, MapsNonemptySqliteStatistics)
   EXPECT_EQ(reply.outcome_counts(1), 1U);
   EXPECT_EQ(reply.outcome_counts(2), 1U);
   EXPECT_EQ(reply.outcome_counts(3), 1U);
-  EXPECT_EQ(reply.p50_ms(), 30U);
+  // Durations 10 and 100 are the two successes; the percentiles are per
+  // population now, so mixing them is no longer what these fields report.
+  EXPECT_EQ(reply.p50_ms(), 10U);
   EXPECT_EQ(reply.p95_ms(), 100U);
   EXPECT_EQ(reply.p99_ms(), 100U);
   EXPECT_EQ(reply.max_ms(), 100U);
+  EXPECT_TRUE(reply.has_failure_data());
+  EXPECT_EQ(reply.failure_count(), 3U);
+  EXPECT_EQ(reply.failure_p50_ms(), 30U);
+  EXPECT_EQ(reply.failure_max_ms(), 40U);
 }
 
 TEST_F(GrpcValidationTest, InstalledStyleClientSuccessIsOneJsonLine)

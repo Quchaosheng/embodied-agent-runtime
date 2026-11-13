@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <linux/can.h>
+#include <linux/can/error.h>
 #include <linux/can/raw.h>
 #include <net/if.h>
 #include <poll.h>
@@ -14,6 +15,26 @@
 
 namespace runtime_can
 {
+
+namespace
+{
+
+// Error class bits are split: power-down/bus-off live in can_id, the controller
+// state lives in data[1] and is only meaningful when data[0] names the class.
+void decode_bus_state(const can_frame & frame, BusState & state)
+{
+  state.bus_off = (frame.can_id & CAN_ERR_BUSOFF) != 0;
+  if ((frame.data[0] & CAN_ERR_CRTL) == 0) {
+    return;
+  }
+  state.error_warning =
+    (frame.data[1] & (CAN_ERR_CRTL_RX_WARNING | CAN_ERR_CRTL_TX_WARNING)) != 0;
+  state.error_passive =
+    (frame.data[1] & (CAN_ERR_CRTL_RX_PASSIVE | CAN_ERR_CRTL_TX_PASSIVE)) != 0;
+  state.rx_overflow = (frame.data[1] & CAN_ERR_CRTL_RX_OVERFLOW) != 0;
+}
+
+}
 
 SocketCan::~SocketCan()
 {
@@ -80,6 +101,31 @@ bool SocketCan::set_filter(
   return true;
 }
 
+bool SocketCan::set_kind_filter(
+  const std::vector<std::uint32_t> & frame_kinds, const std::uint32_t kind_mask,
+  std::string & error)
+{
+  if (frame_kinds.empty()) {
+    error = "at least one frame kind is required";
+    return false;
+  }
+  std::vector<can_filter> filters(frame_kinds.size());
+  for (std::size_t index = 0; index < frame_kinds.size(); ++index) {
+    filters[index].can_id = frame_kinds[index];
+    // Everything in kind_mask must match; the session nibble is outside it, so any
+    // session passes.
+    filters[index].can_mask = kind_mask;
+  }
+  if (::setsockopt(
+      socket_fd_, SOL_CAN_RAW, CAN_RAW_FILTER, filters.data(),
+      static_cast<socklen_t>(filters.size() * sizeof(can_filter))) < 0)
+  {
+    error = std::strerror(errno);
+    return false;
+  }
+  return true;
+}
+
 bool SocketCan::send(const RawFrame & frame, std::string & error) const
 {
   if (!is_open()) {
@@ -104,7 +150,8 @@ bool SocketCan::send(const RawFrame & frame, std::string & error) const
 }
 
 ReceiveStatus SocketCan::receive(
-  RawFrame & frame, std::chrono::milliseconds timeout, std::string & error) const
+  RawFrame & frame, std::chrono::milliseconds timeout, std::string & error,
+  BusState * bus_state) const
 {
   if (!is_open()) {
     error = "CAN socket is not open";
@@ -124,6 +171,12 @@ ReceiveStatus SocketCan::receive(
     error = std::strerror(errno);
     return ReceiveStatus::kError;
   }
+  // POLLERR is how a downed interface surfaces: reading afterwards returns
+  // ENETDOWN. Reporting it as an error is what lets a node decide to re-open.
+  if ((descriptor.revents & POLLERR) != 0 && (descriptor.revents & POLLIN) == 0) {
+    error = "CAN interface reported an error";
+    return ReceiveStatus::kError;
+  }
 
   can_frame native_frame{};
   const auto bytes_read = ::read(socket_fd_, &native_frame, sizeof(native_frame));
@@ -131,8 +184,19 @@ ReceiveStatus SocketCan::receive(
     error = bytes_read < 0 ? std::strerror(errno) : "short CAN frame read";
     return ReceiveStatus::kError;
   }
-  if ((native_frame.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG)) != 0) {
-    error = "unsupported extended, remote, or error CAN frame";
+  // An error frame describes the controller, not a peer. Decoding it is the only
+  // way bus-off and error-passive become visible; treating it as a transport
+  // error made them indistinguishable from a dropped frame.
+  if ((native_frame.can_id & CAN_ERR_FLAG) != 0) {
+    if (bus_state == nullptr) {
+      error = "unsupported error CAN frame";
+      return ReceiveStatus::kError;
+    }
+    decode_bus_state(native_frame, *bus_state);
+    return ReceiveStatus::kBusState;
+  }
+  if ((native_frame.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG)) != 0) {
+    error = "unsupported extended or remote CAN frame";
     return ReceiveStatus::kError;
   }
   if (native_frame.can_dlc > kPayloadSize) {

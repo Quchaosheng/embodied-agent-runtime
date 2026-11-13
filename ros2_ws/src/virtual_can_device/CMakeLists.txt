@@ -10,7 +10,14 @@ find_package(rclcpp REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
 find_package(runtime_can REQUIRED)
 
+add_library(virtual_can_device_modes INTERFACE)
+target_include_directories(virtual_can_device_modes INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+install(DIRECTORY include/ DESTINATION include)
+
 add_executable(virtual_can_device_node src/virtual_can_device_node.cpp)
+target_link_libraries(virtual_can_device_node virtual_can_device_modes)
 target_compile_features(virtual_can_device_node PUBLIC cxx_std_17)
 target_link_libraries(virtual_can_device_node runtime_can::runtime_can)
 ament_target_dependencies(virtual_can_device_node
@@ -27,6 +34,13 @@ if(BUILD_TESTING)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_device_modes test/test_device_modes.cpp)
+  target_link_libraries(test_device_modes virtual_can_device_modes)
+
+  ament_add_gtest(test_command_cache test/test_command_cache.cpp)
+  target_link_libraries(test_command_cache runtime_can::runtime_can)
 endif()
 
 ament_package()

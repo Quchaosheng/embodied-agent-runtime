@@ -1,5 +1,7 @@
 #include "device_bridge/command_policy.hpp"
 
+#include "robot_task_interfaces/error_code.hpp"
+
 #include <gtest/gtest.h>
 
 #include "runtime_can/protocol.hpp"
@@ -56,8 +58,25 @@ TEST(CommandPolicyTest, RejectsZeroNegativeMalformedAndTooLargeDurations)
 
 TEST(CommandPolicyTest, MapsDeviceResultToStableErrorNamespace)
 {
-  EXPECT_EQ(device_bridge::device_error_code(1), 301);
-  EXPECT_EQ(device_bridge::device_error_code(2), 302);
+  // Read from the shared table rather than a literal, and assert the property
+  // that matters: a device code can never be mistaken for another layer's.
+  using robot_task_interfaces::error_code::Layer;
+  EXPECT_EQ(
+    device_bridge::device_error_code(1),
+    robot_task_interfaces::error_code::device_rejected(1));
+  EXPECT_EQ(
+    device_bridge::device_error_code(2),
+    robot_task_interfaces::error_code::device_rejected(2));
+  EXPECT_EQ(
+    robot_task_interfaces::error_code::layer_of(device_bridge::device_error_code(1)),
+    Layer::kDevice);
+  EXPECT_EQ(
+    robot_task_interfaces::error_code::layer_of(device_bridge::device_error_code(255)),
+    Layer::kDevice);
+  // The old 300+result_code range overlapped the gateway's 400/500 codes.
+  EXPECT_NE(
+    device_bridge::device_error_code(200),
+    robot_task_interfaces::error_code::kGatewayNotAllowlisted);
 }
 
 // The ACK-only path must stay available for devices that only acknowledge, and

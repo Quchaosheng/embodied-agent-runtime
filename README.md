@@ -92,7 +92,7 @@ prove physical motion or stopping distance.
 
 On 2026-07-29, this Windows host completed the isolated WSL2 build and test
 flow in Ubuntu 24.04 with ROS 2 Jazzy for 11 packages. The checked-in test
-sources currently define **184 GoogleTest cases and 59 pytest cases** (the
+sources currently define **238 GoogleTest cases and 61 pytest cases** (the
 tree recorded on 2026-07-29 defined 119 and 18). These are functional
 test-case counts, not a pass-count or a `colcon test-result` record
 count. `scripts/count_test_cases.py` is the source of truth: it counts the
@@ -165,6 +165,11 @@ Ubuntu 24.04 with ROS 2 Jazzy is the primary x86_64, WSL2, CI, and Docker
 baseline. The X5 evidence below was collected separately on Ubuntu 22.04 with
 ROS 2 Humble; it is not a claim that the X5 was validated on Jazzy, and the
 two distributions must not be mixed in one environment.
+
+CI builds and tests **Jazzy on Ubuntu 24.04 only**. Humble is a supported
+*board* profile, exercised by the ARM64 smoke scripts on the target image, not a
+CI job: nothing in this repository's CI compiles against Humble, so a Humble
+regression would not be caught here.
 
 This path assumes a working Ubuntu 24.04 installation with ROS 2 Jazzy and the
 standard ROS development tools already installed. A fresh machine must first
@@ -317,7 +322,7 @@ X5/UVC evidence is documented below.
 
 | Environment | Current status | Evidence |
 | --- | --- | --- |
-| Windows + WSL2, x86_64 | Software verified | Isolated Ubuntu 24.04/Jazzy build; 184 GoogleTest cases plus 59 pytest cases defined in the checked-in test sources |
+| Windows + WSL2, x86_64 | Software verified | Isolated Ubuntu 24.04/Jazzy build; 238 GoogleTest cases plus 61 pytest cases defined in the checked-in test sources |
 | Ubuntu 24.04 + Jazzy, x86_64 | CI verified | Build, tests, configuration checks, conditional `vcan0` E2E |
 | Generic ARM64 Linux | Profile and scripts prepared; board-specific execution not claimed | `generic-arm64` Jazzy/Ubuntu 24.04 configuration |
 | RK3568 | CPU-only ARM64 profile, native run pending | No vendor NPU/GPIO/camera claims |

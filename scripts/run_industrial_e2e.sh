@@ -58,7 +58,33 @@ EXECUTOR_LOG="$EVIDENCE/executor.log"
 OBSERVER_PID=""
 
 record() { printf '%s\n' "$*" | tee -a "$EVIDENCE/assertions.log"; }
-fail() { record "FAIL: $*" >&2; return 1; }
+# Dumps the logs a failure needs to be diagnosable. Without this a CI failure
+# was one line with no evidence, and the evidence directory was never uploaded.
+dump_context() {
+  local file
+  for file in monitor.log bridge.log executor.log history.log orchestrator.log \
+              gateway.log virtual.log can.log \
+              bridge-recovered.log executor-recovered.log \
+              history-recovered.log monitor-recovered.log; do
+    [[ -f "$EVIDENCE/$file" ]] || continue
+    printf '\n===== %s (last 40 lines) =====\n' "$file" >&2
+    tail -n 40 "$EVIDENCE/$file" >&2 || true
+  done
+}
+
+# Reads a code from the one table instead of restating the number here.
+ERROR_CODE_TOOL="$WORKSPACE/install/robot_task_interfaces/lib/robot_task_interfaces/print_error_code"
+error_code() {
+  "$ERROR_CODE_TOOL" "$1"
+}
+
+fail() {
+  record "FAIL: $*" >&2
+  if [[ "${E2E_DUMP_CONTEXT:-1}" == 1 ]]; then
+    dump_context
+  fi
+  return 1
+}
 
 process_is_running() {
   local pid=$1 state
@@ -201,7 +227,14 @@ register_process() {
 start_direct() {
   local label=$1 logfile=$2 executable=$3
   shift 3
-  "$executable" "$@" > "$logfile" 2>&1 &
+  # Line-buffered, because a node killed with SIGTERM otherwise loses its whole
+  # stdout buffer and the failure has no evidence at all - four of the eight log
+  # files in a failed run were empty for exactly this reason.
+  #
+  # `exec` so stdbuf is replaced by the node: the E2E asserts that /proc/PID/exe is
+  # the node itself, and without it every startup check failed with
+  # "PID ... is not the direct executable".
+  ( exec stdbuf -oL -eL "$executable" "$@" > "$logfile" 2>&1 ) &
   local pid=$!
   register_process "$label" "$pid" "$executable" "$logfile"
 }
@@ -630,11 +663,15 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
     match = re.search(r"\s([0-9A-Fa-f]+)#([0-9A-Fa-f]{16})$", line)
     assert match, line
     frames.append((int(match.group(1), 16), bytes.fromhex(match.group(2))))
-stops = [data for frame_id, data in frames if frame_id == 0x100 and data[3] == 0xFF]
+# The frame kind lives in bits 7..4 and the session in bits 10..8, so a v2 id is
+# not the v1 constant. Matching the kind rather than the whole id is what makes
+# this independent of which session the bridge happened to pick.
+stops = [data for frame_id, data in frames
+         if (frame_id & 0xF0) == 0x00 and data[3] == 0xFF]
 assert len(stops) == 1, frames
 stop_id = int.from_bytes(stops[0][1:3], "big")
 responses = [data for frame_id, data in frames
-             if frame_id == 0x101 and int.from_bytes(data[1:3], "big") == stop_id]
+             if (frame_id & 0xF0) == 0x10 and int.from_bytes(data[1:3], "big") == stop_id]
 if sys.argv[2] == "present":
     assert len(responses) == 1 and responses[0][4] == 3, responses
 else:
@@ -644,24 +681,31 @@ PY
 
 assert_task normal COMPLETED 0 0; assert_event normal 0 0
 printf 'normal\tPASS\tCOMPLETED/0\n' >> "$EVIDENCE/summary.tsv"
-assert_task fault302 DEVICE_FAULT 3 302; assert_event fault302 3 302
-printf 'fault302\tPASS\tDEVICE_FAULT/302\n' >> "$EVIDENCE/summary.tsv"
+# The codes come from robot_task_interfaces/error_code.hpp, not from literals:
+# restating them is how this script drifted from the table when it was repartitioned.
+assert_task fault302 DEVICE_FAULT 3 "$(error_code device_rejected:2)"
+assert_event fault302 3 "$(error_code device_rejected:2)"
+printf 'fault302\tPASS\tDEVICE_FAULT/%s\n' "$(error_code device_rejected:2)" >> "$EVIDENCE/summary.tsv"
 assert_task cancel CANCELED 1 0; assert_event cancel 1 0
 assert_stop_can cancel present
 grep -Fq 'STOP acknowledged' "$EVIDENCE/cancel/virtual.log" || fail "cancel did not observe STOPPED"
 printf 'cancel\tPASS\tCANCELED/0 STOPPED\n' >> "$EVIDENCE/summary.tsv"
-assert_task drop_stop_ack SAFE_STOP 2 204; assert_event drop_stop_ack 2 204
+assert_task drop_stop_ack SAFE_STOP 2 "$(error_code kDeviceStopTimeout)"
+assert_event drop_stop_ack 2 "$(error_code kDeviceStopTimeout)"
 assert_stop_can drop_stop_ack absent
 grep -Fq 'Dropping STOP ACK' "$EVIDENCE/drop_stop_ack/virtual.log" ||
   fail "drop_stop_ack did not drop STOP response"
 ! grep -Fq 'STOP acknowledged' "$EVIDENCE/drop_stop_ack/virtual.log" ||
   fail "drop_stop_ack unexpectedly received STOP response"
-printf 'drop_stop_ack\tPASS\tSAFE_STOP/204 no STOP response\n' >> "$EVIDENCE/summary.tsv"
-assert_task ack_timeout SAFE_STOP 2 201; assert_event ack_timeout 2 201
+printf 'drop_stop_ack\tPASS\tSAFE_STOP/%s no STOP response\n' \
+  "$(error_code kDeviceStopTimeout)" >> "$EVIDENCE/summary.tsv"
+assert_task ack_timeout SAFE_STOP 2 "$(error_code kDeviceAckTimeout)"
+assert_event ack_timeout 2 "$(error_code kDeviceAckTimeout)"
 assert_stop_can ack_timeout present
 grep -Fq 'STOP acknowledged' "$EVIDENCE/ack_timeout/virtual.log" ||
   fail "ACK timeout did not observe STOPPED"
-printf 'ack_timeout\tPASS\tSAFE_STOP/201 STOP acknowledged\n' >> "$EVIDENCE/summary.tsv"
+printf 'ack_timeout\tPASS\tSAFE_STOP/%s STOP acknowledged\n' \
+  "$(error_code kDeviceAckTimeout)" >> "$EVIDENCE/summary.tsv"
 /usr/bin/python3 - "$EVIDENCE/duplicate/assertions.json" <<'PY'
 import json, pathlib, sys
 assert json.loads(pathlib.Path(sys.argv[1]).read_text()) == {
@@ -676,11 +720,17 @@ printf 'duplicate\tPASS\tone Gateway dispatch one workflow Goal one ExecuteTask 
 import json, pathlib, sys
 grpc = json.loads(pathlib.Path(sys.argv[1]).read_text())
 sqlite = json.loads(pathlib.Path(sys.argv[2]).read_text())
-fields = ("has_data", "sample_count", "outcome_counts", "p50_ms", "p95_ms", "p99_ms", "max_ms")
-assert all(grpc[field] == sqlite[field] for field in fields), (grpc, sqlite)
+# Percentiles are per population now (#87): the success set covers the two
+# completed runs, the failure set covers the four that did not. Comparing a single
+# mixed p99 is what this assertion used to do, and it described neither.
+shared = ("has_data", "sample_count", "outcome_counts", "p50_ms", "p95_ms", "p99_ms",
+          "max_ms", "has_failure_data", "failure_count", "failure_p50_ms",
+          "failure_p95_ms", "failure_p99_ms", "failure_max_ms")
+assert all(grpc[field] == sqlite[field] for field in shared), (grpc, sqlite)
 assert grpc["has_data"] is True and grpc["sample_count"] == 6, grpc
 assert grpc["outcome_counts"] == [2, 1, 2, 1], grpc
-assert all(isinstance(grpc[field], int) and grpc[field] > 0 for field in fields[3:]), grpc
+assert grpc["has_failure_data"] is True and grpc["failure_count"] == 4, grpc
+assert grpc["p50_ms"] > 0 and grpc["failure_p50_ms"] > 0, grpc
 PY
 printf 'stats\tPASS\t6 samples [2,1,2,1] percentiles agree\n' >> "$EVIDENCE/summary.tsv"
 
@@ -697,7 +747,7 @@ PY
 # The capture is the artifact a cross-project consumer reads, so the run proves it
 # exists and carries the same outcomes the topic reported.
 require_file "$TASK_EVENTS"
-/usr/bin/python3 - "$TASK_EVENTS" <<'PY'
+/usr/bin/python3 - "$TASK_EVENTS" "$(error_code device_rejected:2)" <<'PY'
 import json, pathlib, sys
 
 required = {
@@ -712,9 +762,11 @@ for line in lines:
     missing = required - record.keys()
     assert not missing, (record.get("task_id"), missing)
     outcomes.add((record["action_status"], record["outcome"], record["error_code"]))
-# The six submitted runs cover completed, device fault, cancel and safe stops.
+# The six submitted runs cover completed, device fault, cancel and safe stops. The
+# device-fault code is the table's, not a literal: it moved when #83 repartitioned
+# the ranges so a device code could not be read as a gateway code.
 assert (1, 0, 0) in outcomes, outcomes
-assert (2, 3, 302) in outcomes, outcomes
+assert (2, 3, int(sys.argv[2])) in outcomes, outcomes
 PY
 record "PASS: seven industrial E2E scenarios"
 

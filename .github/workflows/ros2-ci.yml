@@ -5,6 +5,86 @@ on:
   pull_request:
 
 jobs:
+  # Much of the commit history is concurrency and timing work - cancel waits,
+  # late acceptance, drain paths, shutdown races - which is exactly what a
+  # sanitizer finds and an ordinary test run does not.
+  sanitizers:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread]
+    env:
+      ROS_DISTRO: jazzy
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ros-tooling/setup-ros@0.7.19
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential can-utils cmake iproute2 kmod \
+            libgrpc++-dev libprotobuf-dev libprotoc-dev libsqlite3-dev \
+            pkg-config protobuf-compiler protobuf-compiler-grpc \
+            python3-colcon-common-extensions python3-rosdep \
+            ros-jazzy-behaviortree-cpp
+          rosdep update
+          rosdep install --from-paths ros2_ws/src --ignore-src \
+            --rosdistro jazzy -y
+
+      - name: Build with ${{ matrix.sanitizer }} sanitizer
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          colcon build \
+            --packages-select \
+              robot_task_interfaces runtime_can virtual_can_device device_bridge \
+              task_executor runtime_monitor runtime_history task_orchestrator \
+              runtime_gateway ai_task_adapter perception_task_adapter \
+            --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -fno-omit-frame-pointer" \
+              -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=${{ matrix.sanitizer }}" \
+              -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=${{ matrix.sanitizer }}"
+
+      # The transport-backed suites are the ones that construct nodes and move
+      # frames, so they are the ones a sanitizer has something to say about.
+      - name: Run the concurrency-sensitive suites
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source ros2_ws/install/setup.bash
+          # The suppression file covers one third-party pattern only: Fast DDS
+          # reuses a topic payload buffer between the CDR serializer and
+          # deserializer, and the happens-before edge lives in the transport's
+          # shared-memory handshake, which TSan cannot model. Everything else in
+          # the stack stays instrumented - this job found a real race of ours on
+          # its first run.
+          export TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 suppressions=$GITHUB_WORKSPACE/scripts/tsan_suppressions.txt"
+          export ASAN_OPTIONS="detect_leaks=0 halt_on_error=1"
+          # TSan refuses to start under the runner's ASLR layout ("unexpected
+          # memory mapping"), so it is run with randomization disabled. ASan does
+          # not need this.
+          runner=()
+          if [ "${{ matrix.sanitizer }}" = thread ]; then
+            runner=(setarch -R)
+          fi
+          set -e
+          for suite in runtime_can/test_can_link \
+                       device_bridge/test_device_bridge_node \
+                       task_executor/test_executor_safety \
+                       task_orchestrator/test_orchestrator_faults; do
+            echo "::group::${{ matrix.sanitizer }} $suite"
+            "${runner[@]}" "./ros2_ws/build/$suite" --gtest_repeat=2
+            echo "::endgroup::"
+          done
+
   windows-tools:
     runs-on: windows-latest
 
@@ -126,18 +206,45 @@ jobs:
             exit 1
           fi
 
-      - name: Run industrial vcan E2E when supported
+      # This used to be best-effort: the vcan module load was `|| true` and a
+      # runner that could not create the interface turned the only test of the
+      # integrated path into a notice nobody reads, so a green run did not mean
+      # the path worked. It now fails instead of skipping.
+      - name: Run industrial vcan E2E
         shell: bash
         run: |
-          if ! ip link show vcan0 >/dev/null 2>&1; then
-            sudo modprobe vcan >/dev/null 2>&1 || true
-            sudo ip link add dev vcan0 type vcan >/dev/null 2>&1 || true
-          fi
+          sudo modprobe vcan
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set vcan0 up
+          ip link show vcan0
+          WORKSPACE="$GITHUB_WORKSPACE/ros2_ws" SETUP_VCAN=0 \
+            bash scripts/run_industrial_e2e.sh
 
-          if sudo ip link set vcan0 up >/dev/null 2>&1 && \
-            ip link show vcan0 >/dev/null 2>&1; then
-            WORKSPACE="$GITHUB_WORKSPACE/ros2_ws" SETUP_VCAN=0 \
-              bash scripts/run_industrial_e2e.sh
-          else
-            echo "::notice::SKIP: runner cannot create and enable vcan0"
-          fi
+      # A failure in the step above is otherwise a single line with no evidence.
+      - name: Upload the E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          # The E2E writes to /tmp/runtime-industrial-evidence, so a repo-relative
+          # glob found nothing and every failure stayed undiagnosable.
+          path: /tmp/runtime-industrial-evidence
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Unstable tests are hunted here rather than by re-running CI: a case that
+      # only fails under load is a property of the test, and repeating it is the
+      # only way to see it.
+      - name: Repeat the safety suites to find unstable cases
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source ros2_ws/install/setup.bash
+          set -e
+          for suite in task_executor/test_executor_safety \
+                       task_orchestrator/test_orchestrator_faults \
+                       device_bridge/test_device_bridge_node; do
+            echo "::group::--gtest_repeat=5 $suite"
+            "./ros2_ws/build/$suite" --gtest_repeat=5 --gtest_break_on_failure
+            echo "::endgroup::"
+          done

@@ -5,6 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "diagnostic_msgs/msg/key_value.hpp"
@@ -18,7 +19,7 @@ public:
   : Node("runtime_monitor"),
     aggregate_period_(declare_positive_ms("aggregate_period_ms", 500)),
     stale_timeout_(declare_positive_ms("stale_timeout_ms", 2000)),
-    aggregator_(stale_timeout_)
+    aggregator_(stale_timeout_, declare_components())
   {
     diagnostics_publisher_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
       "/diagnostics", rclcpp::QoS(10).reliable());
@@ -40,6 +41,18 @@ public:
   }
 
 private:
+  // The components "ready" is defined against are configuration, not code, so a
+  // deployment can require a different set without a rebuild.
+  std::vector<std::string> declare_components()
+  {
+    const auto declared = declare_parameter<std::vector<std::string>>(
+      "health_components", runtime_monitor::default_components());
+    if (declared.empty()) {
+      throw std::invalid_argument("health_components must name at least one component");
+    }
+    return declared;
+  }
+
   std::chrono::milliseconds declare_positive_ms(
     const std::string & name, const std::int64_t default_value)
   {
@@ -73,6 +86,15 @@ private:
       key_value("device_bridge_age_ms", std::to_string(health.device_bridge.age_ms)),
       key_value("task_executor_level", std::to_string(health.task_executor.level)),
       key_value("task_executor_age_ms", std::to_string(health.task_executor.age_ms))};
+    // Every configured component is reported, including one that never published:
+    // an absent component used to be silently excluded from the summary, which is
+    // how a dead orchestrator still read as "ready".
+    for (const auto & component : health.components) {
+      status.values.push_back(
+        key_value("component/" + component.name + "/level", std::to_string(component.level)));
+      status.values.push_back(
+        key_value("component/" + component.name + "/age_ms", std::to_string(component.age_ms)));
+    }
 
     diagnostic_msgs::msg::DiagnosticArray array;
     array.header.stamp = now();

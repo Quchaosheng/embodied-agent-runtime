@@ -1,5 +1,7 @@
 #include "runtime_gateway/gateway_service.hpp"
 
+#include "robot_task_interfaces/error_code.hpp"
+
 #include "runtime_gateway/durable_idempotency.hpp"
 
 #include "runtime_history/stage_event_log.hpp"
@@ -44,8 +46,14 @@ bool allowed(const std::string & workflow_id)
 
 bool active(const RequestRecord & record)
 {
-  return record.state == "SUBMITTING" || record.state == "RUNNING" ||
-         record.state == "CANCELING";
+  return !is_terminal(record.state);
+}
+
+// The layer is carried beside the code so a client reads whose vocabulary the
+// number belongs to, instead of inferring it from a range it does not own.
+std::uint32_t layer_value(const std::uint16_t code)
+{
+  return static_cast<std::uint32_t>(robot_task_interfaces::error_code::layer_of(code));
 }
 
 void fill_task(const RequestRecord & record, TaskRecord * reply)
@@ -53,21 +61,23 @@ void fill_task(const RequestRecord & record, TaskRecord * reply)
   reply->set_found(true);
   reply->set_task_id(record.task_id);
   reply->set_target_id(record.target_id);
-  reply->set_state(record.state);
+  reply->set_state(std::string(to_string(record.state)));
   reply->set_outcome(record.outcome);
   reply->set_error_code(record.error_code);
+  reply->set_error_layer(layer_value(record.error_code));
   reply->set_message(record.message);
 }
 
 void fill_submit(const RequestRecord & record, SubmitWorkflowReply * reply)
 {
   reply->set_accepted(
-    record.state == "RUNNING" || record.state == "SUBMITTING" || record.state == "CANCELING");
+    !is_terminal(record.state));
   reply->set_request_id(record.request_id);
   reply->set_task_id(record.task_id);
-  reply->set_state(record.state);
+  reply->set_state(std::string(to_string(record.state)));
   reply->set_outcome(record.outcome);
   reply->set_error_code(record.error_code);
+  reply->set_error_layer(layer_value(record.error_code));
   reply->set_message(record.message);
 }
 
@@ -89,8 +99,15 @@ void fill_durable(
   reply->set_state(known.state);
   reply->set_outcome(known.outcome);
   reply->set_error_code(known.error_code);
+  reply->set_error_layer(layer_value(known.error_code));
   reply->set_message(known.message);
 }
+
+// A request the gateway never dispatched. It is not one of the four action
+// outcomes because no action ever started; keeping it distinct is what lets a
+// rejected request be counted and read back without being confused with a stop
+// the device actually performed.
+constexpr std::uint8_t kRejectedOutcome = 4;
 
 std::string state_for_outcome(const std::uint8_t outcome)
 {
@@ -99,6 +116,7 @@ std::string state_for_outcome(const std::uint8_t outcome)
     case ExecuteWorkflow::Result::CANCELED: return "CANCELED";
     case ExecuteWorkflow::Result::SAFE_STOP: return "SAFE_STOP";
     case ExecuteWorkflow::Result::DEVICE_FAULT: return "DEVICE_FAULT";
+    case kRejectedOutcome: return "REJECTED";
     default: return "ABORTED";
   }
 }
@@ -229,7 +247,8 @@ struct GatewayService::State
     }
     {
       const std::lock_guard<std::mutex> lock(mutex);
-      registry.update_terminal(request_id, state, 0, 0, message);
+      registry.transition(request_id, parse_state(state).value_or(RequestState::kAborted), 0, 0,
+        message);
     }
     result.state = state;
     return result;
@@ -255,7 +274,9 @@ struct GatewayService::State
       if (goal != goals.end()) {
         goal->second.cancel_dispatched = false;
         goal->second.cancel_failed = true;
-        registry.update_terminal(request_id, "CANCEL_FAILED", 0, 500, error.what());
+        registry.settle(
+          request_id, RequestState::kCancelFailed,
+          robot_task_interfaces::error_code::kGatewayCancelFailed, error.what());
       }
       changed.notify_all();
       return false;
@@ -266,17 +287,55 @@ struct GatewayService::State
 
   // Records a terminal rejection in both the cache and the durable ledger, so
   // a rejected request is not admitted again after a restart.
+  // A request rejected here never reaches the executor, so it produced no
+  // TaskEvent and left no row: the success rate was computed over
+  // successful-to-start runs only and could only be biased upward. Recording the
+  // terminal outcome at the point of rejection is what closes that gap.
+  void record_rejected(
+    const RequestRecord & payload, const std::string & state,
+    const std::uint16_t error_code, const std::string & message)
+  {
+    runtime_history::TaskRecord record;
+    record.task_id = payload.task_id;
+    record.request_id = payload.request_id;
+    record.workflow_id = payload.workflow_id;
+    record.target_id = payload.target_id;
+    // ABORTED and outcome 4: the request ended without running. It uses a value
+    // outside the four action outcomes so GetTask can report REJECTED again
+    // rather than presenting a rejected request as a safe stop the device
+    // performed.
+    record.action_status = 2;
+    record.outcome = kRejectedOutcome;
+    record.error_code = error_code;
+    record.duration_ms = 0;
+    record.message = message;
+    record.completed_at_ns = now_ns();
+    try {
+      if (!store.insert(record)) {
+        RCLCPP_WARN(
+          logger, "rejected request %s already had a history row",
+          payload.request_id.c_str());
+      }
+    } catch (const std::exception & error) {
+      RCLCPP_ERROR(
+        logger, "failed to record rejected request %s: %s",
+        payload.request_id.c_str(), error.what());
+    }
+  }
+
   void reject(
     const RequestRecord & payload, const std::string & state, const std::uint16_t error_code,
     const std::string & message)
   {
-    registry.update_terminal(
-      payload.request_id, state, 0, error_code, message);
+    registry.settle(
+      payload.request_id, parse_state(state).value_or(RequestState::kAborted), error_code,
+      message);
     if (!durable.complete(payload, state, 0, error_code, message, now_ns())) {
       RCLCPP_ERROR(
         logger, "failed to persist durable %s request_id=%s", state.c_str(),
         payload.request_id.c_str());
     }
+    record_rejected(payload, state, error_code, message);
   }
 
   runtime_history::Store & store;
@@ -322,7 +381,7 @@ grpc::Status GatewayService::SubmitWorkflow(
   const auto admission_started = std::chrono::steady_clock::now();
   const RequestRecord initial{
     request->request_id(), request->task_id(), request->target_id(), request->workflow_id(),
-    request->timeout_ms(), "SUBMITTING", 0, 0, ""};
+    request->timeout_ms(), RequestState::kSubmitting, 0, 0, ""};
 
   // Live duplicates are handled by the in-memory registry so an in-flight
   // retry still reports its real state instead of an unknown one.
@@ -378,35 +437,41 @@ grpc::Status GatewayService::SubmitWorkflow(
   if (admission.decision == IdempotencyDecision::UNCERTAIN) {
     // A crash between admission and dispatch leaves the outcome unknown: never
     // guess that a redispatch is safe.
-    state_->registry.update_terminal(
-      request->request_id(), "UNCERTAIN", 0,
+    state_->registry.settle(
+      request->request_id(), RequestState::kUncertain,
       admission.error_code == 0 ? 409 : admission.error_code,
       admission.message.empty() ? "prior dispatch outcome unknown" : admission.message);
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
   if (admission.decision == IdempotencyDecision::REPLAY) {
-    state_->registry.update_terminal(
-      request->request_id(), admission.state, admission.outcome, admission.error_code,
-      admission.message);
+    state_->registry.transition(
+      request->request_id(), parse_state(admission.state).value_or(RequestState::kUncertain),
+      admission.outcome, admission.error_code, admission.message);
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
 
   if (!allowed(request->workflow_id())) {
-    state_->reject(initial, "REJECTED", 400, "workflow is not allowlisted");
+    state_->reject(
+      initial, "REJECTED", robot_task_interfaces::error_code::kGatewayNotAllowlisted,
+      "workflow is not allowlisted");
     fill_submit(*state_->registry.get_by_request_id(request->request_id()), reply);
     return grpc::Status::OK;
   }
   if (!state_->action_client->wait_for_action_server(0s)) {
-    state_->reject(initial, "REJECTED", 503, "orchestrator unavailable");
+    state_->reject(
+      initial, "REJECTED", robot_task_interfaces::error_code::kGatewayUnavailable,
+      "orchestrator unavailable");
     return {grpc::StatusCode::UNAVAILABLE, "orchestrator unavailable"};
   }
 
   {
     const std::lock_guard<std::mutex> lock(state_->mutex);
     if (state_->stopping) {
-      state_->reject(initial, "REJECTED", 503, "gateway is shutting down");
+      state_->reject(
+        initial, "REJECTED", robot_task_interfaces::error_code::kGatewayUnavailable,
+        "gateway is shutting down");
       return {grpc::StatusCode::UNAVAILABLE, "gateway is shutting down"};
     }
     state_->goals.emplace(request->request_id(), State::PendingGoal{nullptr, initial});
@@ -437,8 +502,8 @@ grpc::Status GatewayService::SubmitWorkflow(
             goal->second.pending = false;
             goal->second.handle = handle;
             cancel = state->stopping || goal->second.cancel_requested;
-            state->registry.update_terminal(
-              request_id, cancel ? "CANCELING" : "RUNNING", 0, 0,
+            state->registry.transition(
+              request_id, cancel ? RequestState::kCanceling : RequestState::kRunning, 0, 0,
               cancel ? "cancel requested" : "accepted");
           }
           state->changed.notify_all();
@@ -462,14 +527,18 @@ grpc::Status GatewayService::SubmitWorkflow(
             // A rejection is terminal. Persisting only the in-memory copy made a
             // restarted gateway see the request as UNCERTAIN instead of refused.
             if (!state->durable.complete(
-                payload, "REJECTED", 0, 400, "goal rejected", now_ns()))
+                payload, "REJECTED", 0,
+                robot_task_interfaces::error_code::kGatewayNotAllowlisted,
+                "goal rejected", now_ns()))
             {
               RCLCPP_ERROR(
                 state->logger, "failed to persist durable rejection request_id=%s",
                 request_id.c_str());
             }
             const std::lock_guard<std::mutex> lock(state->mutex);
-            state->registry.update_terminal(request_id, "REJECTED", 0, 400, "goal rejected");
+            state->registry.settle(
+              request_id, RequestState::kRejected,
+              robot_task_interfaces::error_code::kGatewayNotAllowlisted, "goal rejected");
           }
           state->changed.notify_all();
         }
@@ -479,7 +548,7 @@ grpc::Status GatewayService::SubmitWorkflow(
     [weak_state, request_id = request->request_id()](const GoalHandle::WrappedResult & result) {
       if (const auto state = weak_state.lock()) {
         std::uint8_t outcome = ExecuteWorkflow::Result::SAFE_STOP;
-        std::uint16_t error_code = 500;
+        std::uint16_t error_code = robot_task_interfaces::error_code::kGatewayCancelFailed;
         std::string message = "workflow result unavailable";
         if (result.result) {
           outcome = result.result->outcome;
@@ -489,8 +558,9 @@ grpc::Status GatewayService::SubmitWorkflow(
         RequestRecord payload;
         {
           const std::lock_guard<std::mutex> lock(state->mutex);
-          state->registry.update_terminal(
-            request_id, state_for_outcome(outcome), outcome, error_code, message);
+          state->registry.settle(
+            request_id, parse_state(state_for_outcome(outcome)).value_or(
+              RequestState::kAborted), error_code, message);
           // Capture the admitted payload before the goal is erased.
           const auto goal = state->goals.find(request_id);
           if (goal != state->goals.end()) {
@@ -530,10 +600,14 @@ grpc::Status GatewayService::SubmitWorkflow(
     {
       const std::lock_guard<std::mutex> lock(state_->mutex);
       state_->goals.erase(request->request_id());
-      state_->registry.update_terminal(request->request_id(), "REJECTED", 0, 503, error.what());
+      state_->registry.settle(
+        request->request_id(), RequestState::kRejected,
+        robot_task_interfaces::error_code::kGatewayUnavailable, error.what());
     }
     // The goal never reached the orchestrator, so this rejection is final.
-    state_->durable.complete(initial, "REJECTED", 0, 503, error.what(), now_ns());
+    state_->durable.complete(
+        initial, "REJECTED", 0,
+        robot_task_interfaces::error_code::kGatewayUnavailable, error.what(), now_ns());
     state_->changed.notify_all();
     return {grpc::StatusCode::UNAVAILABLE, error.what()};
   }
@@ -547,8 +621,10 @@ grpc::Status GatewayService::SubmitWorkflow(
         pending->second.cancel_requested = true;
         late_handle = pending->second.handle;
         if (!already_canceling) {
-          state_->registry.update_terminal(
-            request->request_id(), "TIMED_OUT", 0, 504, "goal response exceeded 500ms");
+          state_->registry.settle(
+            request->request_id(), RequestState::kTimedOut,
+            robot_task_interfaces::error_code::kGatewayGoalResponseTimeout,
+            "goal response exceeded 500ms");
         }
       }
     }
@@ -571,7 +647,9 @@ grpc::Status GatewayService::SubmitWorkflow(
   reply->set_accepted(handle != nullptr);
   if (!handle) {
     reply->set_state("REJECTED");
-    reply->set_error_code(400);
+    reply->set_error_code(robot_task_interfaces::error_code::kGatewayNotAllowlisted);
+    reply->set_error_layer(
+      layer_value(robot_task_interfaces::error_code::kGatewayNotAllowlisted));
     reply->set_message("goal rejected");
   }
   return grpc::Status::OK;
@@ -599,9 +677,9 @@ grpc::Status GatewayService::CancelWorkflow(
     if (value != state_->goals.end()) {
       value->second.cancel_requested = true;
       handle = value->second.handle;
-      state_->registry.update_terminal(
-        request->request_id(), "CANCELING", record->outcome, record->error_code,
-        "cancel requested");
+      state_->registry.transition(
+        request->request_id(), RequestState::kCanceling, record->outcome,
+        record->error_code, "cancel requested");
     }
   }
   if (!handle) {
@@ -611,10 +689,11 @@ grpc::Status GatewayService::CancelWorkflow(
       reply->set_message("request not found");
       return grpc::Status::OK;
     }
-    if (latest->state != "CANCELING") {
-      reply->set_state(latest->state);
+    if (latest->state != RequestState::kCanceling) {
+      reply->set_state(std::string(to_string(latest->state)));
       reply->set_outcome(latest->outcome);
       reply->set_error_code(latest->error_code);
+      reply->set_error_layer(layer_value(latest->error_code));
       reply->set_message(latest->message);
       return grpc::Status::OK;
     }
@@ -628,9 +707,10 @@ grpc::Status GatewayService::CancelWorkflow(
     }
     const auto latest = state_->registry.get_by_request_id(request->request_id());
     if (latest && !active(*latest)) {
-      reply->set_state(latest->state);
+      reply->set_state(std::string(to_string(latest->state)));
       reply->set_outcome(latest->outcome);
       reply->set_error_code(latest->error_code);
+      reply->set_error_layer(layer_value(latest->error_code));
       reply->set_message(latest->message);
       return grpc::Status::OK;
     }
@@ -723,6 +803,13 @@ grpc::Status GatewayService::GetStats(
     reply->set_p95_ms(stats.p95_ms);
     reply->set_p99_ms(stats.p99_ms);
     reply->set_max_ms(stats.max_ms);
+    reply->set_has_failure_data(stats.has_failure_data);
+    reply->set_failure_count(stats.failure_count);
+    reply->set_failure_p50_ms(stats.failure_p50_ms);
+    reply->set_failure_p95_ms(stats.failure_p95_ms);
+    reply->set_failure_p99_ms(stats.failure_p99_ms);
+    reply->set_failure_max_ms(stats.failure_max_ms);
+    reply->set_rejected_count(stats.rejected_count);
     reply->set_state(stats.has_data ? "AVAILABLE" : "EMPTY");
     return grpc::Status::OK;
   } catch (const std::exception & error) {
@@ -749,7 +836,8 @@ void GatewayService::cancel_active()
     state_->stopping = true;
     for (auto & [request_id, goal] : state_->goals) {
       goal.cancel_requested = true;
-      state_->registry.update_terminal(request_id, "CANCELING", 0, 0, "shutdown cancel requested");
+      state_->registry.transition(
+        request_id, RequestState::kCanceling, 0, 0, "shutdown cancel requested");
       if (goal.handle && !goal.cancel_dispatched) {
         handles.emplace_back(request_id, goal.handle);
       }

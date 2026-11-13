@@ -19,7 +19,7 @@ runtime_gateway::RequestRecord record(
   std::string target_id = "dock_a", std::uint64_t timeout_ms = 3000)
 {
   return {std::move(request_id), std::move(task_id), std::move(target_id), "single_task",
-    timeout_ms, "SUBMITTING", 0, 0, ""};
+    timeout_ms, runtime_gateway::RequestState::kSubmitting, 0, 0, ""};
 }
 
 class DurableIdempotencyTest : public testing::Test

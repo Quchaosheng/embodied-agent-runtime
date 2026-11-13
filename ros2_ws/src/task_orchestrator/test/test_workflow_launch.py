@@ -196,6 +196,49 @@ class TestWorkflowOrchestrator(unittest.TestCase):
             tick=lambda: self._publish_ready(True),
         )
 
+    def test_readiness_lost_mid_run_cancels_the_task(self, proc_info, orchestrator):
+        # A plain Sequence ticks RuntimeReady once and remembers SUCCESS, so the
+        # workflow kept running after /runtime/ready went false and never settled:
+        # with this test's 30 s budget it hangs until the deadline, which is what
+        # this case reproduces. ReactiveSequence re-ticks the condition, so losing
+        # readiness halts ExecuteTask and settles the workflow in milliseconds.
+        #
+        # The 30 s budget is what makes this a test of readiness and not of the
+        # deadline: the assertion window below is far shorter than it.
+        self.mode = 'hold'
+        goal_handle = self._future(
+            self.client.send_goal_async(
+                self._goal('single_task', 'ready-lost-mid-run', duration_sec=30)
+            ),
+            tick=lambda: self._publish_ready(True),
+        )
+        self.assertTrue(goal_handle.accepted)
+
+        # Wait until the child is actually running, then take readiness away and
+        # leave it away.
+        self._spin_until(lambda: self.child_goal_count == 1)
+        self._publish_ready(False)
+        started = time.monotonic()
+
+        result = self._future(
+            goal_handle.get_result_async(), timeout=10.0, tick=lambda: self._publish_ready(False)
+        )
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 10.0, 'readiness loss did not stop the workflow')
+        self.assertEqual(result.status, GoalStatus.STATUS_ABORTED)
+        self.assertNotEqual(result.result.outcome, ExecuteWorkflow.Result.COMPLETED)
+        self.assertEqual(result.result.outcome, ExecuteWorkflow.Result.SAFE_STOP)
+        # 209 is the deadline code. Reaching it would mean the tree ignored the
+        # readiness change and the workflow merely expired, which is exactly what
+        # a plain Sequence does.
+        self.assertNotEqual(
+            result.result.error_code,
+            209,
+            'the workflow expired on its deadline instead of reacting to readiness',
+        )
+        # The child was cancelled because the tree halted it, not left running.
+        self.assertGreaterEqual(self.child_cancel_request_count, 1)
+
     def test_workflow_contract(self, proc_info, orchestrator):
         normal = self._send_ready_goal('single_task', 'normal')
         self.assertTrue(normal.accepted)

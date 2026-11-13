@@ -7,6 +7,8 @@
 #include "behaviortree_cpp/condition_node.h"
 #include "robot_task_interfaces/action/execute_task.hpp"
 #include "robot_task_interfaces/action/execute_workflow.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "robot_task_interfaces/error_code.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 #include <atomic>
@@ -361,6 +363,14 @@ public:
       [this](const std_msgs::msg::Bool & message) {
         ready_->update(message.data, std::chrono::steady_clock::now());
       });
+    // The monitor's readiness is defined against a component list that includes
+    // this node, so it reports itself: an orchestrator that is up but has no
+    // usable workflow file must not read as healthy.
+    diagnostics_publisher_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
+      "/diagnostics", rclcpp::QoS(10).reliable());
+    diagnostics_timer_ = create_wall_timer(
+      std::chrono::milliseconds(1000), [this]() {publish_diagnostics();});
+
     task_client_ = rclcpp_action::create_client<ExecuteTask>(this, "execute_task");
     workflow_server_ = rclcpp_action::create_server<ExecuteWorkflow>(
       this, "execute_workflow",
@@ -406,11 +416,16 @@ public:
   }
 
 private:
-  static constexpr std::uint16_t kErrorShutdown = 205;
-  static constexpr std::uint16_t kErrorPrecondition = 206;
-  static constexpr std::uint16_t kErrorCancelUnconfirmed = 207;
-  static constexpr std::uint16_t kErrorInternal = 208;
-  static constexpr std::uint16_t kErrorDeadline = 209;
+  static constexpr std::uint16_t kErrorShutdown =
+    robot_task_interfaces::error_code::kOrchestratorShutdown;
+  static constexpr std::uint16_t kErrorPrecondition =
+    robot_task_interfaces::error_code::kOrchestratorPreconditionFailed;
+  static constexpr std::uint16_t kErrorCancelUnconfirmed =
+    robot_task_interfaces::error_code::kOrchestratorCancelUnconfirmed;
+  static constexpr std::uint16_t kErrorInternal =
+    robot_task_interfaces::error_code::kOrchestratorInternal;
+  static constexpr std::uint16_t kErrorDeadline =
+    robot_task_interfaces::error_code::kOrchestratorDeadline;
 
   rclcpp_action::GoalResponse handle_goal(
     const rclcpp_action::GoalUUID &,
@@ -621,6 +636,30 @@ private:
       "orchestrator shutdown", Terminal::kAbort);
   }
 
+  void publish_diagnostics()
+  {
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.name = "runtime/task_orchestrator";
+    status.hardware_id = "robot_runtime";
+    const bool busy = active_.load();
+    status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    status.message = busy ? "executing a workflow" : "idle";
+    diagnostic_msgs::msg::KeyValue busy_key;
+    busy_key.key = "busy";
+    busy_key.value = busy ? "true" : "false";
+    status.values.push_back(busy_key);
+    diagnostic_msgs::msg::KeyValue ready_key;
+    ready_key.key = "runtime_ready";
+    ready_key.value = ready_->usable(std::chrono::steady_clock::now(), ready_stale_) ?
+      "true" : "false";
+    status.values.push_back(ready_key);
+
+    diagnostic_msgs::msg::DiagnosticArray array;
+    array.header.stamp = now();
+    array.status.push_back(std::move(status));
+    diagnostics_publisher_->publish(array);
+  }
+
   static void publish_feedback(
     const std::shared_ptr<WorkflowGoalHandle> & goal_handle,
     const std::shared_ptr<WorkflowState> & state)
@@ -822,6 +861,8 @@ private:
   std::string workflow_xml_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ready_subscription_;
   rclcpp_action::Client<ExecuteTask>::SharedPtr task_client_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
+  rclcpp::TimerBase::SharedPtr diagnostics_timer_;
   rclcpp_action::Server<ExecuteWorkflow>::SharedPtr workflow_server_;
   std::mutex worker_mutex_;
   std::condition_variable worker_changed_;

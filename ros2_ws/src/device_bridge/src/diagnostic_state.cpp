@@ -86,6 +86,15 @@ void DeviceDiagnosticState::record_device_fault(const std::uint16_t error_code)
   error_latched_ = true;
 }
 
+void DeviceDiagnosticState::record_bus_off()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++bus_off_count_;
+  phase_ = DevicePhase::kIdle;
+  active_command_id_ = 0;
+  error_latched_ = true;
+}
+
 void DeviceDiagnosticState::record_stop_failure(const std::uint16_t error_code)
 {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -115,6 +124,7 @@ diagnostic_msgs::msg::DiagnosticStatus DeviceDiagnosticState::snapshot(
   std::uint64_t ack_timeout_count;
   std::uint64_t device_fault_count;
   std::uint64_t stop_failure_count;
+  std::uint64_t bus_off_count;
   bool error_latched;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -125,6 +135,7 @@ diagnostic_msgs::msg::DiagnosticStatus DeviceDiagnosticState::snapshot(
     ack_timeout_count = ack_timeout_count_;
     device_fault_count = device_fault_count_;
     stop_failure_count = stop_failure_count_;
+    bus_off_count = bus_off_count_;
     error_latched = error_latched_;
   }
 
@@ -171,7 +182,21 @@ diagnostic_msgs::msg::DiagnosticStatus DeviceDiagnosticState::snapshot(
     key_value("ack_timeout_count", std::to_string(ack_timeout_count)),
     key_value("device_fault_count", std::to_string(device_fault_count)),
     key_value("stop_failure_count", std::to_string(stop_failure_count)),
-    key_value("last_error_code", std::to_string(last_error_code))};
+    key_value("last_error_code", std::to_string(last_error_code)),
+    key_value("bus_off_count", std::to_string(bus_off_count))};
+  return status;
+}
+
+// Appends the link counters instead of replacing the base keys, so a consumer
+// that reads the original eight keys keeps working.
+diagnostic_msgs::msg::DiagnosticStatus DeviceDiagnosticState::snapshot(
+  const bool socket_ready, const std::uint64_t unmatched_frames,
+  const std::uint64_t overflow_frames, const std::uint64_t reconnects) const
+{
+  auto status = snapshot(socket_ready);
+  status.values.push_back(key_value("unmatched_frames", std::to_string(unmatched_frames)));
+  status.values.push_back(key_value("overflow_frames", std::to_string(overflow_frames)));
+  status.values.push_back(key_value("reconnects", std::to_string(reconnects)));
   return status;
 }
 

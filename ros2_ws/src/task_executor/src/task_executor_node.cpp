@@ -8,6 +8,7 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "robot_task_interfaces/action/execute_device_command.hpp"
 #include "robot_task_interfaces/action/execute_task.hpp"
+#include "robot_task_interfaces/error_code.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -34,7 +35,12 @@
 
 namespace
 {
-volatile std::sig_atomic_t process_shutdown_requested{};
+// Read by the run loop and written from the signal handler and from a test's spin
+// hook, so it needs to be atomic: `volatile sig_atomic_t` is the right type for a
+// handler on its own, but it says nothing about two threads, and TSan reports the
+// pair as a data race. std::atomic on an integer is lock-free, so it stays
+// signal-safe.
+std::atomic<std::sig_atomic_t> process_shutdown_requested{0};
 }  // namespace
 
 class TaskExecutorNode : public rclcpp::Node
@@ -216,11 +222,16 @@ private:
     bool cancel_timed_out{false};
   };
 
-  static constexpr std::uint16_t kErrorBridgeRejected = 110;
-  static constexpr std::uint16_t kErrorBridgeUnavailable = 111;
-  static constexpr std::uint16_t kErrorTaskDeadline = 112;
-  static constexpr std::uint16_t kErrorCancelUnconfirmed = 113;
-  static constexpr std::uint16_t kErrorUnexpectedChildResult = 114;
+  static constexpr std::uint16_t kErrorBridgeRejected =
+    robot_task_interfaces::error_code::kExecutorBridgeRejected;
+  static constexpr std::uint16_t kErrorBridgeUnavailable =
+    robot_task_interfaces::error_code::kExecutorBridgeUnavailable;
+  static constexpr std::uint16_t kErrorTaskDeadline =
+    robot_task_interfaces::error_code::kExecutorTaskDeadline;
+  static constexpr std::uint16_t kErrorCancelUnconfirmed =
+    robot_task_interfaces::error_code::kExecutorCancelUnconfirmed;
+  static constexpr std::uint16_t kErrorUnexpectedChildResult =
+    robot_task_interfaces::error_code::kExecutorUnexpectedChildResult;
   static constexpr std::uint16_t kMaxApplicationCommandId = 0x7FFF;
   static constexpr auto kLateGoalResponseGrace = std::chrono::milliseconds(2000);
   // A cancel whose dispatch threw is retried on this interval until the drain
@@ -1201,11 +1212,11 @@ int run_task_executor_node(
       }
       spin_finished = true;
     });
-  while (process_shutdown_requested == 0 && !spin_finished) {
+  while (process_shutdown_requested.load() == 0 && !spin_finished) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
-  if (process_shutdown_requested != 0) {
+  if (process_shutdown_requested.load() != 0) {
     request_task_executor_shutdown(node);
     while (!wait_for_task_executor_shutdown_for(node, std::chrono::milliseconds(25))) {
       if (spin_finished) {

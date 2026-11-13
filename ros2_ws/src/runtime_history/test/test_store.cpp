@@ -243,10 +243,16 @@ TEST(StoreTest, ComputesNearestRankStatistics)
   EXPECT_TRUE(stats.has_data);
   EXPECT_EQ(stats.sample_count, 5U);
   EXPECT_EQ(stats.outcome_counts, (std::array<std::uint64_t, 4>{2, 1, 1, 1}));
-  EXPECT_EQ(stats.p50_ms, 30U);
+  // Durations 10 and 100 are the two successes (outcome 0); 20/30/40 are not.
+  // The percentiles are per population now, so the mixed set no longer applies.
+  EXPECT_EQ(stats.p50_ms, 10U);
   EXPECT_EQ(stats.p95_ms, 100U);
   EXPECT_EQ(stats.p99_ms, 100U);
   EXPECT_EQ(stats.max_ms, 100U);
+  EXPECT_TRUE(stats.has_failure_data);
+  EXPECT_EQ(stats.failure_count, 3U);
+  EXPECT_EQ(stats.failure_p50_ms, 30U);
+  EXPECT_EQ(stats.failure_max_ms, 40U);
 }
 
 TEST(StoreTest, SerializesConcurrentInsertsOnOneStore)
@@ -467,3 +473,68 @@ TEST(StoreTest, RejectsDatabaseThatCannotUseWal)
 }
 
 }  // namespace
+
+// Percentiles used to be computed over the whole table with success and failure
+// mixed, so a SAFE_STOP that spent 30 s timing out moved p99 more than a fast
+// completion did. The two populations are now reported separately.
+TEST(StoreTest, PercentilesArePerOutcomeNotMixed)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  // Ten fast successes and two slow failures: mixing them would put both
+  // percentiles in the thousands.
+  for (int index = 0; index < 10; ++index) {
+    ASSERT_TRUE(store.insert(record("ok-" + std::to_string(index), 10U + index, 0)));
+  }
+  ASSERT_TRUE(store.insert(record("stop-1", 30000, 2)));
+  ASSERT_TRUE(store.insert(record("stop-2", 31000, 2)));
+
+  const auto stats = store.stats();
+  EXPECT_EQ(stats.sample_count, 12U);
+  EXPECT_TRUE(stats.has_data);
+  // Success population only.
+  EXPECT_EQ(stats.p50_ms, 14U);
+  EXPECT_LT(stats.p99_ms, 100U);
+  EXPECT_LT(stats.max_ms, 100U);
+  // Failure population only, reported beside it.
+  EXPECT_TRUE(stats.has_failure_data);
+  EXPECT_EQ(stats.failure_count, 2U);
+  EXPECT_EQ(stats.failure_p50_ms, 30000U);
+  EXPECT_EQ(stats.failure_max_ms, 31000U);
+}
+
+TEST(StoreTest, NoFailuresMeansNoFailurePercentiles)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  ASSERT_TRUE(store.insert(record("ok", 5, 0)));
+
+  const auto stats = store.stats();
+  EXPECT_TRUE(stats.has_data);
+  EXPECT_FALSE(stats.has_failure_data);
+  EXPECT_EQ(stats.failure_count, 0U);
+  EXPECT_EQ(stats.failure_p50_ms, 0U);
+}
+
+// task_runs had no retention at all, so the table and the sorted percentile scan
+// grew without bound.
+TEST(StoreTest, PrunesTaskRunsButNeverBelowTheKeepFloor)
+{
+  TemporaryDatabase database;
+  runtime_history::Store store(database.path());
+  for (int index = 0; index < 10; ++index) {
+    auto row = record("task-" + std::to_string(index), 10, 0);
+    row.completed_at_ns = 1000 + index;
+    ASSERT_TRUE(store.insert(row));
+  }
+
+  // Everything is older than the horizon, but the floor protects the newest 4.
+  EXPECT_EQ(store.prune_task_runs(1000000, 4), 6U);
+  EXPECT_EQ(query_text(database.path(), "SELECT count(*) FROM task_runs"), "4");
+  EXPECT_TRUE(store.get("task-9").has_value());
+  EXPECT_TRUE(store.get("task-6").has_value());
+  EXPECT_FALSE(store.get("task-0").has_value());
+
+  // A second run with nothing old enough deletes nothing.
+  EXPECT_EQ(store.prune_task_runs(0, 4), 0U);
+}

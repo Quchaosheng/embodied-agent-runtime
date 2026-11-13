@@ -108,21 +108,54 @@ bool same(const TaskRecord & left, const TaskRecord & right)
          left.message == right.message && left.completed_at_ns == right.completed_at_ns;
 }
 
+// The gateway's own "never dispatched" outcome. See gateway_service.cpp.
+constexpr int kRejectedOutcome = 4;
+
 std::uint64_t nearest_rank_offset(const std::uint64_t count, const std::uint64_t percent)
 {
   return (percent * count + 99) / 100 - 1;
 }
 
-std::uint64_t duration_at_offset(sqlite3 * db, const std::uint64_t offset)
+// `succeeded_only` selects one population: true for completed runs, false for the
+// rest. A single mixed scan let a slow SAFE_STOP dominate a fast success.
+std::uint64_t duration_at_offset(
+  sqlite3 * db, const std::uint64_t offset, const bool succeeded_only)
 {
-  Statement statement(
-    db, "SELECT duration_ms FROM task_runs ORDER BY duration_ms LIMIT 1 OFFSET ?");
+  const char * sql = succeeded_only ?
+    "SELECT duration_ms FROM task_runs WHERE outcome = 0 "
+    "ORDER BY duration_ms LIMIT 1 OFFSET ?" :
+    "SELECT duration_ms FROM task_runs WHERE outcome != 0 "
+    "ORDER BY duration_ms LIMIT 1 OFFSET ?";
+  Statement statement(db, sql);
   check(db, sqlite3_bind_int64(
       statement.get(), 1, static_cast<sqlite3_int64>(offset)));
   if (sqlite3_step(statement.get()) != SQLITE_ROW) {
     throw std::runtime_error(sqlite3_errmsg(db));
   }
   return static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
+}
+
+std::uint64_t count_where(sqlite3 * db, const bool succeeded_only)
+{
+  Statement statement(
+    db, succeeded_only ? "SELECT COUNT(*) FROM task_runs WHERE outcome = 0" :
+    "SELECT COUNT(*) FROM task_runs WHERE outcome != 0");
+  if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db));
+  }
+  return static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
+}
+
+std::uint64_t max_where(sqlite3 * db, const bool succeeded_only)
+{
+  Statement statement(
+    db, succeeded_only ? "SELECT MAX(duration_ms) FROM task_runs WHERE outcome = 0" :
+    "SELECT MAX(duration_ms) FROM task_runs WHERE outcome != 0");
+  if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+    throw std::runtime_error(sqlite3_errmsg(db));
+  }
+  return sqlite3_column_type(statement.get(), 0) == SQLITE_NULL ? 0U :
+         static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
 }
 
 }  // namespace
@@ -390,7 +423,6 @@ RuntimeStats Store::stats() const
 
   result.has_data = true;
   result.sample_count = count;
-  result.max_ms = static_cast<std::uint64_t>(sqlite3_column_int64(summary.get(), 1));
   Statement outcomes(db_, "SELECT outcome,COUNT(*) FROM task_runs GROUP BY outcome");
   while (true) {
     const auto step = sqlite3_step(outcomes.get());
@@ -401,15 +433,62 @@ RuntimeStats Store::stats() const
       throw std::runtime_error(sqlite3_errmsg(db_));
     }
     const auto outcome = sqlite3_column_int(outcomes.get(), 0);
+    const auto tally =
+      static_cast<std::uint64_t>(sqlite3_column_int64(outcomes.get(), 1));
     if (outcome >= 0 && outcome < static_cast<int>(result.outcome_counts.size())) {
-      result.outcome_counts[static_cast<std::size_t>(outcome)] +=
-        static_cast<std::uint64_t>(sqlite3_column_int64(outcomes.get(), 1));
+      result.outcome_counts[static_cast<std::size_t>(outcome)] += tally;
+    } else if (outcome == kRejectedOutcome) {
+      result.rejected_count += tally;
     }
   }
-  result.p50_ms = duration_at_offset(db_, nearest_rank_offset(count, 50));
-  result.p95_ms = duration_at_offset(db_, nearest_rank_offset(count, 95));
-  result.p99_ms = duration_at_offset(db_, nearest_rank_offset(count, 99));
+  const auto succeeded = count_where(db_, true);
+  if (succeeded > 0) {
+    result.p50_ms = duration_at_offset(db_, nearest_rank_offset(succeeded, 50), true);
+    result.p95_ms = duration_at_offset(db_, nearest_rank_offset(succeeded, 95), true);
+    result.p99_ms = duration_at_offset(db_, nearest_rank_offset(succeeded, 99), true);
+    result.max_ms = max_where(db_, true);
+  }
+
+  const auto failed = count_where(db_, false);
+  result.failure_count = failed;
+  if (failed > 0) {
+    result.has_failure_data = true;
+    result.failure_p50_ms = duration_at_offset(db_, nearest_rank_offset(failed, 50), false);
+    result.failure_p95_ms = duration_at_offset(db_, nearest_rank_offset(failed, 95), false);
+    result.failure_p99_ms = duration_at_offset(db_, nearest_rank_offset(failed, 99), false);
+    result.failure_max_ms = max_where(db_, false);
+  }
   return result;
+}
+
+std::size_t Store::prune_task_runs(
+  const std::int64_t older_than_ns, const std::size_t keep_at_least)
+{
+  const std::lock_guard<std::mutex> lock(mutex_);
+  try {
+    execute(db_, "BEGIN IMMEDIATE");
+    // The keep floor is by completed_at_ns, newest first, so the most recent
+    // history is never deleted to satisfy the age rule.
+    Statement statement(
+      db_,
+      "DELETE FROM task_runs WHERE completed_at_ns < ? AND task_id NOT IN ("
+      "SELECT task_id FROM task_runs ORDER BY completed_at_ns DESC LIMIT ?)");
+    check(db_, sqlite3_bind_int64(statement.get(), 1, older_than_ns));
+    check(db_, sqlite3_bind_int64(
+        statement.get(), 2, static_cast<sqlite3_int64>(keep_at_least)));
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+      throw std::runtime_error(sqlite3_errmsg(db_));
+    }
+    const auto removed = static_cast<std::size_t>(sqlite3_changes(db_));
+    execute(db_, "COMMIT");
+    return removed;
+  } catch (...) {
+    try {
+      execute(db_, "ROLLBACK");
+    } catch (...) {
+    }
+    throw;
+  }
 }
 
 }  // namespace runtime_history

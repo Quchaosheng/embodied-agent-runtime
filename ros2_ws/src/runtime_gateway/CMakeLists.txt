@@ -23,6 +23,7 @@ if(NOT (TARGET gRPC::grpc++ AND TARGET gRPC::grpc_cpp_plugin))
       IMPORTED_LOCATION "${GRPC_CPP_PLUGIN_EXECUTABLE}")
   endif()
 endif()
+find_package(diagnostic_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(robot_task_interfaces REQUIRED)
@@ -46,7 +47,7 @@ add_library(runtime_gateway_proto ${PROTO_SRCS})
 target_include_directories(runtime_gateway_proto PUBLIC ${PROTO_DIR})
 target_link_libraries(runtime_gateway_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
-add_library(request_registry src/request_registry.cpp)
+add_library(request_registry src/request_registry.cpp src/request_state.cpp)
 target_compile_features(request_registry PUBLIC cxx_std_17)
 target_include_directories(request_registry PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -58,7 +59,8 @@ target_include_directories(durable_idempotency PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(durable_idempotency
-  request_registry runtime_history::runtime_history_store)
+  request_registry runtime_history::runtime_history_store
+  robot_task_interfaces::robot_task_interfaces_error_code)
 
 add_library(gateway_service src/gateway_service.cpp)
 target_compile_features(gateway_service PUBLIC cxx_std_17)
@@ -67,7 +69,8 @@ target_include_directories(gateway_service PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(gateway_service
   request_registry durable_idempotency runtime_gateway_proto
-  runtime_history::runtime_history_store runtime_history::runtime_history_stage_events)
+  runtime_history::runtime_history_store runtime_history::runtime_history_stage_events
+  robot_task_interfaces::robot_task_interfaces_error_code)
 ament_target_dependencies(gateway_service rclcpp rclcpp_action robot_task_interfaces)
 
 add_library(loopback_server src/loopback_server.cpp)
@@ -80,7 +83,7 @@ target_link_libraries(loopback_server gateway_service runtime_gateway_proto)
 add_executable(runtime_gateway_node src/runtime_gateway_node.cpp)
 target_compile_features(runtime_gateway_node PUBLIC cxx_std_17)
 target_link_libraries(runtime_gateway_node gateway_service loopback_server)
-ament_target_dependencies(runtime_gateway_node rclcpp)
+ament_target_dependencies(runtime_gateway_node diagnostic_msgs rclcpp)
 
 add_executable(runtime_gateway_client src/runtime_gateway_client.cpp)
 target_compile_features(runtime_gateway_client PUBLIC cxx_std_17)
@@ -97,6 +100,9 @@ if(BUILD_TESTING)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+  ament_add_gtest(test_request_state test/test_request_state.cpp)
+  target_link_libraries(test_request_state request_registry)
+
   ament_add_gtest(test_request_registry test/test_request_registry.cpp)
   target_link_libraries(test_request_registry request_registry)
   ament_add_gtest(test_durable_idempotency test/test_durable_idempotency.cpp)
