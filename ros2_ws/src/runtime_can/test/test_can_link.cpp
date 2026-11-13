@@ -27,7 +27,8 @@ TEST(CanLinkTest, StartOpensTheInterfaceAndFiltersBothFrameIds)
   std::string error;
 
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
   EXPECT_TRUE(link.is_open());
   EXPECT_EQ(link.interface_name(), "vcan0");
   EXPECT_TRUE(error.empty());
@@ -39,7 +40,8 @@ TEST(CanLinkTest, AwaitResponseReturnsTheMatchingFrameAndIgnoresOthers)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   // A frame for a superseded command, then the one the caller is waiting for.
   ASSERT_TRUE(transport->inject(
@@ -60,7 +62,8 @@ TEST(CanLinkTest, AwaitResponseTimesOut)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   runtime_can::Response response;
   EXPECT_EQ(
@@ -74,7 +77,8 @@ TEST(CanLinkTest, AwaitResponseObservesACancel)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   std::atomic_bool canceled{false};
   runtime_can::Response response;
@@ -92,7 +96,8 @@ TEST(CanLinkTest, BusOffIsLatchedAndReportedSeparatelyFromAFrame)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   runtime_can::BusState state;
   state.bus_off = true;
@@ -112,7 +117,8 @@ TEST(CanLinkTest, ReopensAfterATransportErrorAndCountsIt)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   transport->fail_receive("network is down");
   runtime_can::Response response;
@@ -141,7 +147,8 @@ TEST(CanLinkTest, UnmatchedFrameForASupersededCommandIsCountedNotDelivered)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   ASSERT_TRUE(transport->inject(
       runtime_can::encode_response(runtime_can::Response{99, 0, 1, {0, 0, 0}})));
@@ -158,7 +165,8 @@ TEST(CanLinkTest, StatusFramesAreDeliveredThroughTheirOwnWait)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   runtime_can::StatusFrame sent;
   sent.command_id = 11;
@@ -178,7 +186,8 @@ TEST(CanLinkTest, BusOffReopensTheInterfaceAndClearsTheLatch)
   runtime_can::CanLink link(transport, 5ms, 10ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   runtime_can::BusState state;
   state.bus_off = true;
@@ -199,7 +208,8 @@ TEST(CanLinkTest, StopEndsTheReceiveThread)
   runtime_can::CanLink link(transport, 5ms);
   std::string error;
   ASSERT_TRUE(
-    link.start("vcan0", runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error));
+    link.start("vcan0", runtime_can::frame_id(1, runtime_can::kResponseFrameKind),
+    runtime_can::frame_id(1, runtime_can::kStatusFrameKind), error));
 
   link.stop();
   EXPECT_FALSE(link.is_open());

@@ -8,10 +8,16 @@ TEST(ProtocolTest, EncodesCommandUsingBigEndianFields)
 
   const auto frame = runtime_can::encode_command(command);
 
-  EXPECT_EQ(frame.id, runtime_can::kCommandFrameId);
+  // A default Command is session 1, so its id is the session-0 command id plus
+  // the session nibble.
+  EXPECT_EQ(frame.id, runtime_can::frame_id(1, runtime_can::kCommandFrameKind));
+  EXPECT_EQ(runtime_can::session_of(frame.id), 1);
   EXPECT_EQ(frame.size, runtime_can::kPayloadSize);
+  // data[0] is the session now (1 by default, which is v1's id space), and the
+  // frame id carries the same session in bits 10..8.
   EXPECT_EQ(frame.data, (std::array<std::uint8_t, 8>{
     0x01, 0x12, 0x34, 0x56, 0xFF, 0xFF, 0xFF, 0xFE}));
+  EXPECT_EQ(frame.id, runtime_can::frame_id(1, runtime_can::kCommandFrameId));
 }
 
 TEST(ProtocolTest, RoundTripsCommandAndResponse)
@@ -40,7 +46,7 @@ TEST(ProtocolTest, RejectsWrongIdSizeAndVersion)
   runtime_can::DecodeError error;
   auto frame = runtime_can::encode_command({1, 2, 3});
 
-  frame.id = runtime_can::kResponseFrameId;
+  frame.id = runtime_can::frame_id(1, runtime_can::kResponseFrameKind);
   EXPECT_FALSE(runtime_can::decode_command(frame, error).has_value());
   EXPECT_EQ(error, runtime_can::DecodeError::kWrongFrameId);
 
@@ -49,10 +55,12 @@ TEST(ProtocolTest, RejectsWrongIdSizeAndVersion)
   EXPECT_FALSE(runtime_can::decode_command(frame, error).has_value());
   EXPECT_EQ(error, runtime_can::DecodeError::kWrongPayloadSize);
 
+  // The session in the payload must match the session in the frame id, or the
+  // frame cannot be attributed to a session at all.
   frame = runtime_can::encode_command({1, 2, 3});
-  frame.data[0] = 99;
+  frame.data[0] = 5;
   EXPECT_FALSE(runtime_can::decode_command(frame, error).has_value());
-  EXPECT_EQ(error, runtime_can::DecodeError::kUnsupportedVersion);
+  EXPECT_EQ(error, runtime_can::DecodeError::kSessionMismatch);
 }
 
 TEST(ProtocolTest, ReservesSeparateStopCommandNamespace)
@@ -71,9 +79,10 @@ TEST(ProtocolTest, StatusFrameIsDisjointFromTheCommandAck)
 
   const auto frame = runtime_can::encode_status(status);
 
-  EXPECT_EQ(frame.id, runtime_can::kStatusFrameId);
-  EXPECT_NE(frame.id, runtime_can::kResponseFrameId);
-  EXPECT_NE(frame.id, runtime_can::kCommandFrameId);
+  EXPECT_EQ(frame.id, runtime_can::frame_id(1, runtime_can::kStatusFrameKind));
+  EXPECT_EQ(runtime_can::kind_of(frame.id), runtime_can::kStatusFrameId);
+  EXPECT_NE(frame.id, runtime_can::frame_id(1, runtime_can::kResponseFrameKind));
+  EXPECT_NE(frame.id, runtime_can::frame_id(1, runtime_can::kCommandFrameKind));
   EXPECT_EQ(frame.size, runtime_can::kPayloadSize);
 }
 

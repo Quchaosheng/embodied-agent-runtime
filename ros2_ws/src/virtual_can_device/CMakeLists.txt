@@ -38,6 +38,9 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_device_modes test/test_device_modes.cpp)
   target_link_libraries(test_device_modes virtual_can_device_modes)
+
+  ament_add_gtest(test_command_cache test/test_command_cache.cpp)
+  target_link_libraries(test_command_cache runtime_can::runtime_can)
 endif()
 
 ament_package()

@@ -80,10 +80,23 @@ public:
     // wait loops left frames arriving while idle in the kernel queue, where the
     // next command read them and rejected them as unmatched.
     link_ = std::make_unique<runtime_can::CanLink>(transport, receive_poll_ms_);
+    // A command identity is (session, command_id) now, so this process announces
+    // its session before anything else. The device drops every cached command
+    // from another session on receiving this, which is what stops a restart from
+    // replaying a stale ACK for an id that happens to be reused.
+    session_ = declare_parameter<std::int64_t>("session", 0) > 0 ?
+      static_cast<std::uint8_t>(declare_parameter<std::int64_t>("session", 0)) :
+      allocate_session();
     if (!link_->start(
-        interface_name_, runtime_can::kResponseFrameId, runtime_can::kStatusFrameId, error))
+        interface_name_,
+        runtime_can::frame_id(session_, runtime_can::kResponseFrameKind),
+        runtime_can::frame_id(session_, runtime_can::kStatusFrameKind), error))
     {
       throw std::runtime_error("failed to open " + interface_name_ + ": " + error);
+    }
+    std::string start_error;
+    if (!link_->send(runtime_can::encode_session_start({session_, 0}), start_error)) {
+      throw std::runtime_error("failed to announce session: " + start_error);
     }
 
     diagnostics_publisher_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
@@ -310,8 +323,11 @@ private:
       return;
     }
 
+    // The session is stamped here and nowhere else: a command's identity is
+    // (session, command_id), and both ends read it from the frame.
     const auto command = runtime_can::Command{
-      static_cast<std::uint16_t>(goal->command_id), goal->opcode, goal->argument};
+      static_cast<std::uint16_t>(goal->command_id), goal->opcode, goal->argument,
+      session_};
     bool command_sent = false;
     for (std::uint8_t attempt = 0; attempt <= kMaxRetries; ++attempt) {
       // Checked on every attempt, not only before the first: a cancel accepted
@@ -560,7 +576,7 @@ private:
     const auto stop_command_id = allocate_stop_command_id();
     const runtime_can::Command stop_command{
       stop_command_id, runtime_can::kStopOpcode,
-      static_cast<std::int32_t>(original_command_id)};
+      static_cast<std::int32_t>(original_command_id), session_};
     std::string send_error;
     if (!link_->send(runtime_can::encode_command(stop_command), send_error)) {
       diagnostic_state_.record_transport_error(device_bridge::kErrorTransport);
@@ -619,6 +635,16 @@ private:
     finish_safe_stop(
       goal_handle, device_bridge::kErrorStopRejected,
       "device STOP response rejected stop_command_id=" + std::to_string(stop_command_id));
+  }
+
+  // A session number that a restart will not repeat, so ids from a previous
+  // process cannot be confused with this one's. It is only 4 bits on the wire, so
+  // it is drawn from the clock rather than counted from 0.
+  static std::uint8_t allocate_session()
+  {
+    const auto seed = static_cast<std::uint64_t>(
+      std::chrono::system_clock::now().time_since_epoch().count());
+    return static_cast<std::uint8_t>(1 + (seed % runtime_can::kMaxSession));
   }
 
   std::uint16_t allocate_stop_command_id()
@@ -704,6 +730,7 @@ private:
   std::chrono::milliseconds completion_timeout_{30000};
   bool completion_states_enabled_{false};
   std::uint16_t next_stop_command_id_{runtime_can::kStopCommandIdMin};
+  std::uint8_t session_{1};
   std::atomic_bool running_{true};
   std::atomic_bool shutting_down_{false};
   std::atomic_bool worker_finished_{false};

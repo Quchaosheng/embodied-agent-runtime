@@ -156,7 +156,9 @@ void CanLink::handle_bus_state(const BusState & state)
 void CanLink::handle_frame(const RawFrame & frame)
 {
   bool matched = false;
-  if (frame.id == kResponseFrameId) {
+  // Compared against the ids this link was started with, not the global v1
+  // constants: with sessions the actual id depends on the session.
+  if (frame.id == response_frame_id_) {
     DecodeError decode_error;
     const auto response = decode_response(frame, decode_error);
     if (response) {
@@ -167,7 +169,7 @@ void CanLink::handle_frame(const RawFrame & frame)
       matched = true;
       received_.notify_all();
     }
-  } else if (frame.id == kStatusFrameId) {
+  } else if (frame.id == status_frame_id_) {
     DecodeError decode_error;
     const auto status = decode_status(frame, decode_error);
     if (status) {

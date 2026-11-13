@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -32,6 +33,12 @@ public:
     const auto configured_delay_ms = declare_parameter<std::int64_t>("delay_ms", 500);
     const auto configured_cache_capacity = declare_parameter<std::int64_t>(
       "replay_cache_capacity", 4096);
+    // 0 disables the guard, which is what a deployment with no heartbeat source
+    // wants; anything positive stops the device after that long without a beat.
+    heartbeat_timeout_ms_ = declare_parameter<std::int64_t>("heartbeat_timeout_ms", 0);
+    if (heartbeat_timeout_ms_ < 0 || heartbeat_timeout_ms_ > 60000) {
+      throw std::invalid_argument("heartbeat_timeout_ms must be in [0, 60000]");
+    }
     delay_ms_ = static_cast<int>(
       std::clamp<std::int64_t>(configured_delay_ms, 0, 60000));
     if (configured_cache_capacity < 1 || configured_cache_capacity > 65536) {
@@ -54,6 +61,8 @@ public:
 
     running_ = true;
     io_thread_ = std::thread([this]() {receive_loop();});
+    heartbeat_timer_ = create_wall_timer(
+      std::chrono::milliseconds(50), [this]() {check_heartbeat();});
     RCLCPP_INFO(
       get_logger(), "Ready on %s mode=%s delay_ms=%d replay_cache_capacity=%zu",
       interface_name_.c_str(), mode_.c_str(), delay_ms_, replay_cache_capacity_);
@@ -96,6 +105,33 @@ private:
         continue;
       }
 
+      // The frame kind decides what arrived, so a session-start or a heartbeat is
+      // never mistaken for a command.
+      if (runtime_can::kind_of(frame.id) == runtime_can::kSessionStartFrameId) {
+        runtime_can::DecodeError start_error;
+        const auto start = runtime_can::decode_session_start(frame, start_error);
+        if (start) {
+          start_session(*start);
+        } else {
+          RCLCPP_WARN(
+            get_logger(), "Ignoring invalid session frame: %s",
+            runtime_can::to_string(start_error).data());
+        }
+        continue;
+      }
+      if (runtime_can::kind_of(frame.id) == runtime_can::kHeartbeatFrameId) {
+        runtime_can::DecodeError heartbeat_error;
+        const auto heartbeat = runtime_can::decode_heartbeat(frame, heartbeat_error);
+        if (heartbeat) {
+          note_heartbeat(*heartbeat);
+        } else {
+          RCLCPP_WARN(
+            get_logger(), "Ignoring invalid heartbeat frame: %s",
+            runtime_can::to_string(heartbeat_error).data());
+        }
+        continue;
+      }
+
       runtime_can::DecodeError decode_error;
       const auto command = runtime_can::decode_command(frame, decode_error);
       if (!command) {
@@ -110,11 +146,20 @@ private:
 
   void process_command(const runtime_can::Command & command)
   {
-    const auto cached = cache_.find(command.command_id);
+    // STOP is never served from the cache and never cached. A command identity is
+    // (session, command_id) now, but a STOP must execute unconditionally even so:
+    // replaying a STOP because "we already saw that id" would report a stop the
+    // device did not perform.
+    if (command.opcode == runtime_can::kStopOpcode) {
+      handle_stop(command);
+      return;
+    }
+    const runtime_can::CommandKey key{command.session, command.command_id};
+    const auto cached = cache_.find(key);
     if (cached != cache_.end()) {
       if (!(cached->second.command == command)) {
         runtime_can::Response conflict{
-          command.command_id, 3, DeviceState::FAULT, {0, 0, 0}};
+          command.command_id, 3, DeviceState::FAULT, {0, 0, 0}, command.session};
         send_response(conflict);
         publish_state(command.command_id, DeviceState::FAULT, 3);
         return;
@@ -122,27 +167,6 @@ private:
       if (cached->second.response) {
         send_response(*cached->second.response);
       }
-      return;
-    }
-
-    if (command.opcode == runtime_can::kStopOpcode) {
-      if (mode_ == "drop_stop_ack") {
-        cache_command(command, std::nullopt);
-        publish_state(command.command_id, DeviceState::BUSY, 0);
-        RCLCPP_WARN(get_logger(), "Dropping STOP ACK command_id=%u", command.command_id);
-        return;
-      }
-
-      runtime_can::Response stop_response;
-      stop_response.command_id = command.command_id;
-      stop_response.result_code = 0;
-      stop_response.device_mode = DeviceState::STOPPED;
-      cache_command(command, stop_response);
-      send_response(stop_response);
-      publish_state(command.command_id, DeviceState::STOPPED, 0);
-      RCLCPP_INFO(
-        get_logger(), "STOP acknowledged command_id=%u original_command_id=%d",
-        command.command_id, command.argument);
       return;
     }
 
@@ -223,16 +247,112 @@ private:
       command_id, runtime_can::to_string(completion).data(), fault_code);
   }
 
+  // A STOP executes every time it arrives: it is never fetched from the cache and
+  // never stored in it, so a repeated id cannot turn into a reported stop that
+  // did not happen.
+  void handle_stop(const runtime_can::Command & command)
+  {
+    if (mode_ == "drop_stop_ack") {
+      publish_state(command.command_id, DeviceState::BUSY, 0);
+      RCLCPP_WARN(get_logger(), "Dropping STOP ACK command_id=%u", command.command_id);
+      return;
+    }
+
+    runtime_can::Response stop_response;
+    stop_response.command_id = command.command_id;
+    stop_response.result_code = 0;
+    stop_response.device_mode = DeviceState::STOPPED;
+    stop_response.session = command.session;
+    send_response(stop_response);
+    publish_state(command.command_id, DeviceState::STOPPED, 0);
+    RCLCPP_INFO(
+      get_logger(), "STOP acknowledged command_id=%u original_command_id=%d session=%u",
+      command.command_id, command.argument, command.session);
+  }
+
   void cache_command(
     const runtime_can::Command & command,
     const std::optional<runtime_can::Response> & response)
   {
+    // A STOP is never cached, so its identity cannot be replayed at all.
+    if (command.opcode == runtime_can::kStopOpcode) {
+      return;
+    }
+    const runtime_can::CommandKey key{command.session, command.command_id};
     if (cache_.size() >= replay_cache_capacity_) {
       cache_.erase(cache_order_.front());
       cache_order_.pop_front();
     }
-    cache_.emplace(command.command_id, CacheEntry{command, response});
-    cache_order_.push_back(command.command_id);
+    cache_.emplace(key, CacheEntry{command, response});
+    cache_order_.push_back(key);
+  }
+
+  // The only mechanism that lets the device stop on its own: without it, a wedge
+  // in the runtime is indistinguishable from a busy one and the device keeps
+  // executing. A missed beat is counted; reaching the bound stops the device.
+  void note_heartbeat(const runtime_can::Heartbeat & heartbeat)
+  {
+    if (heartbeat.session != session_) {
+      // A heartbeat from a session we have not started is a runtime that has not
+      // announced itself yet; it is not evidence of liveness for this session.
+      RCLCPP_WARN(
+        get_logger(), "Ignoring heartbeat for session %u (current %u)",
+        heartbeat.session, session_);
+      return;
+    }
+    last_heartbeat_ns_ = std::chrono::steady_clock::now();
+    missed_heartbeats_ = 0;
+    heartbeat_count_ = heartbeat.counter;
+  }
+
+  // Called on the io thread: a device that has heard nothing for
+  // heartbeat_timeout_ms stops on its own and reports why.
+  void check_heartbeat()
+  {
+    if (heartbeat_timeout_ms_ <= 0 || last_heartbeat_ns_.time_since_epoch().count() == 0) {
+      return;
+    }
+    const auto silent = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - last_heartbeat_ns_);
+    if (silent <= std::chrono::milliseconds(heartbeat_timeout_ms_)) {
+      missed_heartbeats_ = 0;
+      return;
+    }
+    if (heartbeat_latched_) {
+      return;
+    }
+    heartbeat_latched_ = true;
+    ++missed_heartbeats_;
+    publish_state(0, DeviceState::STOPPED, kHeartbeatLostFaultCode);
+    RCLCPP_ERROR(
+      get_logger(),
+      "No heartbeat for %ld ms (session %u); device stopped on its own",
+      static_cast<long>(silent.count()), session_);
+  }
+
+  // Drops every entry from a session other than the announced one. The bridge
+  // sends this when its process starts, which is what makes a restarted bridge
+  // unable to receive a stale ACK for an id it happens to reuse.
+  void start_session(const runtime_can::SessionStart & start)
+  {
+    std::size_t dropped = 0;
+    for (auto it = cache_.begin(); it != cache_.end(); ) {
+      if (it->first.session != start.session) {
+        it = cache_.erase(it);
+        ++dropped;
+      } else {
+        ++it;
+      }
+    }
+    cache_order_.clear();
+    for (const auto & entry : cache_) {
+      cache_order_.push_back(entry.first);
+    }
+    session_ = start.session;
+    publish_state(0, DeviceState::NORMAL, 0);
+    RCLCPP_INFO(
+      get_logger(), "Session %u started; dropped %zu cached commands from other sessions",
+      start.session, dropped);
   }
 
   void send_response(const runtime_can::Response & response)
@@ -269,8 +389,16 @@ private:
   runtime_can::SocketCan socket_;
   rclcpp::Publisher<DeviceState>::SharedPtr state_publisher_;
   std::thread io_thread_;
-  std::deque<std::uint16_t> cache_order_;
-  std::unordered_map<std::uint16_t, CacheEntry> cache_;
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+  std::deque<runtime_can::CommandKey> cache_order_;
+  std::uint8_t session_{1};
+  std::int64_t heartbeat_timeout_ms_{0};
+  static constexpr std::uint16_t kHeartbeatLostFaultCode = 0x7E01;
+  bool heartbeat_latched_{false};
+  std::uint32_t missed_heartbeats_{0};
+  std::uint8_t heartbeat_count_{0};
+  std::chrono::steady_clock::time_point last_heartbeat_ns_{};
+  std::map<runtime_can::CommandKey, CacheEntry> cache_;
 };
 
 int main(int argc, char ** argv)

@@ -100,7 +100,8 @@ protected:
           return;
         }
         transport_->inject(runtime_can::encode_response(
-            runtime_can::Response{command->command_id, result_code, 1, {0, 0, 0}}));
+            runtime_can::Response{command->command_id, result_code, 1, {0, 0, 0},
+            command->session}));
       });
   }
 
@@ -217,13 +218,16 @@ TEST_F(DeviceBridgeNodeTest, CompletionProtocolWaitsForTheStatusFrame)
         return;
       }
       transport->inject(runtime_can::encode_response(
-          runtime_can::Response{command->command_id, 0, 1, {0, 0, 0}}));
+          runtime_can::Response{command->command_id, 0, 1, {0, 0, 0},
+          command->session}));
       runtime_can::StatusFrame executing;
       executing.command_id = command->command_id;
+      executing.session = command->session;
       executing.completion = runtime_can::Completion::kExecuting;
       transport->inject(runtime_can::encode_status(executing));
       runtime_can::StatusFrame completed;
       completed.command_id = command->command_id;
+      completed.session = command->session;
       completed.completion = runtime_can::Completion::kCompleted;
       transport->inject(runtime_can::encode_status(completed));
     });
@@ -256,7 +260,8 @@ TEST_F(DeviceBridgeNodeTest, CancelAfterAckSendsAStopAndReportsCanceled)
         // stopped; answering NORMAL is a refusal.
         transport->inject(runtime_can::encode_response(runtime_can::Response{
         command->command_id, 0,
-        robot_task_interfaces::msg::DeviceState::STOPPED, {0, 0, 0}}));
+        robot_task_interfaces::msg::DeviceState::STOPPED, {0, 0, 0},
+        command->session}));
         return;
       }
       // The ACK never arrives; the caller cancels while the bridge is waiting.
@@ -312,7 +317,8 @@ TEST_F(DeviceBridgeNodeTest, StopRejectedByTheDeviceIsReportedAsSafeStop)
       }
       if (command->opcode == runtime_can::kStopOpcode) {
         transport->inject(runtime_can::encode_response(
-            runtime_can::Response{command->command_id, 9, 1, {0, 0, 0}}));
+            runtime_can::Response{command->command_id, 9, 1, {0, 0, 0},
+            command->session}));
         return;
       }
       // Never acknowledge the command, so the bridge times out and stops.
