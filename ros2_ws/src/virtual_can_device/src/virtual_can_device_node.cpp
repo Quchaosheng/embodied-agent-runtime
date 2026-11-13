@@ -186,6 +186,10 @@ private:
 
     runtime_can::Response response;
     response.command_id = command.command_id;
+    // The answer belongs to the session the command arrived in. Defaulting to 1
+    // made the bridge - which listens on its own session's response id - never
+    // see the ACK, and every task timed out against a device that had answered.
+    response.session = command.session;
     if (mode_ == "reject") {
       response.result_code = 1;
       response.device_mode = DeviceState::NORMAL;
@@ -206,42 +210,45 @@ private:
       command.command_id, response.device_mode,
       response.result_code == 2 ? 1 : 0);
     if (response.result_code == 0) {
-      publish_completion(command.command_id);
+      publish_completion(command.command_id, command.session);
     }
   }
 
   // The ACK above only says the command arrived. These modes then report what
   // the device does with it, on the separate status frame, so a test can tell
   // "acknowledged" from "finished" instead of conflating them.
-  void publish_completion(const std::uint16_t command_id)
+  void publish_completion(const std::uint16_t command_id, const std::uint8_t session)
   {
     using runtime_can::Completion;
     if (mode_ == "completion_never_finishes") {
-      send_status(command_id, Completion::kAccepted, 0);
-      send_status(command_id, Completion::kExecuting, 0);
+      send_status(command_id, Completion::kAccepted, 0, session);
+      send_status(command_id, Completion::kExecuting, 0, session);
       return;
     }
     if (mode_ == "completion_fault") {
-      send_status(command_id, Completion::kAccepted, 0);
-      send_status(command_id, Completion::kFaulted, 1);
+      send_status(command_id, Completion::kAccepted, 0, session);
+      send_status(command_id, Completion::kFaulted, 1, session);
       return;
     }
     if (mode_ != "completion") {
       return;
     }
-    send_status(command_id, Completion::kAccepted, 0);
+    send_status(command_id, Completion::kAccepted, 0, session);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms_, 0)));
-    send_status(command_id, Completion::kExecuting, 0);
+    send_status(command_id, Completion::kExecuting, 0, session);
     std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms_, 0)));
-    send_status(command_id, Completion::kCompleted, 0);
+    send_status(command_id, Completion::kCompleted, 0, session);
   }
 
   void send_status(
     const std::uint16_t command_id, const runtime_can::Completion completion,
-    const std::uint8_t fault_code)
+    const std::uint8_t fault_code, const std::uint8_t session)
   {
     runtime_can::StatusFrame status;
     status.command_id = command_id;
+    // A status belongs to the session its command came from, for the same reason
+    // the ACK does.
+    status.session = session;
     status.completion = completion;
     status.fault_code = fault_code;
     std::string error;

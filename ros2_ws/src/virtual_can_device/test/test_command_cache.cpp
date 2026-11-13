@@ -68,3 +68,54 @@ TEST(CommandKeyTest, AStopIsNeverServedFromTheCache)
   const bool consult_cache = stop.opcode != runtime_can::kStopOpcode;
   EXPECT_FALSE(consult_cache);
 }
+
+// The device answered on its own default session instead of the command's, so the
+// bridge - which listens on its own session's response id - never saw the ACK and
+// every task timed out against a device that had answered. No unit test caught it
+// because they all used session 1; the vcan E2E did.
+TEST(CommandKeyTest, AnAnswerBelongsToTheSessionItsCommandArrivedIn)
+{
+  constexpr std::uint32_t kCanSffMask = 0x7FF;
+  for (std::uint8_t session = 1; session <= runtime_can::kMaxSession; ++session) {
+    const runtime_can::Command command{3410, 1, 42, session};
+    auto command_frame = runtime_can::encode_command(command);
+    command_frame.id &= kCanSffMask;
+
+    runtime_can::DecodeError error;
+    ASSERT_TRUE(runtime_can::decode_command(command_frame, error).has_value());
+
+    // What the device does: answer with the session it just decoded.
+    const runtime_can::Response response{3410, 0, 1, {0, 0, 0}, session};
+    const auto response_frame = runtime_can::encode_response(response);
+
+    // The bridge filters on exactly this id, so it must match.
+    EXPECT_EQ(
+      response_frame.id & kCanSffMask,
+      runtime_can::frame_id(session, runtime_can::kResponseFrameKind));
+    // And a bridge listening on another session must not match it.
+    if (session > 1) {
+      EXPECT_NE(
+        response_frame.id,
+        runtime_can::frame_id(session - 1, runtime_can::kResponseFrameKind));
+    }
+
+    const auto decoded = runtime_can::decode_response(response_frame, error);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->session, session);
+  }
+}
+
+TEST(CommandKeyTest, EveryFrameKindFitsInOneElevenBitId)
+{
+  constexpr std::uint32_t kCanSffMask = 0x7FF;
+  for (std::uint8_t session = 0; session <= runtime_can::kMaxSession; ++session) {
+    for (const auto kind : {
+      runtime_can::kCommandFrameKind, runtime_can::kResponseFrameKind,
+      runtime_can::kStatusFrameKind, runtime_can::kSessionStartFrameKind,
+      runtime_can::kHeartbeatFrameKind})
+    {
+      EXPECT_LE(runtime_can::frame_id(session, kind), kCanSffMask)
+        << "session " << static_cast<int>(session) << " kind " << kind;
+    }
+  }
+}
