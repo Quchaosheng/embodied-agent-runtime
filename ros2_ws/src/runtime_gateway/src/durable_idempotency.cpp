@@ -1,5 +1,7 @@
 #include "runtime_gateway/durable_idempotency.hpp"
 
+#include "robot_task_interfaces/error_code.hpp"
+
 #include "runtime_history/store.hpp"
 
 #include <stdexcept>
@@ -67,11 +69,13 @@ IdempotencyOutcome DurableIdempotency::admit(
     existing = store_.get_idempotency(record.request_id);
   } catch (const std::exception &) {
     // Fail closed: without the ledger we cannot prove this is not a retry.
-    return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0, 503,
+    return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0,
+        robot_task_interfaces::error_code::kGatewayUnavailable,
       "durable idempotency ledger unavailable"};
   }
   if (existing && existing->fingerprint != value) {
-    return {IdempotencyDecision::CONFLICT, std::string{}, 0, 409,
+    return {IdempotencyDecision::CONFLICT, std::string{}, 0,
+        robot_task_interfaces::error_code::kGatewayConflict,
       "request_id conflicts with a durable request"};
   }
   if (existing && is_uncertain_state(existing->state)) {
@@ -92,7 +96,8 @@ IdempotencyOutcome DurableIdempotency::admit(
   // otherwise become re-dispatchable.
   try {
     if (store_.count_idempotency(horizon_start(now_ns)) >= capacity_) {
-      return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0, 429,
+      return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0,
+        robot_task_interfaces::error_code::kGatewayRateLimited,
         "durable idempotency ledger is at capacity"};
     }
   } catch (const std::exception &) {
@@ -101,7 +106,8 @@ IdempotencyOutcome DurableIdempotency::admit(
   const runtime_history::IdempotencyRecord claimed{
     record.request_id, value, kAdmitted, 0, 0, "admitted", now_ns};
   if (!store_.put_idempotency(claimed)) {
-    return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0, 503,
+    return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0,
+        robot_task_interfaces::error_code::kGatewayUnavailable,
       "failed to persist idempotency admission"};
   }
   return {IdempotencyDecision::PROCEED, std::string{}, 0, 0, std::string{}};

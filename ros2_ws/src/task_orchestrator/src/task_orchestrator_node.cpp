@@ -7,6 +7,7 @@
 #include "behaviortree_cpp/condition_node.h"
 #include "robot_task_interfaces/action/execute_task.hpp"
 #include "robot_task_interfaces/action/execute_workflow.hpp"
+#include "robot_task_interfaces/error_code.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 #include <atomic>
@@ -406,11 +407,16 @@ public:
   }
 
 private:
-  static constexpr std::uint16_t kErrorShutdown = 205;
-  static constexpr std::uint16_t kErrorPrecondition = 206;
-  static constexpr std::uint16_t kErrorCancelUnconfirmed = 207;
-  static constexpr std::uint16_t kErrorInternal = 208;
-  static constexpr std::uint16_t kErrorDeadline = 209;
+  static constexpr std::uint16_t kErrorShutdown =
+    robot_task_interfaces::error_code::kOrchestratorShutdown;
+  static constexpr std::uint16_t kErrorPrecondition =
+    robot_task_interfaces::error_code::kOrchestratorPreconditionFailed;
+  static constexpr std::uint16_t kErrorCancelUnconfirmed =
+    robot_task_interfaces::error_code::kOrchestratorCancelUnconfirmed;
+  static constexpr std::uint16_t kErrorInternal =
+    robot_task_interfaces::error_code::kOrchestratorInternal;
+  static constexpr std::uint16_t kErrorDeadline =
+    robot_task_interfaces::error_code::kOrchestratorDeadline;
 
   rclcpp_action::GoalResponse handle_goal(
     const rclcpp_action::GoalUUID &,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "robot_task_interfaces/error_code.hpp"
 #include "runtime_can/protocol.hpp"
 
 #include <builtin_interfaces/msg/duration.hpp>
@@ -11,16 +12,19 @@
 namespace device_bridge
 {
 
-constexpr std::uint16_t kErrorInvalidGoal = 100;
-constexpr std::uint16_t kErrorTransport = 200;
-constexpr std::uint16_t kErrorAckTimeout = 201;
-constexpr std::uint16_t kErrorShutdown = 202;
-constexpr std::uint16_t kErrorCanceled = 203;
-constexpr std::uint16_t kErrorStopTimeout = 204;
-constexpr std::uint16_t kErrorStopRejected = 205;
+// The values live in robot_task_interfaces/error_code.hpp, partitioned by layer.
+// These names stay because the bridge's own call sites read better with them.
+constexpr std::uint16_t kErrorInvalidGoal = robot_task_interfaces::error_code::kDeviceInvalidGoal;
+constexpr std::uint16_t kErrorTransport = robot_task_interfaces::error_code::kDeviceTransport;
+constexpr std::uint16_t kErrorAckTimeout = robot_task_interfaces::error_code::kDeviceAckTimeout;
+constexpr std::uint16_t kErrorShutdown = robot_task_interfaces::error_code::kDeviceShutdown;
+constexpr std::uint16_t kErrorCanceled = robot_task_interfaces::error_code::kDeviceCanceled;
+constexpr std::uint16_t kErrorStopTimeout = robot_task_interfaces::error_code::kDeviceStopTimeout;
+constexpr std::uint16_t kErrorStopRejected =
+  robot_task_interfaces::error_code::kDeviceStopRejected;
 // A device that reports execution separately did not finish before the bound.
-constexpr std::uint16_t kErrorCompletionTimeout = 206;
-constexpr std::uint16_t kErrorDeviceRejectedBase = 300;
+constexpr std::uint16_t kErrorCompletionTimeout =
+  robot_task_interfaces::error_code::kDeviceCompletionTimeout;
 
 // Convert the wire-level relative duration into a bounded local timeout.
 bool duration_to_milliseconds(

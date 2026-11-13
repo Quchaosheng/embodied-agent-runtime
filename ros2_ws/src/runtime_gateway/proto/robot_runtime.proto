@@ -28,6 +28,11 @@ message SubmitWorkflowReply {
   uint32 outcome = 5;
   uint32 error_code = 6;
   string message = 7;
+  // Which layer produced error_code: 0 none, 1 executor, 2 orchestrator,
+  // 3 device, 4 gateway (see robot_task_interfaces/error_code.hpp). Carried
+  // explicitly so a client does not have to decode the number to know whose
+  // vocabulary it is reading.
+  uint32 error_layer = 8;
 }
 
 message CancelWorkflowRequest { string request_id = 1; }
@@ -38,6 +43,7 @@ message CancelWorkflowReply {
   uint32 outcome = 3;
   uint32 error_code = 4;
   string message = 5;
+  uint32 error_layer = 6;
 }
 
 message GetTaskRequest { string task_id = 1; }
@@ -58,6 +64,7 @@ message TaskRecord {
   uint64 duration_ms = 8;
   string message = 9;
   int64 completed_at_ns = 10;
+  uint32 error_layer = 14;
 }
 
 message ResolveUncertainRequest {

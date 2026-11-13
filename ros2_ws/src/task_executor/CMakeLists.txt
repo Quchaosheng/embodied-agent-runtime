@@ -43,7 +43,8 @@ add_library(task_executor_node_lib src/task_executor_node.cpp)
 target_include_directories(task_executor_node_lib PRIVATE src)
 target_link_libraries(task_executor_node_lib target_validator task_executor_diagnostics task_event
   task_event_capture
-  runtime_history::runtime_history_stage_events)
+  runtime_history::runtime_history_stage_events
+  robot_task_interfaces::robot_task_interfaces_error_code)
 ament_target_dependencies(task_executor_node_lib
   rclcpp
   rclcpp_action

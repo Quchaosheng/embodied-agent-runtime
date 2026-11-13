@@ -42,9 +42,9 @@ bool duration_to_milliseconds(
 
 std::uint16_t device_error_code(const std::uint8_t result_code)
 {
-  const auto code = static_cast<std::uint32_t>(kErrorDeviceRejectedBase) + result_code;
-  return code > std::numeric_limits<std::uint16_t>::max() ?
-         std::numeric_limits<std::uint16_t>::max() : static_cast<std::uint16_t>(code);
+  // The range arithmetic lives in the shared table, so this cannot drift into
+  // another layer's codes again.
+  return robot_task_interfaces::error_code::device_rejected(result_code);
 }
 
 Acknowledgement classify_status(

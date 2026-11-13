@@ -58,7 +58,8 @@ target_include_directories(durable_idempotency PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(durable_idempotency
-  request_registry runtime_history::runtime_history_store)
+  request_registry runtime_history::runtime_history_store
+  robot_task_interfaces::robot_task_interfaces_error_code)
 
 add_library(gateway_service src/gateway_service.cpp)
 target_compile_features(gateway_service PUBLIC cxx_std_17)
@@ -67,7 +68,8 @@ target_include_directories(gateway_service PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(gateway_service
   request_registry durable_idempotency runtime_gateway_proto
-  runtime_history::runtime_history_store runtime_history::runtime_history_stage_events)
+  runtime_history::runtime_history_store runtime_history::runtime_history_stage_events
+  robot_task_interfaces::robot_task_interfaces_error_code)
 ament_target_dependencies(gateway_service rclcpp rclcpp_action robot_task_interfaces)
 
 add_library(loopback_server src/loopback_server.cpp)

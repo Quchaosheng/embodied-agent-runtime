@@ -21,7 +21,8 @@ target_include_directories(ready_state PUBLIC
 
 add_executable(task_orchestrator_node src/task_orchestrator_node.cpp)
 target_compile_features(task_orchestrator_node PUBLIC cxx_std_17)
-target_link_libraries(task_orchestrator_node ready_state)
+target_link_libraries(task_orchestrator_node ready_state
+  robot_task_interfaces::robot_task_interfaces_error_code)
 ament_target_dependencies(task_orchestrator_node
   ament_index_cpp
   behaviortree_cpp
@@ -52,7 +53,8 @@ if(BUILD_TESTING)
   target_compile_definitions(task_orchestrator_node_test_lib PRIVATE TASK_ORCHESTRATOR_NO_MAIN)
   target_compile_features(task_orchestrator_node_test_lib PUBLIC cxx_std_17)
   target_include_directories(task_orchestrator_node_test_lib PRIVATE src)
-  target_link_libraries(task_orchestrator_node_test_lib ready_state)
+  target_link_libraries(task_orchestrator_node_test_lib ready_state
+    robot_task_interfaces::robot_task_interfaces_error_code)
   ament_target_dependencies(task_orchestrator_node_test_lib
     ament_index_cpp behaviortree_cpp rclcpp rclcpp_action robot_task_interfaces std_msgs)
 

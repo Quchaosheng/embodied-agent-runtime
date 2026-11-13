@@ -24,7 +24,11 @@ target_include_directories(device_bridge_policy PUBLIC
 ament_target_dependencies(device_bridge_policy builtin_interfaces runtime_can)
 # The application/STOP ID partition is owned by runtime_can; link it so the
 # policy reads the same constants the encoder uses.
-target_link_libraries(device_bridge_policy runtime_can::runtime_can)
+target_link_libraries(device_bridge_policy runtime_can::runtime_can
+  robot_task_interfaces::robot_task_interfaces_error_code)
+# The policy header includes the shared error-code table, so the interface
+# package's include directory must be on this target's path, not only linked.
+ament_target_dependencies(device_bridge_policy robot_task_interfaces)
 
 add_library(device_bridge_diagnostics src/diagnostic_state.cpp)
 target_compile_features(device_bridge_diagnostics PUBLIC cxx_std_17)
@@ -43,6 +47,7 @@ target_include_directories(device_bridge_node_lib PUBLIC
 target_link_libraries(device_bridge_node_lib
   device_bridge_diagnostics
   device_bridge_policy
+  robot_task_interfaces::robot_task_interfaces_error_code
   runtime_can::runtime_can
   runtime_history::runtime_history_stage_events)
 ament_target_dependencies(device_bridge_node_lib
