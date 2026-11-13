@@ -743,7 +743,7 @@ PY
 # The capture is the artifact a cross-project consumer reads, so the run proves it
 # exists and carries the same outcomes the topic reported.
 require_file "$TASK_EVENTS"
-/usr/bin/python3 - "$TASK_EVENTS" <<'PY'
+/usr/bin/python3 - "$TASK_EVENTS" "$(error_code device_rejected:2)" <<'PY'
 import json, pathlib, sys
 
 required = {
@@ -758,9 +758,11 @@ for line in lines:
     missing = required - record.keys()
     assert not missing, (record.get("task_id"), missing)
     outcomes.add((record["action_status"], record["outcome"], record["error_code"]))
-# The six submitted runs cover completed, device fault, cancel and safe stops.
+# The six submitted runs cover completed, device fault, cancel and safe stops. The
+# device-fault code is the table's, not a literal: it moved when #83 repartitioned
+# the ranges so a device code could not be read as a gateway code.
 assert (1, 0, 0) in outcomes, outcomes
-assert (2, 3, 302) in outcomes, outcomes
+assert (2, 3, int(sys.argv[2])) in outcomes, outcomes
 PY
 record "PASS: seven industrial E2E scenarios"
 
