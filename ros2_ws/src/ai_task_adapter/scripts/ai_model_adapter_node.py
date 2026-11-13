@@ -396,7 +396,8 @@ class AiModelAdapterNode(Node):
         return min(limit_sec, remaining_ns / 1_000_000_000)
 
     def _cancel_on_late_acceptance(self, future) -> None:
-        """Cancel a goal accepted after the caller already reported a timeout.
+        """
+        Cancel a goal accepted after the caller already reported a timeout.
 
         run() also spins a bounded grace window after the timeout, and handles a
         late acceptance itself so it can report which of the three outcomes

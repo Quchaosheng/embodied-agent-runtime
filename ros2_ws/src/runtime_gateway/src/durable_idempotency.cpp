@@ -70,12 +70,12 @@ IdempotencyOutcome DurableIdempotency::admit(
   } catch (const std::exception &) {
     // Fail closed: without the ledger we cannot prove this is not a retry.
     return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0,
-        robot_task_interfaces::error_code::kGatewayUnavailable,
+      robot_task_interfaces::error_code::kGatewayUnavailable,
       "durable idempotency ledger unavailable"};
   }
   if (existing && existing->fingerprint != value) {
     return {IdempotencyDecision::CONFLICT, std::string{}, 0,
-        robot_task_interfaces::error_code::kGatewayConflict,
+      robot_task_interfaces::error_code::kGatewayConflict,
       "request_id conflicts with a durable request"};
   }
   if (existing && is_uncertain_state(existing->state)) {
@@ -107,7 +107,7 @@ IdempotencyOutcome DurableIdempotency::admit(
     record.request_id, value, kAdmitted, 0, 0, "admitted", now_ns};
   if (!store_.put_idempotency(claimed)) {
     return {IdempotencyDecision::UNAVAILABLE, std::string{}, 0,
-        robot_task_interfaces::error_code::kGatewayUnavailable,
+      robot_task_interfaces::error_code::kGatewayUnavailable,
       "failed to persist idempotency admission"};
   }
   return {IdempotencyDecision::PROCEED, std::string{}, 0, 0, std::string{}};

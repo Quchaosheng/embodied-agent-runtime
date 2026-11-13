@@ -236,7 +236,8 @@ class ModelDispatchBudgetTest(unittest.TestCase):
 
 
 class PumpedSpin:
-    """A stand-in for rclpy.spin_until_future_complete that pumps for real.
+    """
+    A stand-in for rclpy.spin_until_future_complete that pumps for real.
 
     The old tests resolved the fake future by hand after run() returned, which is
     precisely the work no live node was doing - so they passed while the shipped

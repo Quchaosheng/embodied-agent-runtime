@@ -238,8 +238,8 @@ private:
   {
     const runtime_can::CanLink::CancelCheck canceled = observe_cancel ?
       runtime_can::CanLink::CancelCheck(
-        [this, &goal_handle]() {
-          return goal_handle->is_canceling() || shutting_down_.load();
+      [this, &goal_handle]() {
+        return goal_handle->is_canceling() || shutting_down_.load();
         }) :
       runtime_can::CanLink::CancelCheck([this]() {return shutting_down_.load();});
     switch (link_->await_response(expected_command_id, timeout, canceled, response, error)) {
@@ -717,4 +717,3 @@ private:
   std::mutex workers_mutex_;
   std::thread worker_;
 };
-

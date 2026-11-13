@@ -37,7 +37,8 @@ protected:
   {
     transport_ = std::make_shared<runtime_can::InMemoryTransport>();
     node_ = std::make_shared<DeviceBridgeNode>(transport_, options());
-    client_node_ = std::make_shared<rclcpp::Node>("bridge_test_client_" + std::to_string(counter_++));
+    client_node_ = std::make_shared<rclcpp::Node>("bridge_test_client_" +
+        std::to_string(counter_++));
     client_ = rclcpp_action::create_client<ExecuteDeviceCommand>(
       client_node_, "execute_device_command");
     // An Action server that nothing spins never answers a goal, so the executor
@@ -68,11 +69,11 @@ protected:
     // production defaults, which are seconds long.
     return rclcpp::NodeOptions()
            .parameter_overrides({
-      rclcpp::Parameter("max_ack_timeout_ms", 500),
-      rclcpp::Parameter("stop_timeout_ms", 200),
-      rclcpp::Parameter("receive_poll_ms", 5),
-      rclcpp::Parameter("completion_timeout_ms", 500),
-      rclcpp::Parameter("diagnostic_period_ms", 50),
+        rclcpp::Parameter("max_ack_timeout_ms", 500),
+        rclcpp::Parameter("stop_timeout_ms", 200),
+        rclcpp::Parameter("receive_poll_ms", 5),
+        rclcpp::Parameter("completion_timeout_ms", 500),
+        rclcpp::Parameter("diagnostic_period_ms", 50),
            });
   }
 
@@ -254,8 +255,8 @@ TEST_F(DeviceBridgeNodeTest, CancelAfterAckSendsAStopAndReportsCanceled)
         // A STOP only counts as acknowledged when the device also reports it
         // stopped; answering NORMAL is a refusal.
         transport->inject(runtime_can::encode_response(runtime_can::Response{
-            command->command_id, 0,
-            robot_task_interfaces::msg::DeviceState::STOPPED, {0, 0, 0}}));
+        command->command_id, 0,
+        robot_task_interfaces::msg::DeviceState::STOPPED, {0, 0, 0}}));
         return;
       }
       // The ACK never arrives; the caller cancels while the bridge is waiting.

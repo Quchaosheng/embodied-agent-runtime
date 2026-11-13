@@ -53,9 +53,20 @@ class TestRuntimeMonitor(unittest.TestCase):
             if status.name == 'runtime/system':
                 self.system_level = status.level
 
+    # Every component the monitor requires, not only the two it used to hard-code:
+    # the default list now covers the orchestrator, gateway and history too, and a
+    # configured component that never publishes keeps the runtime not-ready.
+    CORE_COMPONENTS = (
+        'runtime/device_bridge',
+        'runtime/task_executor',
+        'runtime/task_orchestrator',
+        'runtime/gateway',
+        'runtime/history',
+    )
+
     def _publish_core(self):
         message = DiagnosticArray()
-        for name in ('runtime/device_bridge', 'runtime/task_executor'):
+        for name in self.CORE_COMPONENTS:
             status = DiagnosticStatus()
             status.name = name
             status.level = DiagnosticStatus.OK
