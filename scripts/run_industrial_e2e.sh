@@ -63,7 +63,9 @@ record() { printf '%s\n' "$*" | tee -a "$EVIDENCE/assertions.log"; }
 dump_context() {
   local file
   for file in monitor.log bridge.log executor.log history.log orchestrator.log \
-              gateway.log virtual.log can.log; do
+              gateway.log virtual.log can.log \
+              bridge-recovered.log executor-recovered.log \
+              history-recovered.log monitor-recovered.log; do
     [[ -f "$EVIDENCE/$file" ]] || continue
     printf '\n===== %s (last 40 lines) =====\n' "$file" >&2
     tail -n 40 "$EVIDENCE/$file" >&2 || true

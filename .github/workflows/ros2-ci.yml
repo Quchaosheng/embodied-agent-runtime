@@ -220,9 +220,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-evidence
-          path: |
-            **/e2e-evidence/**
-            **/evidence/**
+          # The E2E writes to /tmp/runtime-industrial-evidence, so a repo-relative
+          # glob found nothing and every failure stayed undiagnosable.
+          path: /tmp/runtime-industrial-evidence
           if-no-files-found: ignore
           retention-days: 7
 
